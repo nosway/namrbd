@@ -1,12 +1,15 @@
 # NAMRBD Community Edition
 
-NAMRBD is a network-attached Linux block storage project. The Community
-Edition focuses on replicated block volumes, host attach, gateway forwarding,
+NAMRBD (Network Attached Multipath Resilient Block Device) is a network-attached Linux block storage project. The Community
+Edition focuses on replicated block volumes, host attach through kernel module, gateway forwarding,
 SBS service/data-plane authority, Kubernetes CSI integration, basic snapshot
 and restore workflows, discard/zero observability, and basic iSCSI
 connectivity.
 
 ![NAMRBD platform overview](docs-src/manuals/architecture-manual/assets/diagrams/platform-overview.svg)
+
+There is a sibling project NAMROS (https://github.com/nosway/namros) which provides S3 compatible object storage based on SBS backend of NAMRBD.
+The relationship of two projects is shown in the ![architecture diagram]((docs-src/manuals/architecture-manual/assets/diagrams/namrbd-namros-interface-map.svg)
 
 The public Community Edition source tree is intended to be usable as a normal
 open-source checkout for building, testing, inspecting, and packaging
