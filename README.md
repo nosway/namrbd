@@ -1,16 +1,19 @@
 # NAMRBD Community Edition
 
-NAMRBD (Network Attached Multipath Resilient Block Device) is a network-attached Linux block storage project. The Community
-Edition focuses on replicated block volumes, host attach through kernel module, gateway forwarding,
-SBS service/data-plane authority, Kubernetes CSI integration, basic snapshot
-and restore workflows, discard/zero observability, and basic iSCSI
-connectivity.
+NAMRBD (Network Attached Multipath Resilient Block Device) is a
+network-attached Linux block storage project. The Community Edition focuses on
+replicated block volumes, host attach through the kernel module, gateway
+forwarding, SBS service/data-plane authority, Kubernetes CSI integration,
+basic snapshot and restore workflows, discard/zero observability, and basic
+iSCSI connectivity.
 
 ![NAMRBD platform overview](docs-src/manuals/architecture-manual/assets/diagrams/platform-overview.svg)
 
-There is a sibling project NAMROS (https://github.com/nosway/namros) which provides S3 compatible object storage based on SBS backend of NAMRBD.
-The relationship of two projects is shown in the figure.
-![architecture diagram](docs-src/manuals/architecture-manual/assets/diagrams/namrbd-namros-interface-map.svg)
+NAMROS (<https://github.com/nosway/namros>) is a sibling S3-compatible object
+storage project that uses the NAMRBD SBS backend. The relationship between the
+two projects is shown below.
+
+![NAMRBD and NAMROS interface map](docs-src/manuals/architecture-manual/assets/diagrams/namrbd-namros-interface-map.svg)
 
 The public Community Edition source tree is intended to be usable as a normal
 open-source checkout for building, testing, inspecting, and packaging
@@ -124,9 +127,11 @@ and the metric catalog live under `deploy/observability`.
 
 ## Documentation
 
-The manual set is published at <https://nosway.github.io/namrbd/>, built from
-`docs-src/` on every push to `main`. No rendered HTML is committed, so the
-sources cannot drift from what readers see.
+The manual set is published at <https://nosway.github.io/namrbd/> after a
+maintainer enables GitHub Pages and runs the `Docs` workflow with
+`deploy_pages=true`. Every push to `main` render-checks `docs-src/`, but does
+not require Pages to be enabled. No rendered HTML is committed, so the sources
+cannot drift from what readers see.
 
 `docs-src/` is the single authoring surface, with `mkdocs.yml` at the
 repository root and the installation, user, admin, HA, and architecture
