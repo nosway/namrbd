@@ -1,0 +1,90 @@
+site_name: NAMRBD Community
+site_description: NAMRBD Community source documentation
+site_url: https://nosway.github.io/namrbd/
+repo_url: https://github.com/nosway/namrbd
+docs_dir: docs-src
+site_dir: site
+
+# Build inputs that live beside the sources but must not ship in the site.
+exclude_docs: |
+  requirements.txt
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+extra_css:
+  - assets/namrbd-docs.css
+
+nav:
+  - Home: index.md
+  - Community Scope: community-scope.md
+  - Quickstart: quickstart.md
+  - Operations: operations.md
+  - Observability: observability.md
+  - Public Manuals:
+      - Manual Portal: manuals/index.md
+      - Installation Guide: manuals/installation-guide.md
+      - User Manual: manuals/user-manual.md
+      - Admin Guide: manuals/admin-guide.md
+      - etcd HA Guide: manuals/etcd-ha-cluster-install-operations-guide.md
+      - TiKV HA Guide: manuals/tikv-ha-cluster-install-operations-guide.md
+      - Architecture:
+          - Overview: manuals/architecture-manual/index.md
+          - Reading Guide: manuals/architecture-manual/chapters/00-reading-guide.md
+          - Platform Overview: manuals/architecture-manual/chapters/01-platform-overview.md
+          - Components And Ownership: manuals/architecture-manual/chapters/02-components-and-ownership.md
+          - Linux Host Planes: manuals/architecture-manual/chapters/03-linux-host-control-and-data-plane.md
+          - Metadata Authority: manuals/architecture-manual/chapters/04-metadata-authority.md
+          - Logical Storage Geometry: manuals/architecture-manual/chapters/05-logical-storage-geometry.md
+          - Logical To Physical Mapping: manuals/architecture-manual/chapters/06-logical-to-physical-mapping.md
+          - Replicated Backend: manuals/architecture-manual/chapters/07-replicated-backend.md
+          - Erasure Coding Backend: manuals/architecture-manual/chapters/08-erasure-coding-backend.md
+          - Write Visibility And Ordering: manuals/architecture-manual/chapters/09-write-visibility-and-ordering.md
+          - Read Views, Snapshots, And Clones: manuals/architecture-manual/chapters/10-read-views-snapshots-and-clones.md
+          - Reachability And GC: manuals/architecture-manual/chapters/11-reachability-and-gc.md
+          - Zero, Discard, And Reclaim: manuals/architecture-manual/chapters/12-zero-discard-and-reclaim.md
+          - Kernel Gateway Dataplane: manuals/architecture-manual/chapters/13-kernel-gateway-dataplane.md
+          - Topology Placement And Expansion: manuals/architecture-manual/chapters/14-topology-placement-and-expansion.md
+          - Observability And Harness: manuals/architecture-manual/chapters/15-observability-and-harness.md
+          - Kubernetes CSI Integration: manuals/architecture-manual/chapters/16-kubernetes-csi-integration-case.md
+          - Edition And Release Boundaries: manuals/architecture-manual/chapters/17-edition-and-release-boundaries.md
+          - Extreme I/O Performance: manuals/architecture-manual/chapters/18-extreme-io-performance-engineering.md
+          - Glossary: manuals/architecture-manual/chapters/appendix-glossary.md
+          - Interface Specifications: manuals/architecture-manual/chapters/appendix-interface-specifications.md
+          - Reference Map: manuals/architecture-manual/chapters/appendix-reference-map.md
+      - Korean:
+          - Portal: manuals/ko/index.md
+          - Installation Guide: manuals/ko/installation-guide.md
+          - User Manual: manuals/ko/user-manual.md
+          - Admin Guide: manuals/ko/admin-guide.md
+          - etcd HA Guide: manuals/ko/etcd-ha-cluster-install-operations-guide.md
+          - TiKV HA Guide: manuals/ko/tikv-ha-cluster-install-operations-guide.md
+          - Architecture Overview: manuals/architecture-manual/ko/index.md

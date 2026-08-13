@@ -1,0 +1,7 @@
+# Default maintainers for the public Community repository.
+* @nosway/namrbd-maintainers
+
+/kernel/ @nosway/namrbd-kernel-maintainers
+/deploy/kubernetes/csi/ @nosway/namrbd-csi-maintainers
+/cmd/namrbd-csi-driver/ @nosway/namrbd-csi-maintainers
+/docs/ @nosway/namrbd-docs-maintainers

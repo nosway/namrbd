@@ -1,0 +1,45 @@
+{{- if .Values.storageClasses.replicated.create }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.storageClasses.replicated.name }}
+  labels:
+    {{- include "namrbd-csi.labels" . | nindent 4 }}
+  annotations:
+    namrbd.io/discard-exposure: {{ .Values.storageClasses.replicated.discard.exposureState | quote }}
+    namrbd.io/discard-validation-profile: {{ .Values.storageClasses.replicated.discard.validationProfile | quote }}
+provisioner: {{ .Values.driverName }}
+allowVolumeExpansion: {{ .Values.storageClasses.replicated.allowVolumeExpansion }}
+volumeBindingMode: {{ .Values.storageClasses.replicated.volumeBindingMode }}
+reclaimPolicy: {{ .Values.storageClasses.replicated.reclaimPolicy }}
+{{- with .Values.storageClasses.replicated.discard.mountOptions }}
+mountOptions:
+{{- toYaml . | nindent 2 }}
+{{- end }}
+parameters:
+{{- toYaml .Values.storageClasses.replicated.parameters | nindent 2 }}
+{{- end }}
+{{- if .Values.storageClasses.ec63.create }}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.storageClasses.ec63.name }}
+  labels:
+    {{- include "namrbd-csi.labels" . | nindent 4 }}
+    namrbd.io/edition: enterprise
+  annotations:
+    namrbd.io/enterprise-only: "true"
+    namrbd.io/discard-exposure: {{ .Values.storageClasses.ec63.discard.exposureState | quote }}
+    namrbd.io/discard-validation-profile: {{ .Values.storageClasses.ec63.discard.validationProfile | quote }}
+provisioner: {{ .Values.driverName }}
+allowVolumeExpansion: {{ .Values.storageClasses.ec63.allowVolumeExpansion }}
+volumeBindingMode: {{ .Values.storageClasses.ec63.volumeBindingMode }}
+reclaimPolicy: {{ .Values.storageClasses.ec63.reclaimPolicy }}
+{{- with .Values.storageClasses.ec63.discard.mountOptions }}
+mountOptions:
+{{- toYaml . | nindent 2 }}
+{{- end }}
+parameters:
+{{- toYaml .Values.storageClasses.ec63.parameters | nindent 2 }}
+{{- end }}

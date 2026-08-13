@@ -1,0 +1,3759 @@
+syntax = "proto3";
+
+package sbs.admin.v1;
+
+option go_package = "github.com/nosway/namrbd/sbs/admin/v1;adminv1";
+
+import "google/protobuf/timestamp.proto";
+
+service AdminService {
+  rpc ClusterInit(ClusterInitRequest) returns (ClusterInitResponse);
+  rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+  rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+  rpc JoinNode(JoinNodeRequest) returns (JoinNodeResponse);
+  rpc UpdateNodeTopology(UpdateNodeTopologyRequest) returns (UpdateNodeTopologyResponse);
+  rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse);
+  rpc RemoveNode(RemoveNodeRequest) returns (RemoveNodeResponse);
+  rpc ForceRemoveNode(ForceRemoveNodeRequest) returns (ForceRemoveNodeResponse);
+
+  rpc CreateTopologyZone(CreateTopologyZoneRequest) returns (CreateTopologyZoneResponse);
+  rpc ListTopologyZones(ListTopologyZonesRequest) returns (ListTopologyZonesResponse);
+  rpc GetTopologyZone(GetTopologyZoneRequest) returns (GetTopologyZoneResponse);
+  rpc UpdateTopologyZone(UpdateTopologyZoneRequest) returns (UpdateTopologyZoneResponse);
+  rpc DeleteTopologyZone(DeleteTopologyZoneRequest) returns (DeleteTopologyZoneResponse);
+
+  rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse);
+  rpc GetVolume(GetVolumeRequest) returns (GetVolumeResponse);
+  rpc GetVolumePlacementView(GetVolumePlacementViewRequest) returns (GetVolumePlacementViewResponse);
+  rpc GetVolumeAllocationPageView(GetVolumeAllocationPageViewRequest) returns (GetVolumeAllocationPageViewResponse);
+  rpc GetReplicaTargetsView(GetReplicaTargetsViewRequest) returns (GetReplicaTargetsViewResponse);
+  rpc GetISCSIRegistry(GetISCSIRegistryRequest) returns (GetISCSIRegistryResponse);
+  rpc ListISCSIPortals(ListISCSIPortalsRequest) returns (ListISCSIPortalsResponse);
+  rpc GetISCSIPortal(GetISCSIPortalRequest) returns (GetISCSIPortalResponse);
+  rpc ListISCSITargets(ListISCSITargetsRequest) returns (ListISCSITargetsResponse);
+  rpc GetISCSITarget(GetISCSITargetRequest) returns (GetISCSITargetResponse);
+  rpc ListISCSILUNs(ListISCSILUNsRequest) returns (ListISCSILUNsResponse);
+  rpc GetISCSILUN(GetISCSILUNRequest) returns (GetISCSILUNResponse);
+  rpc ListISCSIInitiatorACLs(ListISCSIInitiatorACLsRequest) returns (ListISCSIInitiatorACLsResponse);
+  rpc GetISCSIInitiatorACL(GetISCSIInitiatorACLRequest) returns (GetISCSIInitiatorACLResponse);
+  rpc ListISCSISessions(ListISCSISessionsRequest) returns (ListISCSISessionsResponse);
+  rpc GetISCSISession(GetISCSISessionRequest) returns (GetISCSISessionResponse);
+  rpc RecordISCSISession(RecordISCSISessionRequest) returns (RecordISCSISessionResponse);
+  rpc DisconnectISCSISession(DisconnectISCSISessionRequest) returns (DisconnectISCSISessionResponse);
+  rpc GetISCSIFailover(GetISCSIFailoverRequest) returns (GetISCSIFailoverResponse);
+  rpc PromoteISCSIFailover(PromoteISCSIFailoverRequest) returns (PromoteISCSIFailoverResponse);
+  rpc DemoteISCSIFailover(DemoteISCSIFailoverRequest) returns (DemoteISCSIFailoverResponse);
+  rpc StandbyISCSIFailover(StandbyISCSIFailoverRequest) returns (StandbyISCSIFailoverResponse);
+  rpc RevokeStaleISCSIFailover(RevokeStaleISCSIFailoverRequest) returns (RevokeStaleISCSIFailoverResponse);
+  rpc CreateISCSIPortal(CreateISCSIPortalRequest) returns (CreateISCSIPortalResponse);
+  rpc DeleteISCSIPortal(DeleteISCSIPortalRequest) returns (DeleteISCSIPortalResponse);
+  rpc SetISCSIPortalEnabled(SetISCSIPortalEnabledRequest) returns (SetISCSIPortalEnabledResponse);
+  rpc CreateISCSITarget(CreateISCSITargetRequest) returns (CreateISCSITargetResponse);
+  rpc DeleteISCSITarget(DeleteISCSITargetRequest) returns (DeleteISCSITargetResponse);
+  rpc SetISCSITargetEnabled(SetISCSITargetEnabledRequest) returns (SetISCSITargetEnabledResponse);
+  rpc ExportISCSILUN(ExportISCSILUNRequest) returns (ExportISCSILUNResponse);
+  rpc UnexportISCSILUN(UnexportISCSILUNRequest) returns (UnexportISCSILUNResponse);
+  rpc SetISCSILUNMode(SetISCSILUNModeRequest) returns (SetISCSILUNModeResponse);
+  rpc AllowISCSIInitiator(AllowISCSIInitiatorRequest) returns (AllowISCSIInitiatorResponse);
+  rpc DenyISCSIInitiator(DenyISCSIInitiatorRequest) returns (DenyISCSIInitiatorResponse);
+  rpc SetISCSIInitiatorAuth(SetISCSIInitiatorAuthRequest) returns (SetISCSIInitiatorAuthResponse);
+  rpc CreateVolume(CreateVolumeRequest) returns (CreateVolumeResponse);
+  rpc CreateVolumeFromSnapshot(CreateVolumeFromSnapshotRequest) returns (CreateVolumeFromSnapshotResponse);
+  rpc ExpandVolume(ExpandVolumeRequest) returns (ExpandVolumeResponse);
+  rpc DeleteVolume(DeleteVolumeRequest) returns (DeleteVolumeResponse);
+  rpc PurgeVolume(PurgeVolumeRequest) returns (PurgeVolumeResponse);
+  rpc PlanVolumeRepack(PlanVolumeRepackRequest) returns (PlanVolumeRepackResponse);
+  rpc StartVolumeRepack(StartVolumeRepackRequest) returns (StartVolumeRepackResponse);
+  rpc GetVolumeRepack(GetVolumeRepackRequest) returns (GetVolumeRepackResponse);
+  rpc ListVolumeRepacks(ListVolumeRepacksRequest) returns (ListVolumeRepacksResponse);
+  rpc CancelVolumeRepack(CancelVolumeRepackRequest) returns (CancelVolumeRepackResponse);
+  rpc PlanDedupe(PlanDedupeRequest) returns (PlanDedupeResponse);
+  rpc StartDedupe(StartDedupeRequest) returns (StartDedupeResponse);
+
+  rpc CreateSecurityProvider(CreateSecurityProviderRequest) returns (CreateSecurityProviderResponse);
+  rpc GetSecurityProvider(GetSecurityProviderRequest) returns (GetSecurityProviderResponse);
+  rpc ListSecurityProviders(ListSecurityProvidersRequest) returns (ListSecurityProvidersResponse);
+  rpc CheckSecurityProvider(CheckSecurityProviderRequest) returns (CheckSecurityProviderResponse);
+  rpc CreateSecurityPolicy(CreateSecurityPolicyRequest) returns (CreateSecurityPolicyResponse);
+  rpc GetSecurityPolicy(GetSecurityPolicyRequest) returns (GetSecurityPolicyResponse);
+  rpc ListSecurityPolicies(ListSecurityPoliciesRequest) returns (ListSecurityPoliciesResponse);
+  rpc BindSecurityPolicy(BindSecurityPolicyRequest) returns (BindSecurityPolicyResponse);
+  rpc CreateSecurityDataKey(CreateSecurityDataKeyRequest) returns (CreateSecurityDataKeyResponse);
+  rpc GetSecurityDataKey(GetSecurityDataKeyRequest) returns (GetSecurityDataKeyResponse);
+  rpc ListSecurityDataKeys(ListSecurityDataKeysRequest) returns (ListSecurityDataKeysResponse);
+  rpc DisableSecurityDataKey(DisableSecurityDataKeyRequest) returns (DisableSecurityDataKeyResponse);
+  rpc EnableSecurityDataKey(EnableSecurityDataKeyRequest) returns (EnableSecurityDataKeyResponse);
+  rpc PlanSecurityDataKeyDestroy(PlanSecurityDataKeyDestroyRequest) returns (PlanSecurityDataKeyDestroyResponse);
+  rpc DestroySecurityDataKey(DestroySecurityDataKeyRequest) returns (DestroySecurityDataKeyResponse);
+  rpc CreateSecurityKeyRotationPlan(CreateSecurityKeyRotationPlanRequest) returns (CreateSecurityKeyRotationPlanResponse);
+  rpc GetSecurityKeyRotationPlan(GetSecurityKeyRotationPlanRequest) returns (GetSecurityKeyRotationPlanResponse);
+  rpc ListSecurityKeyRotationPlans(ListSecurityKeyRotationPlansRequest) returns (ListSecurityKeyRotationPlansResponse);
+  rpc RunSecurityKeyRotation(RunSecurityKeyRotationRequest) returns (RunSecurityKeyRotationResponse);
+  rpc CreateSecurityCryptoErasePlan(CreateSecurityCryptoErasePlanRequest) returns (CreateSecurityCryptoErasePlanResponse);
+  rpc GetSecurityCryptoErasePlan(GetSecurityCryptoErasePlanRequest) returns (GetSecurityCryptoErasePlanResponse);
+  rpc ListSecurityCryptoErasePlans(ListSecurityCryptoErasePlansRequest) returns (ListSecurityCryptoErasePlansResponse);
+  rpc RunSecurityCryptoErase(RunSecurityCryptoEraseRequest) returns (RunSecurityCryptoEraseResponse);
+  rpc IssueKeyAccessLease(IssueKeyAccessLeaseRequest) returns (IssueKeyAccessLeaseResponse);
+  rpc CheckSecurityDataKeyAccess(CheckSecurityDataKeyAccessRequest) returns (CheckSecurityDataKeyAccessResponse);
+  rpc UnwrapSecurityDataKey(UnwrapSecurityDataKeyRequest) returns (UnwrapSecurityDataKeyResponse);
+  rpc GetKeyAccessLease(GetKeyAccessLeaseRequest) returns (GetKeyAccessLeaseResponse);
+  rpc RevokeKeyAccessLease(RevokeKeyAccessLeaseRequest) returns (RevokeKeyAccessLeaseResponse);
+  rpc ListSecurityAuditEvents(ListSecurityAuditEventsRequest) returns (ListSecurityAuditEventsResponse);
+  rpc VerifySecurityAuditLog(VerifySecurityAuditLogRequest) returns (VerifySecurityAuditLogResponse);
+
+  rpc CreateECProfile(CreateECProfileRequest) returns (CreateECProfileResponse);
+  rpc ListECProfiles(ListECProfilesRequest) returns (ListECProfilesResponse);
+  rpc GetECProfile(GetECProfileRequest) returns (GetECProfileResponse);
+  rpc DisableECProfile(DisableECProfileRequest) returns (DisableECProfileResponse);
+
+  rpc CreateSnapshot(CreateSnapshotRequest) returns (CreateSnapshotResponse);
+  rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse);
+  rpc ListSnapshots(ListSnapshotsRequest) returns (ListSnapshotsResponse);
+  rpc DeleteSnapshot(DeleteSnapshotRequest) returns (DeleteSnapshotResponse);
+  rpc CreateClone(CreateCloneRequest) returns (CreateCloneResponse);
+  rpc GetClone(GetCloneRequest) returns (GetCloneResponse);
+  rpc ListClones(ListClonesRequest) returns (ListClonesResponse);
+  rpc MaterializeClone(MaterializeCloneRequest) returns (MaterializeCloneResponse);
+  rpc DeleteClone(DeleteCloneRequest) returns (DeleteCloneResponse);
+
+  rpc UpdateNodeStoreWeights(UpdateNodeStoreWeightsRequest) returns (UpdateNodeStoreWeightsResponse);
+  rpc UpdateNodeStoreTuning(UpdateNodeStoreTuningRequest) returns (UpdateNodeStoreTuningResponse);
+
+  rpc GetMaintenanceStatus(GetMaintenanceStatusRequest) returns (GetMaintenanceStatusResponse);
+  rpc SetBackgroundBudget(SetBackgroundBudgetRequest) returns (SetBackgroundBudgetResponse);
+  rpc AcquireBudgetLease(AcquireBudgetLeaseRequest) returns (AcquireBudgetLeaseResponse);
+  rpc GetBudgetLease(GetBudgetLeaseRequest) returns (GetBudgetLeaseResponse);
+  rpc ListBudgetLeases(ListBudgetLeasesRequest) returns (ListBudgetLeasesResponse);
+  rpc SetMaintenanceThrottle(SetMaintenanceThrottleRequest) returns (SetMaintenanceThrottleResponse);
+  rpc PauseMaintenance(PauseMaintenanceRequest) returns (PauseMaintenanceResponse);
+  rpc ResumeMaintenance(ResumeMaintenanceRequest) returns (ResumeMaintenanceResponse);
+
+  rpc ListRepairs(ListRepairsRequest) returns (ListRepairsResponse);
+  rpc ListRebalances(ListRebalancesRequest) returns (ListRebalancesResponse);
+
+  rpc StartRestoreWarmup(StartRestoreWarmupRequest) returns (StartRestoreWarmupResponse);
+  rpc RunRestoreWarmup(RunRestoreWarmupRequest) returns (RunRestoreWarmupResponse);
+  rpc GetRestoreWarmup(GetRestoreWarmupRequest) returns (GetRestoreWarmupResponse);
+  rpc ListRestoreWarmups(ListRestoreWarmupsRequest) returns (ListRestoreWarmupsResponse);
+  rpc CancelRestoreWarmup(CancelRestoreWarmupRequest) returns (CancelRestoreWarmupResponse);
+
+  rpc BuildDiffIndex(BuildDiffIndexRequest) returns (BuildDiffIndexResponse);
+  rpc ScanDiffIndex(ScanDiffIndexRequest) returns (ScanDiffIndexResponse);
+  rpc GetDiffIndex(GetDiffIndexRequest) returns (GetDiffIndexResponse);
+  rpc ListDiffIndexes(ListDiffIndexesRequest) returns (ListDiffIndexesResponse);
+  rpc DropDiffIndex(DropDiffIndexRequest) returns (DropDiffIndexResponse);
+  rpc SetECJournalGuardedMode(SetECJournalGuardedModeRequest) returns (SetECJournalGuardedModeResponse);
+  rpc GetECJournalGuardedMode(GetECJournalGuardedModeRequest) returns (GetECJournalGuardedModeResponse);
+
+  rpc CreateBackupTarget(CreateBackupTargetRequest) returns (CreateBackupTargetResponse);
+  rpc GetBackupTarget(GetBackupTargetRequest) returns (GetBackupTargetResponse);
+  rpc ListBackupTargets(ListBackupTargetsRequest) returns (ListBackupTargetsResponse);
+  rpc CreateBackupPolicy(CreateBackupPolicyRequest) returns (CreateBackupPolicyResponse);
+  rpc GetBackupPolicy(GetBackupPolicyRequest) returns (GetBackupPolicyResponse);
+  rpc ListBackupPolicies(ListBackupPoliciesRequest) returns (ListBackupPoliciesResponse);
+  rpc StartBackupRun(StartBackupRunRequest) returns (StartBackupRunResponse);
+  rpc GetBackupRun(GetBackupRunRequest) returns (GetBackupRunResponse);
+  rpc ListBackupRuns(ListBackupRunsRequest) returns (ListBackupRunsResponse);
+  rpc MarkBackupArtifactAvailable(MarkBackupArtifactAvailableRequest) returns (MarkBackupArtifactAvailableResponse);
+  rpc GetBackupArtifact(GetBackupArtifactRequest) returns (GetBackupArtifactResponse);
+  rpc ListBackupArtifacts(ListBackupArtifactsRequest) returns (ListBackupArtifactsResponse);
+  rpc CreateBackupRetentionHold(CreateBackupRetentionHoldRequest) returns (CreateBackupRetentionHoldResponse);
+  rpc PlanBackupPurge(PlanBackupPurgeRequest) returns (PlanBackupPurgeResponse);
+  rpc GetBackupStatus(GetBackupStatusRequest) returns (GetBackupStatusResponse);
+
+  rpc CreateDRReplicationLink(CreateDRReplicationLinkRequest) returns (CreateDRReplicationLinkResponse);
+  rpc GetDRReplicationLink(GetDRReplicationLinkRequest) returns (GetDRReplicationLinkResponse);
+  rpc ListDRReplicationLinks(ListDRReplicationLinksRequest) returns (ListDRReplicationLinksResponse);
+  rpc CreateDRRecoveryPoint(CreateDRRecoveryPointRequest) returns (CreateDRRecoveryPointResponse);
+  rpc GetDRRecoveryPoint(GetDRRecoveryPointRequest) returns (GetDRRecoveryPointResponse);
+  rpc ListDRRecoveryPoints(ListDRRecoveryPointsRequest) returns (ListDRRecoveryPointsResponse);
+  rpc CreateDRShippingManifest(CreateDRShippingManifestRequest) returns (CreateDRShippingManifestResponse);
+  rpc GetDRShippingManifest(GetDRShippingManifestRequest) returns (GetDRShippingManifestResponse);
+  rpc ListDRShippingManifests(ListDRShippingManifestsRequest) returns (ListDRShippingManifestsResponse);
+  rpc AdmitDRShippingWorker(AdmitDRShippingWorkerRequest) returns (AdmitDRShippingWorkerResponse);
+  rpc HeartbeatDRShippingWorker(HeartbeatDRShippingWorkerRequest) returns (HeartbeatDRShippingWorkerResponse);
+  rpc GetDRShippingWorker(GetDRShippingWorkerRequest) returns (GetDRShippingWorkerResponse);
+  rpc ListDRShippingWorkers(ListDRShippingWorkersRequest) returns (ListDRShippingWorkersResponse);
+  rpc ImportDRStandbyVolume(ImportDRStandbyVolumeRequest) returns (ImportDRStandbyVolumeResponse);
+  rpc GetDRStandbyVolume(GetDRStandbyVolumeRequest) returns (GetDRStandbyVolumeResponse);
+  rpc ListDRStandbyVolumes(ListDRStandbyVolumesRequest) returns (ListDRStandbyVolumesResponse);
+  rpc CheckDRStandbyVolumeWrite(CheckDRStandbyVolumeWriteRequest) returns (CheckDRStandbyVolumeWriteResponse);
+  rpc PromoteDRStandbyVolume(PromoteDRStandbyVolumeRequest) returns (PromoteDRStandbyVolumeResponse);
+  rpc DemoteDRStandbyVolume(DemoteDRStandbyVolumeRequest) returns (DemoteDRStandbyVolumeResponse);
+  rpc CheckDROldPrimaryWrite(CheckDROldPrimaryWriteRequest) returns (CheckDROldPrimaryWriteResponse);
+  rpc DefineDROldPrimaryRejoinPolicy(DefineDROldPrimaryRejoinPolicyRequest) returns (DefineDROldPrimaryRejoinPolicyResponse);
+  rpc RunDRFailoverDrill(RunDRFailoverDrillRequest) returns (RunDRFailoverDrillResponse);
+  rpc GetDRFailoverDrill(GetDRFailoverDrillRequest) returns (GetDRFailoverDrillResponse);
+  rpc ListDRFailoverDrills(ListDRFailoverDrillsRequest) returns (ListDRFailoverDrillsResponse);
+}
+
+message RequestMeta {
+  string request_id = 1;
+  string actor = 2;
+  string reason = 3;
+}
+
+message ClusterRef {
+  string cluster_id = 1;
+  string sbs_cluster_id = 2;
+}
+
+message ClusterInitRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+}
+
+message ClusterInitResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message OperationHandle {
+  bool accepted = 1;
+  string operation_id = 2;
+  string message = 3;
+}
+
+enum QuorumHealth {
+  QUORUM_HEALTH_UNSPECIFIED = 0;
+  QUORUM_HEALTH_HEALTHY = 1;
+  QUORUM_HEALTH_DEGRADED = 2;
+  QUORUM_HEALTH_UNAVAILABLE = 3;
+}
+
+enum NodeHealth {
+  NODE_HEALTH_UNSPECIFIED = 0;
+  NODE_HEALTH_HEALTHY = 1;
+  NODE_HEALTH_SUSPECT = 2;
+  NODE_HEALTH_DOWN = 3;
+}
+
+enum NodeLifecycle {
+  NODE_LIFECYCLE_UNSPECIFIED = 0;
+  NODE_LIFECYCLE_JOINING = 1;
+  NODE_LIFECYCLE_ACTIVE = 2;
+  NODE_LIFECYCLE_DRAINING = 3;
+  NODE_LIFECYCLE_REMOVED = 4;
+}
+
+enum TopologyZoneLifecycle {
+  TOPOLOGY_ZONE_LIFECYCLE_UNSPECIFIED = 0;
+  TOPOLOGY_ZONE_LIFECYCLE_ACTIVE = 1;
+  TOPOLOGY_ZONE_LIFECYCLE_DISABLED = 2;
+  TOPOLOGY_ZONE_LIFECYCLE_RETIRING = 3;
+}
+
+enum VolumeHealth {
+  VOLUME_HEALTH_UNSPECIFIED = 0;
+  VOLUME_HEALTH_HEALTHY = 1;
+  VOLUME_HEALTH_DEGRADED = 2;
+  VOLUME_HEALTH_REPAIRING = 3;
+  VOLUME_HEALTH_REBALANCING = 4;
+  VOLUME_HEALTH_BLOCKED = 5;
+}
+
+enum SnapshotState {
+  SNAPSHOT_STATE_UNSPECIFIED = 0;
+  SNAPSHOT_STATE_CREATING = 1;
+  SNAPSHOT_STATE_AVAILABLE = 2;
+  SNAPSHOT_STATE_DELETING = 3;
+  SNAPSHOT_STATE_DELETED = 4;
+  SNAPSHOT_STATE_FAILED = 5;
+}
+
+enum CloneState {
+  CLONE_STATE_UNSPECIFIED = 0;
+  CLONE_STATE_CREATING = 1;
+  CLONE_STATE_AVAILABLE = 2;
+  CLONE_STATE_DELETING = 3;
+  CLONE_STATE_DELETED = 4;
+  CLONE_STATE_FAILED = 5;
+  CLONE_STATE_MATERIALIZING = 6;
+  CLONE_STATE_MATERIALIZED = 7;
+}
+
+enum ECProfileLifecycle {
+  EC_PROFILE_LIFECYCLE_UNSPECIFIED = 0;
+  EC_PROFILE_LIFECYCLE_ACTIVE = 1;
+  EC_PROFILE_LIFECYCLE_DISABLED = 2;
+}
+
+enum VolumeRepackState {
+  VOLUME_REPACK_STATE_UNSPECIFIED = 0;
+  VOLUME_REPACK_STATE_PLANNED = 1;
+  VOLUME_REPACK_STATE_COPYING = 2;
+  VOLUME_REPACK_STATE_VERIFYING = 3;
+  VOLUME_REPACK_STATE_PUBLISH_PENDING = 4;
+  VOLUME_REPACK_STATE_COMMITTED = 5;
+  VOLUME_REPACK_STATE_CANCEL_REQUESTED = 6;
+  VOLUME_REPACK_STATE_ROLLING_BACK = 7;
+  VOLUME_REPACK_STATE_CANCELED = 8;
+  VOLUME_REPACK_STATE_FAILED = 9;
+}
+
+enum VolumeLayoutKind {
+  VOLUME_LAYOUT_KIND_UNSPECIFIED = 0;
+  VOLUME_LAYOUT_KIND_REPLICATED = 1;
+  VOLUME_LAYOUT_KIND_EC = 2;
+}
+
+enum ReplicaTargetReasonCode {
+  REPLICA_TARGET_REASON_CODE_UNSPECIFIED = 0;
+  REPLICA_TARGET_REASON_CODE_READY = 1;
+  REPLICA_TARGET_REASON_CODE_NODE_SUSPECT = 2;
+  REPLICA_TARGET_REASON_CODE_NODE_DOWN = 3;
+  REPLICA_TARGET_REASON_CODE_RECOVERY_COOLDOWN = 4;
+  REPLICA_TARGET_REASON_CODE_NODE_DRAINING = 5;
+  REPLICA_TARGET_REASON_CODE_ENDPOINT_MISSING = 6;
+  REPLICA_TARGET_REASON_CODE_BACKEND_UNAVAILABLE = 7;
+}
+
+message NodeSummary {
+  reserved 7;
+  reserved "rack";
+
+  string node_id = 1;
+  NodeLifecycle lifecycle = 2;
+  NodeHealth health = 3;
+  string grpc_endpoint = 4;
+  string admin_http_endpoint = 5;
+  string zone = 6;
+  map<string, string> labels = 8;
+  google.protobuf.Timestamp last_heartbeat_time = 9;
+  google.protobuf.Timestamp last_probe_time = 10;
+  string last_probe_error = 11;
+  uint32 consecutive_probe_failures = 12;
+  uint32 consecutive_probe_successes = 13;
+  string health_reason = 14;
+  string health_updated_by = 15;
+  google.protobuf.Timestamp recovery_eligible_time = 16;
+}
+
+message TopologyZoneSummary {
+  string zone_id = 1;
+  string display_name = 2;
+  TopologyZoneLifecycle lifecycle = 3;
+  map<string, string> labels = 4;
+  google.protobuf.Timestamp created_time = 5;
+  google.protobuf.Timestamp updated_time = 6;
+}
+
+message VolumeSummary {
+  string volume_id = 1;
+  uint64 size_bytes = 2;
+  uint32 block_size = 3;
+  VolumeHealth health = 4;
+  uint64 volume_revision = 5;
+  uint64 repair_backlog = 6;
+  uint64 repair_backlog_bytes = 7;
+  uint64 repair_backlog_chunks = 8;
+  uint64 rebalance_backlog = 9;
+  uint64 rebalance_backlog_bytes = 10;
+  uint64 rebalance_backlog_chunks = 11;
+  uint64 drain_backlog = 12;
+  uint64 drain_backlog_bytes = 13;
+  uint64 drain_backlog_chunks = 14;
+  uint64 retired_payload_backlog_bytes = 15;
+  uint64 retired_payload_backlog_chunks = 16;
+  uint64 retired_payload_failed_batches = 17;
+  uint64 retired_payload_oldest_failed_batch_age_seconds = 18;
+  uint64 transition_failed_batches = 19;
+  uint64 transition_oldest_failed_batch_age_seconds = 20;
+  uint64 transition_recent_batches = 21;
+  uint64 transition_small_batches = 22;
+  uint64 transition_requeued = 23;
+  uint64 transition_retry_pages = 24;
+  uint64 transition_retry_windows = 25;
+  uint64 transition_retry_window_bytes = 26;
+  uint64 transition_retry_window_chunks = 27;
+  bool maintenance_cooldown_active = 28;
+  uint64 maintenance_cooldown_remaining_seconds = 29;
+  uint32 chunk_size_bytes = 30;
+  uint32 extent_page_bytes = 31;
+  string topology_mode = 32;
+  string redundancy_backend = 33;
+  string ec_profile_id = 34;
+  string ec_codec_id = 35;
+  uint32 ec_data_shards = 36;
+  uint32 ec_parity_shards = 37;
+  uint32 ec_stripe_unit_bytes = 38;
+  string ec_failure_domain = 39;
+  bool weak_placement_allowed = 40;
+  VolumeProtectedState protected_state = 41;
+}
+
+message VolumeProtectedState {
+  string state = 1;
+  string reason_code = 2;
+  string sealed_object_id = 3;
+  string seal_operation_id = 4;
+  string policy_snapshot_id = 5;
+  string lifecycle_state = 6;
+  string source_volume_id = 7;
+}
+
+message ReplicaMemberSummary {
+  string node_id = 1;
+  string replica_id = 2;
+  string role = 3;
+  string failure_domain = 4;
+}
+
+message ReplicaSetSummary {
+  string replica_set_id = 1;
+  string volume_id = 2;
+  string placement_ref = 3;
+  uint64 epoch = 4;
+  repeated ReplicaMemberSummary replicas = 5;
+  string primary_replica_id = 6;
+  uint32 write_quorum = 7;
+  uint32 read_quorum = 8;
+  repeated string failure_domains = 9;
+}
+
+message ExtentPlacementSummary {
+  string volume_id = 1;
+  uint64 extent_id = 2;
+  uint64 logical_offset = 3;
+  uint64 length_bytes = 4;
+  uint64 chunk_id = 5;
+  string placement_ref = 6;
+  uint64 revision = 7;
+}
+
+message AllocationExtentSummary {
+  uint64 logical_chunk_start = 1;
+  uint32 chunk_count = 2;
+  string kind = 3;
+  uint64 physical_chunk_start = 4;
+  string backing_ref = 5;
+  uint64 generation = 6;
+  string checksum = 7;
+  PayloadEncryptionHeaderSummary encryption = 8;
+}
+
+message AllocationPageSummary {
+  string volume_id = 1;
+  uint64 page_no = 2;
+  uint32 page_bytes = 3;
+  uint32 chunk_size_bytes = 4;
+  uint64 revision = 5;
+  repeated AllocationExtentSummary extents = 6;
+}
+
+message ReplicaTargetEndpoint {
+  string address = 1;
+  uint32 port = 2;
+  bool use_tls = 3;
+  string server_name = 4;
+}
+
+message ReplicaTargetView {
+  string target_id = 1;
+  ReplicaTargetEndpoint endpoint = 2;
+  string admin_http_endpoint = 3;
+  bool usable = 4;
+  uint32 priority = 5;
+  ReplicaTargetReasonCode reason_code = 6;
+}
+
+message StoreWeightSummary {
+  string store_id = 1;
+  int32 weight = 2;
+}
+
+message StoreTuningSummary {
+  string store_id = 1;
+  int32 weight = 2;
+  // Deprecated. Leave empty; use weight=0 to stop new allocations.
+  string allocation_policy = 3;
+}
+
+message RepairSummary {
+  string volume_id = 1;
+  string placement_ref = 2;
+  string current_replica_set_id = 3;
+  string target_replica_set_id = 4;
+  string state = 5;
+}
+
+message RebalanceSummary {
+  string volume_id = 1;
+  string placement_ref = 2;
+  string current_replica_set_id = 3;
+  string target_replica_set_id = 4;
+  string state = 5;
+}
+
+message GetClusterStatusRequest {
+  ClusterRef cluster = 1;
+}
+
+message GetClusterStatusResponse {
+  ClusterRef cluster = 1;
+  string leader_node_id = 2;
+  QuorumHealth quorum_health = 3;
+  uint32 active_nodes = 4;
+  uint32 draining_nodes = 5;
+  uint64 degraded_extents = 6;
+  uint64 repair_backlog = 7;
+  uint64 rebalance_backlog = 8;
+  uint64 repair_backlog_bytes = 9;
+  uint64 repair_backlog_chunks = 10;
+  uint64 rebalance_backlog_bytes = 11;
+  uint64 rebalance_backlog_chunks = 12;
+  uint64 drain_backlog = 13;
+  uint64 drain_backlog_bytes = 14;
+  uint64 drain_backlog_chunks = 15;
+  uint64 retired_payload_backlog_bytes = 16;
+  uint64 retired_payload_backlog_chunks = 17;
+  uint64 retired_payload_failed_batches = 18;
+  uint64 retired_payload_oldest_failed_batch_age_seconds = 19;
+  uint64 transition_failed_batches = 20;
+  uint64 transition_oldest_failed_batch_age_seconds = 21;
+  uint64 transition_recent_batches = 22;
+  uint64 transition_small_batches = 23;
+  uint64 transition_requeued = 24;
+  uint64 transition_retry_pages = 25;
+  uint64 transition_retry_windows = 26;
+  uint64 transition_retry_window_bytes = 27;
+  uint64 transition_retry_window_chunks = 28;
+  uint64 maintenance_cooldown_volumes = 29;
+  uint64 maintenance_cooldown_max_remaining_seconds = 30;
+}
+
+message GetLeaderRequest {
+  ClusterRef cluster = 1;
+}
+
+message GetLeaderResponse {
+  ClusterRef cluster = 1;
+  string leader_node_id = 2;
+  bool local_is_leader = 3;
+}
+
+message ListNodesRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListNodesResponse {
+  ClusterRef cluster = 1;
+  repeated NodeSummary nodes = 2;
+}
+
+message GetNodeRequest {
+  ClusterRef cluster = 1;
+  string node_id = 2;
+}
+
+message GetNodeResponse {
+  ClusterRef cluster = 1;
+  NodeSummary node = 2;
+}
+
+message JoinNodeRequest {
+  reserved 7;
+  reserved "rack";
+
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string node_id = 3;
+  string grpc_endpoint = 4;
+  string admin_http_endpoint = 5;
+  string zone = 6;
+  map<string, string> labels = 8;
+  bool auto_create_zone = 9;
+}
+
+message JoinNodeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message UpdateNodeTopologyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string node_id = 3;
+  string zone = 4;
+  bool auto_create_zone = 5;
+}
+
+message UpdateNodeTopologyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  NodeSummary node = 3;
+}
+
+message CreateTopologyZoneRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string zone_id = 3;
+  string display_name = 4;
+  map<string, string> labels = 5;
+}
+
+message CreateTopologyZoneResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  TopologyZoneSummary zone = 3;
+}
+
+message ListTopologyZonesRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListTopologyZonesResponse {
+  ClusterRef cluster = 1;
+  repeated TopologyZoneSummary zones = 2;
+}
+
+message GetTopologyZoneRequest {
+  ClusterRef cluster = 1;
+  string zone_id = 2;
+}
+
+message GetTopologyZoneResponse {
+  ClusterRef cluster = 1;
+  TopologyZoneSummary zone = 2;
+}
+
+message UpdateTopologyZoneRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string zone_id = 3;
+  optional string display_name = 4;
+  optional TopologyZoneLifecycle lifecycle = 5;
+  map<string, string> labels = 6;
+}
+
+message UpdateTopologyZoneResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  TopologyZoneSummary zone = 3;
+}
+
+message DeleteTopologyZoneRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string zone_id = 3;
+}
+
+message DeleteTopologyZoneResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message DrainNodeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string node_id = 3;
+}
+
+message DrainNodeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message RemoveNodeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string node_id = 3;
+}
+
+message RemoveNodeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message ForceRemoveNodeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string node_id = 3;
+}
+
+message ForceRemoveNodeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message ListVolumesRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListVolumesResponse {
+  ClusterRef cluster = 1;
+  repeated VolumeSummary volumes = 2;
+}
+
+message GetVolumeRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+}
+
+message GetVolumeResponse {
+  ClusterRef cluster = 1;
+  VolumeSummary volume = 2;
+}
+
+message GetVolumePlacementViewRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+}
+
+message GetVolumePlacementViewResponse {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+  uint64 revision = 3;
+  google.protobuf.Timestamp generated_at = 4;
+  repeated ExtentPlacementSummary extent_mappings = 5;
+  repeated ReplicaSetSummary replica_sets = 6;
+}
+
+message GetVolumeAllocationPageViewRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+  uint64 page_no = 3;
+  uint32 page_bytes = 4;
+  uint32 chunk_size_bytes = 5;
+}
+
+message GetVolumeAllocationPageViewResponse {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+  uint64 revision = 3;
+  google.protobuf.Timestamp generated_at = 4;
+  AllocationPageSummary allocation_page = 5;
+}
+
+message GetReplicaTargetsViewRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+  uint64 min_revision = 3;
+}
+
+message GetReplicaTargetsViewResponse {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+  uint64 revision = 3;
+  google.protobuf.Timestamp generated_at = 4;
+  uint64 cache_ttl_seconds = 5;
+  repeated ReplicaTargetView targets = 6;
+}
+
+message ISCSIPortalSummary {
+  string portal_id = 1;
+  string address = 2;
+  string gateway_id = 3;
+  bool enabled = 4;
+}
+
+message ISCSITargetSummary {
+  string target_iqn = 1;
+  string portal_id = 2;
+  repeated string portal_ids = 3;
+  string export_id = 4;
+  bool enabled = 5;
+}
+
+message ISCSILUNSummary {
+  string target_iqn = 1;
+  uint64 lun_id = 2;
+  string lun_wwn = 3;
+  string export_id = 4;
+  string volume_id = 5;
+  string export_mode = 6;
+  uint64 logical_block_size_bytes = 7;
+  bool enabled = 8;
+}
+
+message ISCSIInitiatorACLSummary {
+  string initiator_iqn = 1;
+  string target_iqn = 2;
+  repeated uint64 allowed_lun_ids = 3;
+  string auth_mode = 4;
+  bool chap_secret_set = 5;
+  string chap_secret_ref = 6;
+  bool enabled = 7;
+}
+
+message ISCSISessionSummary {
+  string session_id = 1;
+  string target_iqn = 2;
+  string initiator_iqn = 3;
+  uint64 lun_id = 4;
+  string lun_wwn = 5;
+  string iscsi_gateway_id = 6;
+  string state = 7;
+  bool connected = 8;
+  int32 iscsi_erl = 9;
+  int32 connection_count = 10;
+  string header_digest = 11;
+  string data_digest = 12;
+  string writer_policy = 13;
+  string ha_failover_mode = 14;
+  string active_iscsi_gateway_id = 15;
+  uint64 export_epoch = 16;
+  bool read_write_allowed = 17;
+  string scsi_status = 18;
+  string sense_key = 19;
+  string last_error_class = 20;
+  string last_error = 21;
+  uint64 bytes_read = 22;
+  uint64 bytes_written = 23;
+  uint64 flush_count = 24;
+  uint64 unmap_bytes = 25;
+}
+
+message ISCSIFailoverRuntimeSummary {
+  string export_id = 1;
+  string active_iscsi_gateway_id = 2;
+  repeated string standby_iscsi_gateway_ids = 3;
+  string previous_active_iscsi_gateway_id = 4;
+  string export_lease_id = 5;
+  uint64 export_epoch = 6;
+  string state = 7;
+  string writer_policy = 8;
+  string ha_failover_mode = 9;
+  string failover_trigger = 10;
+  bool failover_completed = 11;
+  string stale_gateway_revoked_id = 12;
+  bool stale_gateway_rejected = 13;
+  bool standby_write_rejected = 14;
+  string last_write_gateway_id = 15;
+  uint64 last_write_observed_epoch = 16;
+  bool last_write_admitted = 17;
+  string last_write_rejection_reason = 18;
+  string last_write_scsi_status = 19;
+  string last_write_sense_key = 20;
+  string last_rejected_iscsi_gateway_id = 21;
+  string alua_mode = 22;
+  bool alua_implicit_supported = 23;
+  bool alua_explicit_supported = 24;
+  string active_alua_access_state = 25;
+  string standby_alua_access_state = 26;
+}
+
+message ISCSIObservabilityCounters {
+  uint32 session_count = 1;
+  uint32 connected_sessions = 2;
+  uint32 active_sessions = 3;
+  uint64 protocol_errors = 4;
+  uint64 backend_errors = 5;
+  uint64 auth_errors = 6;
+  uint64 fencing_errors = 7;
+  uint64 stale_rejects = 8;
+  uint64 standby_rejects = 9;
+  uint64 flush_count = 10;
+  uint64 unmap_bytes = 11;
+  uint64 bytes_read = 12;
+  uint64 bytes_written = 13;
+  string last_rejected_iscsi_gateway_id = 14;
+  string last_error_class = 15;
+  string last_error = 16;
+}
+
+message GetISCSIRegistryRequest {
+  ClusterRef cluster = 1;
+}
+
+message GetISCSIRegistryResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  repeated ISCSIPortalSummary portals = 4;
+  repeated ISCSITargetSummary targets = 5;
+  repeated ISCSILUNSummary luns = 6;
+  repeated ISCSIInitiatorACLSummary initiator_acls = 7;
+  repeated ISCSISessionSummary sessions = 8;
+  repeated ISCSIFailoverRuntimeSummary failovers = 9;
+  ISCSIObservabilityCounters observability_counters = 10;
+}
+
+message ListISCSIPortalsRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListISCSIPortalsResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  repeated ISCSIPortalSummary portals = 4;
+}
+
+message GetISCSIPortalRequest {
+  ClusterRef cluster = 1;
+  string portal_id = 2;
+}
+
+message GetISCSIPortalResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  ISCSIPortalSummary portal = 4;
+}
+
+message ListISCSITargetsRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListISCSITargetsResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  repeated ISCSITargetSummary targets = 4;
+}
+
+message GetISCSITargetRequest {
+  ClusterRef cluster = 1;
+  string target_iqn = 2;
+}
+
+message GetISCSITargetResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  ISCSITargetSummary target = 4;
+  repeated ISCSILUNSummary luns = 5;
+  repeated ISCSIInitiatorACLSummary initiator_acls = 6;
+  repeated ISCSISessionSummary sessions = 7;
+}
+
+message ListISCSILUNsRequest {
+  ClusterRef cluster = 1;
+  string target_iqn = 2;
+}
+
+message ListISCSILUNsResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  repeated ISCSILUNSummary luns = 4;
+}
+
+message GetISCSILUNRequest {
+  ClusterRef cluster = 1;
+  string target_iqn = 2;
+  uint64 lun_id = 3;
+}
+
+message GetISCSILUNResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  ISCSILUNSummary lun = 4;
+}
+
+message ListISCSIInitiatorACLsRequest {
+  ClusterRef cluster = 1;
+  string target_iqn = 2;
+}
+
+message ListISCSIInitiatorACLsResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  repeated ISCSIInitiatorACLSummary initiator_acls = 4;
+}
+
+message GetISCSIInitiatorACLRequest {
+  ClusterRef cluster = 1;
+  string initiator_iqn = 2;
+  string target_iqn = 3;
+}
+
+message GetISCSIInitiatorACLResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  ISCSIInitiatorACLSummary initiator_acl = 4;
+}
+
+message ListISCSISessionsRequest {
+  ClusterRef cluster = 1;
+  string target_iqn = 2;
+  string initiator_iqn = 3;
+  bool connected_only = 4;
+}
+
+message ListISCSISessionsResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  repeated ISCSISessionSummary sessions = 4;
+  ISCSIObservabilityCounters observability_counters = 5;
+}
+
+message GetISCSISessionRequest {
+  ClusterRef cluster = 1;
+  string session_id = 2;
+}
+
+message GetISCSISessionResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  ISCSISessionSummary session = 4;
+}
+
+message RecordISCSISessionRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  ISCSISessionSummary session = 5;
+}
+
+message RecordISCSISessionResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSISessionSummary session = 5;
+}
+
+message DisconnectISCSISessionRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string session_id = 5;
+  bool force = 6;
+}
+
+message DisconnectISCSISessionResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSISessionSummary session = 5;
+  bool disconnect_requested = 6;
+}
+
+message GetISCSIFailoverRequest {
+  ClusterRef cluster = 1;
+  string export_id = 2;
+}
+
+message GetISCSIFailoverResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  ISCSIFailoverRuntimeSummary failover = 4;
+}
+
+message PromoteISCSIFailoverRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string export_id = 5;
+  string gateway_id = 6;
+  string export_lease_id = 7;
+  string trigger = 8;
+}
+
+message PromoteISCSIFailoverResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSIFailoverRuntimeSummary failover = 5;
+}
+
+message DemoteISCSIFailoverRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string export_id = 5;
+  string gateway_id = 6;
+  string trigger = 7;
+}
+
+message DemoteISCSIFailoverResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSIFailoverRuntimeSummary failover = 5;
+}
+
+message StandbyISCSIFailoverRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string export_id = 5;
+  string gateway_id = 6;
+}
+
+message StandbyISCSIFailoverResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSIFailoverRuntimeSummary failover = 5;
+}
+
+message RevokeStaleISCSIFailoverRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string export_id = 5;
+  string gateway_id = 6;
+  string trigger = 7;
+}
+
+message RevokeStaleISCSIFailoverResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSIFailoverRuntimeSummary failover = 5;
+}
+
+message CreateISCSIPortalRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string portal_id = 5;
+  string address = 6;
+  string gateway_id = 7;
+  bool enabled = 8;
+}
+
+message CreateISCSIPortalResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSIPortalSummary portal = 5;
+}
+
+message DeleteISCSIPortalRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string portal_id = 5;
+  bool force = 6;
+}
+
+message DeleteISCSIPortalResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  string portal_id = 5;
+}
+
+message SetISCSIPortalEnabledRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string portal_id = 5;
+  bool enabled = 6;
+}
+
+message SetISCSIPortalEnabledResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSIPortalSummary portal = 5;
+}
+
+message CreateISCSITargetRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string target_iqn = 5;
+  repeated string portal_ids = 6;
+  string export_id = 7;
+  bool enabled = 8;
+}
+
+message CreateISCSITargetResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSITargetSummary target = 5;
+}
+
+message DeleteISCSITargetRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string target_iqn = 5;
+  bool force = 6;
+}
+
+message DeleteISCSITargetResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  string target_iqn = 5;
+}
+
+message SetISCSITargetEnabledRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string target_iqn = 5;
+  bool enabled = 6;
+}
+
+message SetISCSITargetEnabledResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSITargetSummary target = 5;
+}
+
+message ExportISCSILUNRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string target_iqn = 5;
+  uint64 lun_id = 6;
+  string export_id = 7;
+  string volume_id = 8;
+  string export_mode = 9;
+  uint64 logical_block_size_bytes = 10;
+  bool enabled = 11;
+}
+
+message ExportISCSILUNResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSILUNSummary lun = 5;
+}
+
+message UnexportISCSILUNRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string target_iqn = 5;
+  uint64 lun_id = 6;
+  bool force = 7;
+}
+
+message UnexportISCSILUNResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  string target_iqn = 5;
+  uint64 lun_id = 6;
+}
+
+message SetISCSILUNModeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string target_iqn = 5;
+  uint64 lun_id = 6;
+  string export_mode = 7;
+}
+
+message SetISCSILUNModeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSILUNSummary lun = 5;
+}
+
+message AllowISCSIInitiatorRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string initiator_iqn = 5;
+  string target_iqn = 6;
+  repeated uint64 allowed_lun_ids = 7;
+  string auth_mode = 8;
+  string chap_secret_ref = 9;
+  bool enabled = 10;
+}
+
+message AllowISCSIInitiatorResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSIInitiatorACLSummary initiator_acl = 5;
+}
+
+message DenyISCSIInitiatorRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string initiator_iqn = 5;
+  string target_iqn = 6;
+}
+
+message DenyISCSIInitiatorResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  string initiator_iqn = 5;
+  string target_iqn = 6;
+}
+
+message SetISCSIInitiatorAuthRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string idempotency_key = 3;
+  uint64 expected_registry_revision = 4;
+  string initiator_iqn = 5;
+  string target_iqn = 6;
+  string auth_mode = 7;
+  string chap_secret_ref = 8;
+}
+
+message SetISCSIInitiatorAuthResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  uint64 registry_revision = 3;
+  uint64 config_generation = 4;
+  ISCSIInitiatorACLSummary initiator_acl = 5;
+}
+
+message CreateVolumeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  uint64 size_bytes = 4;
+  uint32 block_size = 5;
+  uint32 replication_factor = 6;
+  string policy_name = 7;
+  uint64 extent_size_bytes = 8;
+  uint32 allocation_chunk_size_bytes = 9;
+  uint32 allocation_page_size_bytes = 10;
+  string topology_mode = 11;
+  string redundancy_backend = 12;
+  string ec_profile_id = 13;
+  bool weak_placement_allowed = 14;
+}
+
+message CreateVolumeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message CreateVolumeFromSnapshotRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string source_snapshot_id = 3;
+  string volume_id = 4;
+  uint64 size_bytes = 5;
+  string idempotency_key = 6;
+}
+
+message CreateVolumeFromSnapshotResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  string volume_id = 3;
+  string source_snapshot_id = 4;
+  string clone_id = 5;
+  uint64 size_bytes = 6;
+}
+
+message ExpandVolumeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  uint64 target_size_bytes = 4;
+  string idempotency_key = 5;
+}
+
+message ExpandVolumeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  string volume_id = 3;
+  uint64 old_size_bytes = 4;
+  uint64 size_bytes = 5;
+  uint64 volume_revision = 6;
+}
+
+message DeleteVolumeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+}
+
+message DeleteVolumeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message PurgeVolumeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  bool confirmed_deletion = 4;
+}
+
+message PurgeVolumeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message VolumeRepackSummary {
+  string repack_operation_id = 1;
+  string operation_id = 2;
+  string source_volume_id = 3;
+  string target_volume_id = 4;
+  VolumeRepackState state = 5;
+  VolumeLayoutKind source_layout_kind = 6;
+  VolumeLayoutKind target_layout_kind = 7;
+  string source_ec_profile_id = 8;
+  string target_ec_profile_id = 9;
+  string source_read_view_id = 10;
+  uint64 operation_generation = 11;
+  uint64 protected_root_count = 12;
+  uint64 planned_range_count = 13;
+  uint64 copied_range_count = 14;
+  uint64 copied_object_count = 15;
+  uint64 verified_object_count = 16;
+  uint64 skipped_zero_range_count = 17;
+  uint64 progress_bytes = 18;
+  uint64 total_bytes = 19;
+  bool diff_index_used = 20;
+  bool metadata_fallback_used = 21;
+  bool rollback_available = 22;
+  bool cancel_requested = 23;
+  uint64 publication_generation = 24;
+  uint64 metadata_commit_revision = 25;
+  bool userspace_readback_matched = 26;
+  bool kernel_readback_matched = 27;
+  string validation_boundary = 28;
+  string failure_reason = 29;
+  google.protobuf.Timestamp created_time = 30;
+  google.protobuf.Timestamp updated_time = 31;
+  string mode = 32;
+  string mutation_gate_mode = 33;
+  string blocked_unsupported_protected_root_type = 34;
+  bool support_claimed = 35;
+  bool public_api_registered = 36;
+  bool public_cli_registered = 37;
+  uint64 diff_index_revision = 38;
+  bool diff_index_complete = 39;
+  string fallback_reason = 40;
+}
+
+message PlanVolumeRepackRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string repack_operation_id = 3;
+  string source_volume_id = 4;
+  string target_volume_id = 5;
+  VolumeLayoutKind target_layout_kind = 6;
+  string target_ec_profile_id = 7;
+  string mode = 8;
+  bool use_diff_index = 9;
+  bool dry_run = 10;
+  string source_read_view_id = 11;
+}
+
+message PlanVolumeRepackResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  VolumeRepackSummary repack = 3;
+}
+
+message StartVolumeRepackRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string repack_operation_id = 3;
+  uint64 require_plan_generation = 4;
+  bool allow_sbs_service_mutation_gate = 5;
+}
+
+message StartVolumeRepackResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  VolumeRepackSummary repack = 3;
+}
+
+message GetVolumeRepackRequest {
+  ClusterRef cluster = 1;
+  string repack_operation_id = 2;
+}
+
+message GetVolumeRepackResponse {
+  ClusterRef cluster = 1;
+  VolumeRepackSummary repack = 2;
+}
+
+message ListVolumeRepacksRequest {
+  ClusterRef cluster = 1;
+  string source_volume_id = 2;
+  VolumeRepackState state = 3;
+}
+
+message ListVolumeRepacksResponse {
+  ClusterRef cluster = 1;
+  repeated VolumeRepackSummary repacks = 2;
+}
+
+message CancelVolumeRepackRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string repack_operation_id = 3;
+  uint64 require_generation = 4;
+}
+
+message CancelVolumeRepackResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  VolumeRepackSummary repack = 3;
+}
+
+message DedupeClassSpec {
+  string dedupe_class_id = 1;
+  string capability = 2;
+  string durability_profile = 3;
+  string lifecycle_mode = 4;
+  string tenant_id = 5;
+  string tenant_scope = 6;
+  string encryption_scope = 7;
+  string edition_scope = 8;
+  bool storageclass_flag = 9;
+  bool phase_v_hidden_mode = 10;
+}
+
+message DedupeSummary {
+  string result = 1;
+  string entrypoint = 2;
+  string phase = 3;
+  string slice = 4;
+  string implementation_slice = 5;
+  string validation_boundary = 6;
+  string evidence_class = 7;
+  bool remote_lab_used = 8;
+  bool gateway_restarted = 9;
+  bool sbs_service_restarted = 10;
+  bool sbs_data_restarted = 11;
+  bool kernel_module_reloaded = 12;
+  bool protected_root_fixture_passed = 13;
+  string dedupe_class_id = 14;
+  string lifecycle_mode = 15;
+  string durability_profile = 16;
+  string tenant_id = 17;
+  string encryption_scope = 18;
+  bool allow_background_dedupe = 19;
+  bool background_dedupe_ack_required = 20;
+  string rejected_reason = 21;
+  bool unsupported_combination_rejected = 22;
+  uint64 reference_count = 23;
+  uint64 protected_root_count = 24;
+  uint64 retained_bytes = 25;
+  uint64 reclaimed_bytes = 26;
+  bool reclaim_candidate_created = 27;
+  bool delete_executed = 28;
+  bool interrupted_recovery_completed = 29;
+  bool gc_reachability_preserved = 30;
+  bool support_claimed = 31;
+  bool public_api_registered = 32;
+  bool public_cli_registered = 33;
+  bool community_command_registered = 34;
+  uint32 ok_count = 35;
+  uint32 error_count = 36;
+  string first_error = 37;
+  string last_error = 38;
+}
+
+message PlanDedupeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  DedupeClassSpec dedupe_class = 3;
+}
+
+message PlanDedupeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DedupeSummary dedupe = 3;
+}
+
+message StartDedupeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  DedupeClassSpec dedupe_class = 3;
+  bool allow_background_dedupe = 4;
+}
+
+message StartDedupeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DedupeSummary dedupe = 3;
+}
+
+message SecurityProviderSummary {
+  string provider_id = 1;
+  string provider_type = 2;
+  string endpoint_ref = 3;
+  string credential_ref = 4;
+  string status = 5;
+  uint64 generation = 6;
+  string last_error = 7;
+  string created_by = 8;
+  string created_reason = 9;
+  google.protobuf.Timestamp created_time = 10;
+  google.protobuf.Timestamp updated_time = 11;
+  google.protobuf.Timestamp last_checked_time = 12;
+}
+
+message SecurityPolicySummary {
+  string security_policy_id = 1;
+  uint64 generation = 2;
+  bool encryption_required = 3;
+  string encryption_scope = 4;
+  string cipher_suite = 5;
+  string key_provider_id = 6;
+  string key_rotation_policy = 7;
+  string disabled_key_behavior = 8;
+  bool audit_required = 9;
+  bool enabled = 10;
+  bool dry_run_only = 11;
+  string created_by = 12;
+  string created_reason = 13;
+  google.protobuf.Timestamp created_time = 14;
+  google.protobuf.Timestamp updated_time = 15;
+}
+
+message CreateSecurityProviderRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string provider_id = 3;
+  string provider_type = 4;
+  string endpoint_ref = 5;
+  string credential_ref = 6;
+}
+
+message CreateSecurityProviderResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityProviderSummary provider = 3;
+}
+
+message GetSecurityProviderRequest {
+  ClusterRef cluster = 1;
+  string provider_id = 2;
+}
+
+message GetSecurityProviderResponse {
+  ClusterRef cluster = 1;
+  SecurityProviderSummary provider = 2;
+}
+
+message ListSecurityProvidersRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListSecurityProvidersResponse {
+  ClusterRef cluster = 1;
+  repeated SecurityProviderSummary providers = 2;
+}
+
+message CheckSecurityProviderRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string provider_id = 3;
+  string observed_status = 4;
+  string last_error = 5;
+}
+
+message CheckSecurityProviderResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityProviderSummary provider = 3;
+  bool availability_changed = 4;
+  bool fail_closed_enforced = 5;
+}
+
+message CreateSecurityPolicyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string security_policy_id = 3;
+  bool encryption_required = 4;
+  string encryption_scope = 5;
+  string cipher_suite = 6;
+  string key_provider_id = 7;
+  string key_rotation_policy = 8;
+  string disabled_key_behavior = 9;
+  bool audit_required = 10;
+  bool enabled = 11;
+  bool dry_run_only = 12;
+}
+
+message CreateSecurityPolicyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityPolicySummary policy = 3;
+}
+
+message GetSecurityPolicyRequest {
+  ClusterRef cluster = 1;
+  string security_policy_id = 2;
+}
+
+message GetSecurityPolicyResponse {
+  ClusterRef cluster = 1;
+  SecurityPolicySummary policy = 2;
+}
+
+message ListSecurityPoliciesRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListSecurityPoliciesResponse {
+  ClusterRef cluster = 1;
+  repeated SecurityPolicySummary policies = 2;
+}
+
+message ECProfileSummary {
+  string profile_id = 1;
+  string codec_id = 2;
+  uint32 data_shards = 3;
+  uint32 parity_shards = 4;
+  uint32 stripe_unit_bytes = 5;
+  string failure_domain = 6;
+  uint32 max_unavailable_failure_domains = 7;
+  uint32 max_shards_per_failure_domain = 8;
+  ECProfileLifecycle lifecycle = 9;
+  bool lab_override = 10;
+  google.protobuf.Timestamp created_time = 11;
+  google.protobuf.Timestamp updated_time = 12;
+}
+
+message CreateECProfileRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string profile_id = 3;
+  string codec_id = 4;
+  uint32 data_shards = 5;
+  uint32 parity_shards = 6;
+  uint32 stripe_unit_bytes = 7;
+  string failure_domain = 8;
+  bool lab_override = 9;
+}
+
+message CreateECProfileResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  ECProfileSummary profile = 3;
+}
+
+message ListECProfilesRequest {
+  ClusterRef cluster = 1;
+  bool include_disabled = 2;
+}
+
+message ListECProfilesResponse {
+  ClusterRef cluster = 1;
+  repeated ECProfileSummary profiles = 2;
+}
+
+message GetECProfileRequest {
+  ClusterRef cluster = 1;
+  string profile_id = 2;
+}
+
+message GetECProfileResponse {
+  ClusterRef cluster = 1;
+  ECProfileSummary profile = 2;
+}
+
+message DisableECProfileRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string profile_id = 3;
+}
+
+message DisableECProfileResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  ECProfileSummary profile = 3;
+}
+
+message UpdateNodeStoreWeightsRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string node_id = 3;
+  repeated StoreWeightSummary stores = 4;
+}
+
+message UpdateNodeStoreWeightsResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message UpdateNodeStoreTuningRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string node_id = 3;
+  repeated StoreTuningSummary stores = 4;
+}
+
+message UpdateNodeStoreTuningResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message GetMaintenanceStatusRequest {
+  ClusterRef cluster = 1;
+}
+
+message MaintenanceThrottleSummary {
+  string authority = 1;
+  uint64 generation = 2;
+  uint32 max_concurrent_repairs = 3;
+  uint32 max_concurrent_rebalances = 4;
+  uint32 max_concurrent_drains = 5;
+  uint32 max_concurrent_payload_gcs = 6;
+  bool pause_repairs = 7;
+  bool pause_rebalances = 8;
+  bool pause_drains = 9;
+  bool pause_payload_gcs = 10;
+}
+
+message BackgroundWorkBudgetSummary {
+  string authority = 1;
+  uint64 generation = 2;
+  string budget_id = 3;
+  string class = 4;
+  uint32 max_concurrent = 5;
+  uint64 bandwidth_cap_bytes_per_sec = 6;
+  uint64 iops_cap = 7;
+  uint32 starvation_floor = 8;
+  int32 priority = 9;
+}
+
+message GetMaintenanceStatusResponse {
+  ClusterRef cluster = 1;
+  MaintenanceThrottleSummary throttle = 2;
+  repeated BackgroundWorkBudgetSummary budgets = 3;
+}
+
+message SetBackgroundBudgetRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string class = 3;
+  uint32 max_concurrent = 4;
+  uint64 bandwidth_cap_bytes_per_sec = 5;
+  uint64 iops_cap = 6;
+  uint32 starvation_floor = 7;
+  int32 priority = 8;
+}
+
+message SetBackgroundBudgetResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BackgroundWorkBudgetSummary budget = 3;
+}
+
+message SetMaintenanceThrottleRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  uint32 max_concurrent_repairs = 3;
+  uint32 max_concurrent_rebalances = 4;
+  uint32 max_concurrent_drains = 5;
+}
+
+message SetMaintenanceThrottleResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message PauseMaintenanceRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  bool pause_repairs = 3;
+  bool pause_rebalances = 4;
+  bool pause_drains = 5;
+}
+
+message PauseMaintenanceResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message ResumeMaintenanceRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  bool resume_repairs = 3;
+  bool resume_rebalances = 4;
+  bool resume_drains = 5;
+}
+
+message ResumeMaintenanceResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message ListRepairsRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListRepairsResponse {
+  ClusterRef cluster = 1;
+  repeated RepairSummary repairs = 2;
+}
+
+message ListRebalancesRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListRebalancesResponse {
+  ClusterRef cluster = 1;
+  repeated RebalanceSummary rebalances = 2;
+}
+
+message RestoreWarmupSummary {
+  string volume_id = 1;
+  string source_artifact_id = 2;
+  string state = 3;
+  uint64 warmup_generation = 4;
+  uint64 warmup_bytes_total = 5;
+  uint64 warmup_bytes_completed = 6;
+  uint64 first_read_latency_ms = 7;
+  string skip_reason = 8;
+  string last_error = 9;
+  bool phase_n_artifact_availability_unchanged = 10;
+  bool restore_available_after_failure = 11;
+  bool source_snapshot_mutated = 12;
+  bool backup_artifact_mutated = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
+  uint64 worker_run_count = 16;
+  uint64 validated_bytes = 17;
+  bool pre_read_completed = 18;
+}
+
+message StartRestoreWarmupRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  string source_artifact_id = 4;
+  uint64 warmup_bytes_total = 5;
+  uint64 warmup_bytes_completed = 6;
+  uint64 first_read_latency_ms = 7;
+  string state = 8;
+  string last_error = 9;
+}
+
+message StartRestoreWarmupResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  RestoreWarmupSummary warmup = 3;
+}
+
+message RunRestoreWarmupRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  uint64 bytes_to_warm = 4;
+  uint64 first_read_latency_ms = 5;
+  bool fail_validation = 6;
+  string last_error = 7;
+}
+
+message RunRestoreWarmupResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  RestoreWarmupSummary warmup = 3;
+}
+
+message GetRestoreWarmupRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+}
+
+message GetRestoreWarmupResponse {
+  ClusterRef cluster = 1;
+  RestoreWarmupSummary warmup = 2;
+}
+
+message ListRestoreWarmupsRequest {
+  ClusterRef cluster = 1;
+  string source_artifact_id = 2;
+}
+
+message ListRestoreWarmupsResponse {
+  ClusterRef cluster = 1;
+  repeated RestoreWarmupSummary warmups = 2;
+}
+
+message CancelRestoreWarmupRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  string reason = 4;
+}
+
+message CancelRestoreWarmupResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  RestoreWarmupSummary warmup = 3;
+}
+
+message DiffIndexRangeSummary {
+  uint64 logical_offset = 1;
+  uint64 length = 2;
+  string reason = 3;
+  string base_state = 4;
+  string head_state = 5;
+}
+
+message DiffIndexSummary {
+  string index_id = 1;
+  string volume_id = 2;
+  string base_snapshot_id = 3;
+  string head_snapshot_id = 4;
+  string base_snapshot_root_id = 5;
+  string head_snapshot_root_id = 6;
+  string allocation_page_id = 7;
+  uint64 index_generation = 8;
+  string coverage = 9;
+  repeated DiffIndexRangeSummary changed_ranges = 10;
+  repeated DiffIndexRangeSummary zero_transitions = 11;
+  uint64 ambiguity_count = 12;
+  string source_metadata_commit_id = 13;
+  bool fallback_required = 14;
+  bool phase_n_baseline_validated = 15;
+  bool gc_reachability_roots_preserved = 16;
+  string last_error = 17;
+  google.protobuf.Timestamp created_at = 18;
+  google.protobuf.Timestamp updated_at = 19;
+  uint64 scanner_run_count = 20;
+  uint64 phase_n_changed_range_count = 21;
+  bool scanner_validated = 22;
+  string scanner_mode = 23;
+  bool product_fast_path_enabled = 24;
+}
+
+message BuildDiffIndexRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string index_id = 3;
+  string volume_id = 4;
+  string base_snapshot_id = 5;
+  string head_snapshot_id = 6;
+  string base_snapshot_root_id = 7;
+  string head_snapshot_root_id = 8;
+  string allocation_page_id = 9;
+  uint64 index_generation = 10;
+  string coverage = 11;
+  repeated DiffIndexRangeSummary changed_ranges = 12;
+  repeated DiffIndexRangeSummary zero_transitions = 13;
+  uint64 ambiguity_count = 14;
+  string source_metadata_commit_id = 15;
+  repeated DiffIndexRangeSummary phase_n_changed_ranges = 16;
+  bool phase_n_baseline_validated = 17;
+  bool gc_reachability_roots_preserved = 18;
+}
+
+message BuildDiffIndexResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DiffIndexSummary index = 3;
+}
+
+message ScanDiffIndexRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string index_id = 3;
+  string volume_id = 4;
+  string base_snapshot_id = 5;
+  string head_snapshot_id = 6;
+  string base_snapshot_root_id = 7;
+  string head_snapshot_root_id = 8;
+  string allocation_page_id = 9;
+  uint64 index_generation = 10;
+  string coverage = 11;
+  repeated DiffIndexRangeSummary phase_n_changed_ranges = 12;
+  uint64 ambiguity_count = 13;
+  string source_metadata_commit_id = 14;
+  bool gc_reachability_roots_preserved = 15;
+  string scanner_mode = 16;
+}
+
+message ScanDiffIndexResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DiffIndexSummary index = 3;
+}
+
+message GetDiffIndexRequest {
+  ClusterRef cluster = 1;
+  string index_id = 2;
+}
+
+message GetDiffIndexResponse {
+  ClusterRef cluster = 1;
+  DiffIndexSummary index = 2;
+}
+
+message ListDiffIndexesRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+}
+
+message ListDiffIndexesResponse {
+  ClusterRef cluster = 1;
+  repeated DiffIndexSummary indexes = 2;
+}
+
+message DropDiffIndexRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string index_id = 3;
+  string reason = 4;
+}
+
+message DropDiffIndexResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DiffIndexSummary index = 3;
+}
+
+message ECJournalGuardedModeSummary {
+  string volume_id = 1;
+  string guarded_mode = 2;
+  bool requested_enabled = 3;
+  bool product_active = 4;
+  bool product_tier_exposed = 5;
+  uint64 generation = 6;
+  string acknowledgement_boundary = 7;
+  string validation_gate = 8;
+  string last_error = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message SetECJournalGuardedModeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  string guarded_mode = 4;
+  bool requested_enabled = 5;
+  string validation_gate = 6;
+}
+
+message SetECJournalGuardedModeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  ECJournalGuardedModeSummary guarded = 3;
+}
+
+message GetECJournalGuardedModeRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+}
+
+message GetECJournalGuardedModeResponse {
+  ClusterRef cluster = 1;
+  ECJournalGuardedModeSummary guarded = 2;
+}
+
+message BackupRetentionRule {
+  uint32 count = 1;
+  uint32 age_days = 2;
+}
+
+message BackupTargetSummary {
+  string target_id = 1;
+  string target_type = 2;
+  string root = 3;
+  string credential_identity = 4;
+  string capacity_status = 5;
+  string last_error = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message BackupPolicySummary {
+  string policy_id = 1;
+  uint64 policy_generation = 2;
+  string source_volume_id = 3;
+  string source_volume_selector = 4;
+  string target_id = 5;
+  string schedule_spec = 6;
+  BackupRetentionRule retention = 7;
+  bool enabled = 8;
+  bool dry_run_only = 9;
+  google.protobuf.Timestamp next_run_at = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+message BackupRunSummary {
+  string run_id = 1;
+  string policy_id = 2;
+  uint64 policy_generation = 3;
+  string target_id = 4;
+  string source_volume_id = 5;
+  string source_snapshot_id = 6;
+  string snapshot_root_id = 7;
+  string base_snapshot_id = 8;
+  string state = 9;
+  string artifact_id = 10;
+  string first_error = 11;
+  string last_error = 12;
+  google.protobuf.Timestamp started_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message BackupArtifactSummary {
+  string artifact_id = 1;
+  string run_id = 2;
+  string target_id = 3;
+  string source_volume_id = 4;
+  string source_snapshot_id = 5;
+  string snapshot_root_id = 6;
+  string base_snapshot_id = 7;
+  uint64 restore_size_bytes = 8;
+  string backend_type = 9;
+  string manifest_digest = 10;
+  uint32 chunk_count = 11;
+  string checksum_status = 12;
+  string artifact_state = 13;
+  bool artifact_available = 14;
+  string restore_drill_id = 15;
+  string restore_drill_result = 16;
+  bool artifact_integrity_rechecked = 17;
+  bool userspace_readback_matched = 18;
+  bool kernel_readback_matched = 19;
+  google.protobuf.Timestamp created_at = 20;
+  google.protobuf.Timestamp updated_at = 21;
+  BackupArtifactEncryptionSummary encryption = 22;
+}
+
+message BackupArtifactEncryptionSummary {
+  uint32 encrypted_manifest_version = 1;
+  string encrypted_manifest_object_key = 2;
+  string encrypted_manifest_checksum = 3;
+  string security_policy_id = 4;
+  uint64 policy_generation = 5;
+  string key_provider_id = 6;
+  string key_provider_type = 7;
+  string data_key_id = 8;
+  string key_id = 9;
+  uint64 key_version = 10;
+  uint64 key_generation = 11;
+  string cipher_suite = 12;
+  string encryption_scope = 13;
+  string artifact_key_source = 14;
+  string wrapped_data_key_ref = 15;
+  uint32 object_header_count = 16;
+  bool encrypted_manifest_body_checked = 17;
+  bool artifact_ciphertext_checked = 18;
+  bool corrupt_ciphertext_rejected = 19;
+  bool corrupt_header_rejected = 20;
+  bool encrypted_object_execution_evidence = 21;
+}
+
+message BackupRetentionHoldSummary {
+  string hold_id = 1;
+  string target_kind = 2;
+  string target_id = 3;
+  string reason = 4;
+  string actor = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+message BackupPurgePlanSummary {
+  string artifact_id = 1;
+  bool dry_run = 2;
+  uint32 blocked_operation_count = 3;
+  repeated string blocked_reasons = 4;
+  bool explicit_purge_without_proof_rejected = 5;
+  bool explicit_purge_after_protection_removal_allowed = 6;
+  uint32 pending_delete_count = 7;
+  uint32 would_purge_count = 8;
+  uint32 deleted_artifact_count = 9;
+  uint32 deleted_object_count = 10;
+}
+
+message BackupStatusSummary {
+  string evidence_mode = 1;
+  string policy_id = 2;
+  uint64 policy_generation = 3;
+  string target_id = 4;
+  string artifact_id = 5;
+  string source_volume_id = 6;
+  string source_snapshot_id = 7;
+  uint64 recovery_point_age_seconds = 8;
+  google.protobuf.Timestamp last_successful_backup_at = 9;
+  google.protobuf.Timestamp last_failed_backup_at = 10;
+  string last_failed_backup_reason = 11;
+  uint64 protected_bytes = 12;
+  uint32 retained_artifact_count = 13;
+  string target_capacity_status = 14;
+  string integrity_status = 15;
+  string restore_drill_result = 16;
+  string community_leakage_status = 17;
+  string delete_protection_status = 18;
+  bool artifact_available = 19;
+  bool remote_lab_used = 20;
+  bool live_lab_evidence_revalidated = 21;
+  uint32 ok_count = 22;
+  uint32 error_count = 23;
+  string first_error = 24;
+  string last_error = 25;
+}
+
+message CreateBackupTargetRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string target_id = 3;
+  string target_type = 4;
+  string root = 5;
+  string credential_identity = 6;
+  string capacity_status = 7;
+}
+
+message CreateBackupTargetResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BackupTargetSummary target = 3;
+}
+
+message GetBackupTargetRequest {
+  ClusterRef cluster = 1;
+  string target_id = 2;
+}
+
+message GetBackupTargetResponse {
+  ClusterRef cluster = 1;
+  BackupTargetSummary target = 2;
+}
+
+message ListBackupTargetsRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListBackupTargetsResponse {
+  ClusterRef cluster = 1;
+  repeated BackupTargetSummary targets = 2;
+}
+
+message CreateBackupPolicyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string policy_id = 3;
+  string source_volume_id = 4;
+  string source_volume_selector = 5;
+  string target_id = 6;
+  string schedule_spec = 7;
+  BackupRetentionRule retention = 8;
+  bool enabled = 9;
+  bool dry_run_only = 10;
+}
+
+message CreateBackupPolicyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BackupPolicySummary policy = 3;
+}
+
+message GetBackupPolicyRequest {
+  ClusterRef cluster = 1;
+  string policy_id = 2;
+}
+
+message GetBackupPolicyResponse {
+  ClusterRef cluster = 1;
+  BackupPolicySummary policy = 2;
+}
+
+message ListBackupPoliciesRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListBackupPoliciesResponse {
+  ClusterRef cluster = 1;
+  repeated BackupPolicySummary policies = 2;
+}
+
+message StartBackupRunRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string policy_id = 3;
+  string run_id = 4;
+  string source_snapshot_id = 5;
+  string snapshot_root_id = 6;
+  string base_snapshot_id = 7;
+}
+
+message StartBackupRunResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BackupRunSummary run = 3;
+}
+
+message GetBackupRunRequest {
+  ClusterRef cluster = 1;
+  string run_id = 2;
+}
+
+message GetBackupRunResponse {
+  ClusterRef cluster = 1;
+  BackupRunSummary run = 2;
+}
+
+message ListBackupRunsRequest {
+  ClusterRef cluster = 1;
+  string policy_id = 2;
+}
+
+message ListBackupRunsResponse {
+  ClusterRef cluster = 1;
+  repeated BackupRunSummary runs = 2;
+}
+
+message MarkBackupArtifactAvailableRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string artifact_id = 3;
+  string run_id = 4;
+  string target_id = 5;
+  string source_volume_id = 6;
+  string source_snapshot_id = 7;
+  string snapshot_root_id = 8;
+  string base_snapshot_id = 9;
+  uint64 restore_size_bytes = 10;
+  string backend_type = 11;
+  string manifest_digest = 12;
+  uint32 chunk_count = 13;
+  string restore_drill_id = 14;
+  string restore_drill_result = 15;
+  bool artifact_integrity_rechecked = 16;
+  bool userspace_readback_matched = 17;
+  bool kernel_readback_matched = 18;
+  BackupArtifactEncryptionSummary encryption = 19;
+}
+
+message MarkBackupArtifactAvailableResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BackupArtifactSummary artifact = 3;
+}
+
+message GetBackupArtifactRequest {
+  ClusterRef cluster = 1;
+  string artifact_id = 2;
+}
+
+message GetBackupArtifactResponse {
+  ClusterRef cluster = 1;
+  BackupArtifactSummary artifact = 2;
+}
+
+message ListBackupArtifactsRequest {
+  ClusterRef cluster = 1;
+  string policy_id = 2;
+  string target_id = 3;
+}
+
+message ListBackupArtifactsResponse {
+  ClusterRef cluster = 1;
+  repeated BackupArtifactSummary artifacts = 2;
+}
+
+message CreateBackupRetentionHoldRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string hold_id = 3;
+  string target_kind = 4;
+  string target_id = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+message CreateBackupRetentionHoldResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BackupRetentionHoldSummary hold = 3;
+}
+
+message PlanBackupPurgeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string artifact_id = 3;
+  bool explicit_purge = 4;
+  bool unprotected_reachability_proof = 5;
+  bool dry_run = 6;
+}
+
+message PlanBackupPurgeResponse {
+  ClusterRef cluster = 1;
+  BackupPurgePlanSummary plan = 2;
+}
+
+message GetBackupStatusRequest {
+  ClusterRef cluster = 1;
+  string policy_id = 2;
+}
+
+message GetBackupStatusResponse {
+  ClusterRef cluster = 1;
+  BackupStatusSummary status = 2;
+}
+
+message SnapshotSummary {
+  string snapshot_id = 1;
+  string source_volume_id = 2;
+  string snapshot_root_id = 3;
+  SnapshotState state = 4;
+  google.protobuf.Timestamp created_at = 5;
+  uint64 cut_volume_revision = 6;
+  uint32 allocation_chunk_size_bytes = 7;
+  uint32 allocation_page_size_bytes = 8;
+  uint64 source_size_bytes = 9;
+  uint64 clone_reference_count = 10;
+  string error_message = 11;
+}
+
+message CreateSnapshotRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string source_volume_id = 3;
+  string idempotency_key = 4;
+}
+
+message CreateSnapshotResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  string snapshot_id = 3;
+  string snapshot_root_id = 4;
+}
+
+message GetSnapshotRequest {
+  ClusterRef cluster = 1;
+  string snapshot_id = 2;
+}
+
+message GetSnapshotResponse {
+  ClusterRef cluster = 1;
+  SnapshotSummary snapshot = 2;
+}
+
+message ListSnapshotsRequest {
+  ClusterRef cluster = 1;
+  string source_volume_id = 2;
+  bool include_deleted = 3;
+}
+
+message ListSnapshotsResponse {
+  ClusterRef cluster = 1;
+  repeated SnapshotSummary snapshots = 2;
+}
+
+message DeleteSnapshotRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string snapshot_id = 3;
+}
+
+message DeleteSnapshotResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message CloneSummary {
+  string clone_id = 1;
+  string source_snapshot_id = 2;
+  string source_volume_id = 3;
+  string clone_base_root_id = 4;
+  CloneState state = 5;
+  google.protobuf.Timestamp created_at = 6;
+  string materialized_volume_id = 7;
+  uint32 allocation_chunk_size_bytes = 8;
+  uint32 allocation_page_size_bytes = 9;
+  uint64 size_bytes = 10;
+  uint64 source_size_bytes = 11;
+  uint64 delta_page_count = 12;
+  uint64 delta_object_count = 13;
+  string error_message = 14;
+}
+
+message CreateCloneRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string source_snapshot_id = 3;
+  string clone_id = 4;
+  string idempotency_key = 5;
+  uint64 size_bytes = 6;
+}
+
+message CreateCloneResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  string clone_id = 3;
+  string clone_base_root_id = 4;
+}
+
+message GetCloneRequest {
+  ClusterRef cluster = 1;
+  string clone_id = 2;
+}
+
+message GetCloneResponse {
+  ClusterRef cluster = 1;
+  CloneSummary clone = 2;
+}
+
+message ListClonesRequest {
+  ClusterRef cluster = 1;
+  string source_snapshot_id = 2;
+  string source_volume_id = 3;
+  bool include_deleted = 4;
+}
+
+message ListClonesResponse {
+  ClusterRef cluster = 1;
+  repeated CloneSummary clones = 2;
+}
+
+message MaterializeCloneRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string clone_id = 3;
+  string target_volume_id = 4;
+}
+
+message MaterializeCloneResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  string clone_id = 3;
+  string materialized_volume_id = 4;
+}
+
+message DeleteCloneRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string clone_id = 3;
+}
+
+message DeleteCloneResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+message BudgetLeaseSummary {
+  string lease_id = 1;
+  string volume_id = 2;
+  string policy_id = 3;
+  uint64 policy_generation = 4;
+  string budget_class = 5;
+  string cap_scope = 6;
+  string throttle_mode = 7;
+  uint64 requested_tokens = 8;
+  uint64 granted_tokens = 9;
+  uint64 requested_bytes = 10;
+  uint64 granted_bytes = 11;
+  uint64 denied_tokens = 12;
+  uint64 denied_bytes = 13;
+  uint64 throttle_wait_ms = 14;
+  uint64 rejected_ops = 15;
+  string rejection_reason = 16;
+  uint64 iops_cap = 17;
+  uint64 bandwidth_cap_bytes_per_sec = 18;
+  uint64 burst_iops = 19;
+  uint64 burst_bytes = 20;
+  uint64 lease_generation = 21;
+  uint64 window_ms = 22;
+  uint64 ttl_ms = 23;
+  string gateway_id = 24;
+  bool cluster_wide_cap_support = 25;
+  bool shared_budget_authority = 26;
+  google.protobuf.Timestamp acquired_at = 27;
+  google.protobuf.Timestamp expires_at = 28;
+  string last_error = 29;
+  uint64 outstanding_tokens_before = 30;
+  uint64 outstanding_bytes_before = 31;
+  uint64 available_tokens_before = 32;
+  uint64 available_bytes_before = 33;
+}
+
+message AcquireBudgetLeaseRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string lease_id = 3;
+  string volume_id = 4;
+  string policy_id = 5;
+  uint64 policy_generation = 6;
+  string budget_class = 7;
+  string cap_scope = 8;
+  string throttle_mode = 9;
+  uint64 requested_tokens = 10;
+  uint64 requested_bytes = 11;
+  uint64 iops_cap = 12;
+  uint64 bandwidth_cap_bytes_per_sec = 13;
+  uint64 burst_iops = 14;
+  uint64 burst_bytes = 15;
+  uint64 window_ms = 16;
+  uint64 ttl_ms = 17;
+  string gateway_id = 18;
+}
+
+message AcquireBudgetLeaseResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BudgetLeaseSummary lease = 3;
+}
+
+message GetBudgetLeaseRequest {
+  ClusterRef cluster = 1;
+  string lease_id = 2;
+}
+
+message GetBudgetLeaseResponse {
+  ClusterRef cluster = 1;
+  BudgetLeaseSummary lease = 2;
+}
+
+message ListBudgetLeasesRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+  bool active_only = 3;
+}
+
+message ListBudgetLeasesResponse {
+  ClusterRef cluster = 1;
+  repeated BudgetLeaseSummary leases = 2;
+}
+
+message PayloadEncryptionHeaderSummary {
+  int32 header_version = 1;
+  string cipher_suite = 2;
+  string encryption_scope = 3;
+  string security_policy_id = 4;
+  uint64 policy_generation = 5;
+  string key_provider_id = 6;
+  string data_key_id = 7;
+  string key_id = 8;
+  uint64 key_version = 9;
+  uint64 key_generation = 10;
+  string object_id = 11;
+  string backend_type = 12;
+  string nonce_hex = 13;
+  string nonce_source = 14;
+  string aad_digest = 15;
+  uint64 logical_offset = 16;
+  string stripe_id = 17;
+  uint32 shard_id = 18;
+  uint64 plaintext_length = 19;
+  uint64 ciphertext_length = 20;
+  uint32 auth_tag_bytes = 21;
+  string auth_tag_hex = 22;
+  bool shard_id_present = 23;
+}
+
+message SecurityDataKeySummary {
+  string data_key_id = 1;
+  string security_policy_id = 2;
+  uint64 policy_generation = 3;
+  string key_provider_id = 4;
+  string key_provider_type = 5;
+  string key_id = 6;
+  uint64 key_version = 7;
+  uint64 key_generation = 8;
+  string wrapped_data_key_ref = 9;
+  string state = 10;
+  uint64 generation = 11;
+  string created_by = 12;
+  string created_reason = 13;
+  google.protobuf.Timestamp created_time = 14;
+  google.protobuf.Timestamp updated_time = 15;
+}
+
+message KeyAccessLeaseSummary {
+  string lease_id = 1;
+  string volume_id = 2;
+  string data_key_id = 3;
+  string security_policy_id = 4;
+  uint64 policy_generation = 5;
+  string key_provider_id = 6;
+  uint64 key_version = 7;
+  string purpose = 8;
+  google.protobuf.Timestamp expires_time = 9;
+  string issued_to = 10;
+  bool revoked = 11;
+  google.protobuf.Timestamp created_time = 12;
+  google.protobuf.Timestamp revoked_time = 13;
+  string key_provider_type = 14;
+  bool provider_backed_unwrap = 15;
+  string data_key_unwrap_evidence_digest = 16;
+}
+
+message CreateSecurityDataKeyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string data_key_id = 3;
+  string security_policy_id = 4;
+  string key_id = 5;
+  uint64 key_version = 6;
+}
+
+message CreateSecurityDataKeyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityDataKeySummary data_key = 3;
+}
+
+message GetSecurityDataKeyRequest {
+  ClusterRef cluster = 1;
+  string data_key_id = 2;
+}
+
+message GetSecurityDataKeyResponse {
+  ClusterRef cluster = 1;
+  SecurityDataKeySummary data_key = 2;
+}
+
+message ListSecurityDataKeysRequest {
+  ClusterRef cluster = 1;
+  string security_policy_id = 2;
+}
+
+message ListSecurityDataKeysResponse {
+  ClusterRef cluster = 1;
+  repeated SecurityDataKeySummary data_keys = 2;
+}
+
+message DisableSecurityDataKeyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string data_key_id = 3;
+}
+
+message DisableSecurityDataKeyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityDataKeySummary data_key = 3;
+  uint64 revoked_lease_count = 4;
+}
+
+message EnableSecurityDataKeyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string data_key_id = 3;
+}
+
+message EnableSecurityDataKeyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityDataKeySummary data_key = 3;
+}
+
+message PlanSecurityDataKeyDestroyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string data_key_id = 3;
+}
+
+message PlanSecurityDataKeyDestroyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityDataKeySummary data_key = 3;
+}
+
+message DestroySecurityDataKeyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string data_key_id = 3;
+}
+
+message DestroySecurityDataKeyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityDataKeySummary data_key = 3;
+}
+
+message SecurityKeyRotationPlanSummary {
+  string rotation_id = 1;
+  string data_key_id = 2;
+  string security_policy_id = 3;
+  uint64 policy_generation = 4;
+  string key_provider_id = 5;
+  string key_id = 6;
+  uint64 current_key_version = 7;
+  uint64 target_key_version = 8;
+  string mode = 9;
+  string state = 10;
+  bool rewrap_only = 11;
+  string blocked_reason = 12;
+  uint64 generation = 13;
+  string created_by = 14;
+  string created_reason = 15;
+  google.protobuf.Timestamp created_time = 16;
+  google.protobuf.Timestamp updated_time = 17;
+  bool rewrap_ref_changed = 18;
+  bool rewrap_payload_rewrite_avoided = 19;
+  bool old_key_read_compatible = 20;
+  bool new_writes_use_new_key = 21;
+  uint64 reencrypted_bytes = 22;
+  uint64 reencrypt_scanned_bytes = 23;
+  uint64 reencrypt_skipped_bytes = 24;
+  uint64 reencrypt_failed_bytes = 25;
+  bool interrupted_rotation_resumed = 26;
+  bool rotation_audit_recorded = 27;
+  string provider_rewrap_evidence_digest = 28;
+}
+
+message CreateSecurityKeyRotationPlanRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string rotation_id = 3;
+  string data_key_id = 4;
+  string mode = 5;
+  uint64 target_key_version = 6;
+}
+
+message CreateSecurityKeyRotationPlanResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityKeyRotationPlanSummary rotation = 3;
+}
+
+message GetSecurityKeyRotationPlanRequest {
+  ClusterRef cluster = 1;
+  string rotation_id = 2;
+}
+
+message GetSecurityKeyRotationPlanResponse {
+  ClusterRef cluster = 1;
+  SecurityKeyRotationPlanSummary rotation = 2;
+}
+
+message ListSecurityKeyRotationPlansRequest {
+  ClusterRef cluster = 1;
+  string data_key_id = 2;
+}
+
+message ListSecurityKeyRotationPlansResponse {
+  ClusterRef cluster = 1;
+  repeated SecurityKeyRotationPlanSummary rotations = 2;
+}
+
+message RunSecurityKeyRotationRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string rotation_id = 3;
+}
+
+message RunSecurityKeyRotationResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityKeyRotationPlanSummary rotation = 3;
+  SecurityDataKeySummary data_key = 4;
+}
+
+message SecurityCryptoErasePlanSummary {
+  string erase_id = 1;
+  string target_type = 2;
+  string target_id = 3;
+  repeated string data_key_ids = 4;
+  string security_policy_id = 5;
+  uint64 policy_generation = 6;
+  string key_provider_id = 7;
+  string key_id = 8;
+  uint64 key_version = 9;
+  string state = 10;
+  string blocked_reason = 11;
+  uint64 protected_ref_count = 12;
+  uint64 active_attachment_count = 13;
+  uint64 pending_operation_count = 14;
+  uint64 retention_hold_count = 15;
+  uint64 protected_artifact_count = 16;
+  bool break_glass_allowed = 17;
+  uint64 generation = 18;
+  string created_by = 19;
+  string created_reason = 20;
+  google.protobuf.Timestamp created_time = 21;
+  google.protobuf.Timestamp updated_time = 22;
+  bool key_destroy_evidence_recorded = 23;
+  string provider_destroy_evidence_digest = 24;
+  bool post_erase_read_failed = 25;
+  bool crypto_erase_audit_recorded = 26;
+}
+
+message CreateSecurityCryptoErasePlanRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string erase_id = 3;
+  string target_type = 4;
+  string target_id = 5;
+  string data_key_id = 6;
+}
+
+message CreateSecurityCryptoErasePlanResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityCryptoErasePlanSummary erase = 3;
+}
+
+message GetSecurityCryptoErasePlanRequest {
+  ClusterRef cluster = 1;
+  string erase_id = 2;
+}
+
+message GetSecurityCryptoErasePlanResponse {
+  ClusterRef cluster = 1;
+  SecurityCryptoErasePlanSummary erase = 2;
+}
+
+message ListSecurityCryptoErasePlansRequest {
+  ClusterRef cluster = 1;
+  string data_key_id = 2;
+  string target_type = 3;
+}
+
+message ListSecurityCryptoErasePlansResponse {
+  ClusterRef cluster = 1;
+  repeated SecurityCryptoErasePlanSummary erases = 2;
+}
+
+message IssueKeyAccessLeaseRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string lease_id = 3;
+  string volume_id = 4;
+  string data_key_id = 5;
+  string purpose = 6;
+  uint64 ttl_seconds = 7;
+  string issued_to = 8;
+  uint64 key_version = 9;
+}
+
+message IssueKeyAccessLeaseResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  KeyAccessLeaseSummary lease = 3;
+}
+
+message GetKeyAccessLeaseRequest {
+  ClusterRef cluster = 1;
+  string lease_id = 2;
+}
+
+message GetKeyAccessLeaseResponse {
+  ClusterRef cluster = 1;
+  KeyAccessLeaseSummary lease = 2;
+}
+
+message RevokeKeyAccessLeaseRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string lease_id = 3;
+}
+
+message RevokeKeyAccessLeaseResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  KeyAccessLeaseSummary lease = 3;
+}
+
+message SecurityAuditEventSummary {
+  string event_id = 1;
+  uint64 sequence = 2;
+  string previous_hash = 3;
+  string event_hash = 4;
+  string actor = 5;
+  string request_id = 6;
+  string source = 7;
+  string operation = 8;
+  string target_type = 9;
+  string target_id = 10;
+  string result = 11;
+  string reason = 12;
+  uint64 policy_generation = 13;
+  uint64 key_version = 14;
+  google.protobuf.Timestamp created_time = 15;
+}
+
+message ListSecurityAuditEventsRequest {
+  ClusterRef cluster = 1;
+  string target_type = 2;
+  string target_id = 3;
+}
+
+message ListSecurityAuditEventsResponse {
+  ClusterRef cluster = 1;
+  repeated SecurityAuditEventSummary events = 2;
+}
+
+message VerifySecurityAuditLogRequest {
+  ClusterRef cluster = 1;
+}
+
+message VerifySecurityAuditLogResponse {
+  ClusterRef cluster = 1;
+  bool hash_chain_verified = 2;
+  bool redaction_checked = 3;
+  uint64 event_count = 4;
+  string last_event_id = 5;
+  uint64 last_sequence = 6;
+  string last_event_hash = 7;
+  string error_message = 8;
+}
+
+message SecurityPolicyBindingSummary {
+  string volume_id = 1;
+  string security_policy_id = 2;
+  uint64 policy_generation = 3;
+  string active_data_key_id = 4;
+  uint64 active_key_version = 5;
+  string key_provider_id = 6;
+  string source = 7;
+  uint64 effective_at_revision = 8;
+  uint64 generation = 9;
+  string created_by = 10;
+  string created_reason = 11;
+  google.protobuf.Timestamp created_time = 12;
+  google.protobuf.Timestamp updated_time = 13;
+}
+
+message BindSecurityPolicyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  string security_policy_id = 4;
+  string data_key_id = 5;
+  string source = 6;
+  uint64 effective_at_revision = 7;
+}
+
+message BindSecurityPolicyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityPolicyBindingSummary binding = 3;
+}
+
+message RunSecurityCryptoEraseRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string erase_id = 3;
+}
+
+message RunSecurityCryptoEraseResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SecurityCryptoErasePlanSummary erase = 3;
+}
+
+message SecurityDataKeyAccessCheckSummary {
+  string data_key_id = 1;
+  string volume_id = 2;
+  string purpose = 3;
+  bool allowed = 4;
+  string failure_mode = 5;
+  string failure_reason = 6;
+  string key_state = 7;
+  uint64 key_version = 8;
+  uint64 key_generation = 9;
+  string key_provider_id = 10;
+  string key_provider_type = 11;
+  string key_provider_status = 12;
+  string lease_id = 13;
+  bool lease_found = 14;
+  bool lease_revoked = 15;
+  bool lease_expired = 16;
+  bool stale_lease_rejected = 17;
+  bool metadata_inspect_available = 18;
+  bool provider_backed_unwrap_recorded = 19;
+  bool data_key_unwrap_evidence_redacted = 20;
+  bool plaintext_key_emitted = 21;
+  bool raw_key_material_persisted = 22;
+  bool fail_closed = 23;
+}
+
+message CheckSecurityDataKeyAccessRequest {
+  ClusterRef cluster = 1;
+  string data_key_id = 2;
+  string volume_id = 3;
+  string purpose = 4;
+  string lease_id = 5;
+  bool require_active_lease = 6;
+  uint64 key_version = 7;
+}
+
+message CheckSecurityDataKeyAccessResponse {
+  ClusterRef cluster = 1;
+  SecurityDataKeyAccessCheckSummary check = 2;
+}
+
+message UnwrapSecurityDataKeyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string data_key_id = 3;
+  string volume_id = 4;
+  string purpose = 5;
+  string lease_id = 6;
+  string requested_by = 7;
+  uint64 key_version = 8;
+}
+
+message UnwrapSecurityDataKeyResponse {
+  ClusterRef cluster = 1;
+  SecurityDataKeyAccessCheckSummary check = 2;
+  KeyAccessLeaseSummary lease = 3;
+  bytes plaintext_data_key = 4;
+  string unwrap_evidence_digest = 5;
+  bool plaintext_key_persisted = 6;
+  bool plaintext_key_summary_redacted = 7;
+}
+
+message DRReplicationLinkSummary {
+  string replication_link_id = 1;
+  string source_cluster_id = 2;
+  string target_cluster_id = 3;
+  string source_volume_id = 4;
+  string target_volume_id = 5;
+  uint64 replication_link_generation = 6;
+  string replication_link_state = 7;
+  string recovery_point_policy = 8;
+  string shipping_mode = 9;
+  bool shipping_worker_deployed = 10;
+  bool standby_import_supported = 11;
+  bool promote_supported = 12;
+  bool failover_supported = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
+}
+
+message CreateDRReplicationLinkRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string replication_link_id = 3;
+  string source_cluster_id = 4;
+  string target_cluster_id = 5;
+  string source_volume_id = 6;
+  string target_volume_id = 7;
+  string recovery_point_policy = 8;
+  string shipping_mode = 9;
+}
+
+message CreateDRReplicationLinkResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRReplicationLinkSummary link = 3;
+}
+
+message GetDRReplicationLinkRequest {
+  ClusterRef cluster = 1;
+  string replication_link_id = 2;
+}
+
+message GetDRReplicationLinkResponse {
+  ClusterRef cluster = 1;
+  DRReplicationLinkSummary link = 2;
+}
+
+message ListDRReplicationLinksRequest {
+  ClusterRef cluster = 1;
+  string source_volume_id = 2;
+  string target_cluster_id = 3;
+}
+
+message ListDRReplicationLinksResponse {
+  ClusterRef cluster = 1;
+  repeated DRReplicationLinkSummary links = 2;
+}
+
+message DRRecoveryPointSummary {
+  string recovery_point_id = 1;
+  string replication_link_id = 2;
+  string source_cluster_id = 3;
+  string target_cluster_id = 4;
+  string source_volume_id = 5;
+  string target_volume_id = 6;
+  string source_snapshot_id = 7;
+  string source_snapshot_root_id = 8;
+  string consistency_point_id = 9;
+  string backup_artifact_id = 10;
+  uint64 recovery_point_generation = 11;
+  string recovery_point_state = 12;
+  bool remote_transfer_worker_deployed = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
+}
+
+message CreateDRRecoveryPointRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string recovery_point_id = 3;
+  string replication_link_id = 4;
+  string source_snapshot_id = 5;
+  string source_snapshot_root_id = 6;
+  string consistency_point_id = 7;
+  string backup_artifact_id = 8;
+}
+
+message CreateDRRecoveryPointResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRRecoveryPointSummary recovery_point = 3;
+}
+
+message GetDRRecoveryPointRequest {
+  ClusterRef cluster = 1;
+  string recovery_point_id = 2;
+}
+
+message GetDRRecoveryPointResponse {
+  ClusterRef cluster = 1;
+  DRRecoveryPointSummary recovery_point = 2;
+}
+
+message ListDRRecoveryPointsRequest {
+  ClusterRef cluster = 1;
+  string replication_link_id = 2;
+  string source_volume_id = 3;
+}
+
+message ListDRRecoveryPointsResponse {
+  ClusterRef cluster = 1;
+  repeated DRRecoveryPointSummary recovery_points = 2;
+}
+
+message DRShippingManifestSummary {
+  string shipped_manifest_id = 1;
+  string replication_link_id = 2;
+  string recovery_point_id = 3;
+  string source_cluster_id = 4;
+  string target_cluster_id = 5;
+  string source_volume_id = 6;
+  string target_volume_id = 7;
+  string source_snapshot_id = 8;
+  string source_snapshot_root_id = 9;
+  string backup_artifact_id = 10;
+  uint64 manifest_generation = 11;
+  string manifest_state = 12;
+  string manifest_digest = 13;
+  string payload_roots_digest = 14;
+  string read_view_digest = 15;
+  string key_policy_digest = 16;
+  string governance_digest = 17;
+  bool manifest_integrity_verified = 18;
+  bool payload_roots_bound = 19;
+  bool read_view_identity_bound = 20;
+  bool key_policy_bound = 21;
+  bool governance_metadata_bound = 22;
+  bool remote_transfer_worker_deployed = 23;
+  google.protobuf.Timestamp created_at = 24;
+  google.protobuf.Timestamp updated_at = 25;
+}
+
+message CreateDRShippingManifestRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string shipped_manifest_id = 3;
+  string recovery_point_id = 4;
+  string manifest_digest = 5;
+  string payload_roots_digest = 6;
+  string read_view_digest = 7;
+  string key_policy_digest = 8;
+  string governance_digest = 9;
+  bool manifest_integrity_verified = 10;
+  bool payload_roots_bound = 11;
+  bool read_view_identity_bound = 12;
+  bool key_policy_bound = 13;
+  bool governance_metadata_bound = 14;
+}
+
+message CreateDRShippingManifestResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRShippingManifestSummary manifest = 3;
+}
+
+message GetDRShippingManifestRequest {
+  ClusterRef cluster = 1;
+  string shipped_manifest_id = 2;
+}
+
+message GetDRShippingManifestResponse {
+  ClusterRef cluster = 1;
+  DRShippingManifestSummary manifest = 2;
+}
+
+message ListDRShippingManifestsRequest {
+  ClusterRef cluster = 1;
+  string replication_link_id = 2;
+  string recovery_point_id = 3;
+}
+
+message ListDRShippingManifestsResponse {
+  ClusterRef cluster = 1;
+  repeated DRShippingManifestSummary manifests = 2;
+}
+
+message DRShippingWorkerSummary {
+  string shipping_worker_id = 1;
+  string replication_link_id = 2;
+  string shipped_manifest_id = 3;
+  string recovery_point_id = 4;
+  string source_cluster_id = 5;
+  string target_cluster_id = 6;
+  string source_volume_id = 7;
+  string target_volume_id = 8;
+  uint64 worker_generation = 9;
+  string worker_state = 10;
+  string worker_node_id = 11;
+  string source_node_id = 12;
+  string target_node_id = 13;
+  string target_endpoint = 14;
+  string credential_boundary_id = 15;
+  string transfer_plan_digest = 16;
+  bool manifest_integrity_verified = 17;
+  bool payload_roots_bound = 18;
+  bool read_view_identity_bound = 19;
+  bool key_policy_bound = 20;
+  bool governance_metadata_bound = 21;
+  bool remote_transfer_worker_deployed = 22;
+  bool remote_transfer_started = 23;
+  bool remote_transfer_completed = 24;
+  string last_heartbeat_message = 25;
+  google.protobuf.Timestamp last_heartbeat_at = 26;
+  google.protobuf.Timestamp created_at = 27;
+  google.protobuf.Timestamp updated_at = 28;
+}
+
+message AdmitDRShippingWorkerRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string shipping_worker_id = 3;
+  string shipped_manifest_id = 4;
+  string worker_node_id = 5;
+  string source_node_id = 6;
+  string target_node_id = 7;
+  string target_endpoint = 8;
+  string credential_boundary_id = 9;
+  string transfer_plan_digest = 10;
+}
+
+message AdmitDRShippingWorkerResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRShippingWorkerSummary worker = 3;
+  DRReplicationLinkSummary link = 4;
+  DRRecoveryPointSummary recovery_point = 5;
+  DRShippingManifestSummary manifest = 6;
+}
+
+message HeartbeatDRShippingWorkerRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string shipping_worker_id = 3;
+  string observed_state = 4;
+  string heartbeat_message = 5;
+  bool remote_transfer_started = 6;
+  bool remote_transfer_completed = 7;
+}
+
+message HeartbeatDRShippingWorkerResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRShippingWorkerSummary worker = 3;
+}
+
+message GetDRShippingWorkerRequest {
+  ClusterRef cluster = 1;
+  string shipping_worker_id = 2;
+}
+
+message GetDRShippingWorkerResponse {
+  ClusterRef cluster = 1;
+  DRShippingWorkerSummary worker = 2;
+}
+
+message ListDRShippingWorkersRequest {
+  ClusterRef cluster = 1;
+  string replication_link_id = 2;
+  string shipped_manifest_id = 3;
+}
+
+message ListDRShippingWorkersResponse {
+  ClusterRef cluster = 1;
+  repeated DRShippingWorkerSummary workers = 2;
+}
+
+message DRStandbyVolumeSummary {
+  string standby_volume_id = 1;
+  string replication_link_id = 2;
+  string shipped_manifest_id = 3;
+  string recovery_point_id = 4;
+  string shipping_worker_id = 5;
+  string source_cluster_id = 6;
+  string target_cluster_id = 7;
+  string source_volume_id = 8;
+  string target_volume_id = 9;
+  string source_snapshot_id = 10;
+  string source_snapshot_root_id = 11;
+  string backup_artifact_id = 12;
+  uint64 standby_generation = 13;
+  string standby_state = 14;
+  string import_node_id = 15;
+  string import_endpoint = 16;
+  string read_view_digest = 17;
+  string key_policy_digest = 18;
+  string governance_digest = 19;
+  bool manifest_integrity_verified = 20;
+  bool payload_roots_bound = 21;
+  bool read_view_identity_bound = 22;
+  bool key_policy_bound = 23;
+  bool governance_metadata_bound = 24;
+  bool remote_transfer_worker_deployed = 25;
+  bool remote_transfer_started = 26;
+  bool remote_transfer_completed = 27;
+  bool standby_import_verified = 28;
+  bool standby_read_only_verified = 29;
+  bool standby_write_rejection_required = 30;
+  bool standby_write_rejected = 31;
+  string standby_write_rejection_reason = 32;
+  bool promote_required_before_target_write = 33;
+  bool target_write_admitted = 34;
+  google.protobuf.Timestamp last_write_check_at = 35;
+  google.protobuf.Timestamp created_at = 36;
+  google.protobuf.Timestamp updated_at = 37;
+  uint64 promote_generation = 38;
+  uint64 demote_generation = 39;
+  uint64 fencing_epoch = 40;
+  bool promote_fencing_verified = 41;
+  bool demote_fencing_verified = 42;
+  bool stale_old_primary_rejected = 43;
+  string old_primary_write_rejection_reason = 44;
+  bool old_primary_rejoin_policy_defined = 45;
+  string old_primary_rejoin_policy = 46;
+  google.protobuf.Timestamp last_promote_at = 47;
+  google.protobuf.Timestamp last_demote_at = 48;
+  google.protobuf.Timestamp last_old_primary_write_check_at = 49;
+  google.protobuf.Timestamp last_old_primary_rejoin_policy_at = 50;
+}
+
+message ImportDRStandbyVolumeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string standby_volume_id = 3;
+  string shipped_manifest_id = 4;
+  string shipping_worker_id = 5;
+  string import_node_id = 6;
+  string import_endpoint = 7;
+}
+
+message ImportDRStandbyVolumeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRStandbyVolumeSummary standby = 3;
+  DRReplicationLinkSummary link = 4;
+  DRRecoveryPointSummary recovery_point = 5;
+  DRShippingManifestSummary manifest = 6;
+  DRShippingWorkerSummary worker = 7;
+}
+
+message GetDRStandbyVolumeRequest {
+  ClusterRef cluster = 1;
+  string standby_volume_id = 2;
+}
+
+message GetDRStandbyVolumeResponse {
+  ClusterRef cluster = 1;
+  DRStandbyVolumeSummary standby = 2;
+}
+
+message ListDRStandbyVolumesRequest {
+  ClusterRef cluster = 1;
+  string replication_link_id = 2;
+  string shipped_manifest_id = 3;
+}
+
+message ListDRStandbyVolumesResponse {
+  ClusterRef cluster = 1;
+  repeated DRStandbyVolumeSummary standbys = 2;
+}
+
+message CheckDRStandbyVolumeWriteRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string standby_volume_id = 3;
+  string writer_id = 4;
+}
+
+message CheckDRStandbyVolumeWriteResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRStandbyVolumeSummary standby = 3;
+  bool standby_write_rejected = 4;
+  string standby_write_rejection_reason = 5;
+  bool target_write_admitted = 6;
+}
+
+message PromoteDRStandbyVolumeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string standby_volume_id = 3;
+  string attachment_id = 4;
+  string snapshot_lineage_id = 5;
+  string fencing_reason = 6;
+}
+
+message PromoteDRStandbyVolumeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRStandbyVolumeSummary standby = 3;
+  DRReplicationLinkSummary link = 4;
+  bool target_write_admitted = 5;
+  uint64 promote_generation = 6;
+  uint64 fencing_epoch = 7;
+}
+
+message DemoteDRStandbyVolumeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string standby_volume_id = 3;
+  string fencing_reason = 4;
+}
+
+message DemoteDRStandbyVolumeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRStandbyVolumeSummary standby = 3;
+  DRReplicationLinkSummary link = 4;
+  bool target_write_admitted = 5;
+  uint64 demote_generation = 6;
+  uint64 fencing_epoch = 7;
+}
+
+message CheckDROldPrimaryWriteRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string standby_volume_id = 3;
+  string writer_id = 4;
+  string source_node_id = 5;
+}
+
+message CheckDROldPrimaryWriteResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRStandbyVolumeSummary standby = 3;
+  bool stale_old_primary_rejected = 4;
+  string old_primary_write_rejection_reason = 5;
+  bool target_write_admitted = 6;
+}
+
+message DefineDROldPrimaryRejoinPolicyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string standby_volume_id = 3;
+  string old_primary_rejoin_policy = 4;
+}
+
+message DefineDROldPrimaryRejoinPolicyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRStandbyVolumeSummary standby = 3;
+  bool old_primary_rejoin_policy_defined = 4;
+  string old_primary_rejoin_policy = 5;
+  bool automatic_old_primary_rejoin = 6;
+}
+
+message DRFailoverDrillSummary {
+  string failover_drill_id = 1;
+  string standby_volume_id = 2;
+  string replication_link_id = 3;
+  string recovery_point_id = 4;
+  string shipped_manifest_id = 5;
+  string shipping_worker_id = 6;
+  string source_cluster_id = 7;
+  string target_cluster_id = 8;
+  string source_volume_id = 9;
+  string target_volume_id = 10;
+  uint64 failover_drill_generation = 11;
+  string failover_drill_state = 12;
+  bool source_unavailable_observed = 13;
+  bool target_promote_observed = 14;
+  bool target_mounted = 15;
+  bool mount_readback_matched = 16;
+  bool application_visible_identity_verified = 17;
+  bool cleanup_rejoin_state_verified = 18;
+  bool old_primary_rejoin_policy_verified = 19;
+  bool failover_drill_completed = 20;
+  uint64 promote_generation = 21;
+  uint64 demote_generation = 22;
+  uint64 fencing_epoch = 23;
+  bool stale_old_primary_rejected = 24;
+  string old_primary_write_rejection_reason = 25;
+  bool old_primary_rejoin_policy_defined = 26;
+  string old_primary_rejoin_policy = 27;
+  bool support_claimed = 28;
+  bool dr_support_claimed = 29;
+  bool failover_claimed = 30;
+  bool public_api_registered = 31;
+  bool public_cli_registered = 32;
+  google.protobuf.Timestamp created_at = 33;
+  google.protobuf.Timestamp updated_at = 34;
+}
+
+message RunDRFailoverDrillRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string failover_drill_id = 3;
+  string standby_volume_id = 4;
+  bool source_unavailable_observed = 5;
+  bool target_mounted = 6;
+  bool mount_readback_matched = 7;
+  bool application_visible_identity_verified = 8;
+  bool cleanup_rejoin_state_verified = 9;
+}
+
+message RunDRFailoverDrillResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRFailoverDrillSummary drill = 3;
+  DRStandbyVolumeSummary standby = 4;
+  DRReplicationLinkSummary link = 5;
+}
+
+message GetDRFailoverDrillRequest {
+  ClusterRef cluster = 1;
+  string failover_drill_id = 2;
+}
+
+message GetDRFailoverDrillResponse {
+  ClusterRef cluster = 1;
+  DRFailoverDrillSummary drill = 2;
+}
+
+message ListDRFailoverDrillsRequest {
+  ClusterRef cluster = 1;
+  string replication_link_id = 2;
+  string standby_volume_id = 3;
+}
+
+message ListDRFailoverDrillsResponse {
+  ClusterRef cluster = 1;
+  repeated DRFailoverDrillSummary drills = 2;
+}

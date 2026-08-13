@@ -1,0 +1,236 @@
+{
+  "groups": [
+    {
+      "name": "namrbd-community-readiness.rules",
+      "rules": [
+        {
+          "alert": "NAMRBDSBSServiceNotReady",
+          "expr": "sbs_service_ready == 0",
+          "for": "2m",
+          "labels": {
+            "severity": "critical",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS service is not ready",
+            "description": "The SBS control service readiness probe has reported not-ready for at least two minutes.",
+            "runbook_url": "docs-src/observability/#alerts"
+          }
+        },
+        {
+          "alert": "NAMRBDSBSServiceLeaderMissing",
+          "expr": "sum(sbs_service_leader) < 1",
+          "for": "2m",
+          "labels": {
+            "severity": "critical",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS service leader is missing",
+            "description": "No SBS service endpoint is currently reporting leadership."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSDataNotReady",
+          "expr": "sbs_data_ready == 0",
+          "for": "2m",
+          "labels": {
+            "severity": "critical",
+            "component": "sbs-data"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS data service is not ready",
+            "description": "An SBS data endpoint readiness probe has reported not-ready for at least two minutes."
+          }
+        },
+        {
+          "alert": "NAMRBDGatewayNotReady",
+          "expr": "namrbd_gateway_ready == 0",
+          "for": "2m",
+          "labels": {
+            "severity": "critical",
+            "component": "namrbd-gateway"
+          },
+          "annotations": {
+            "summary": "NAMRBD gateway is not ready",
+            "description": "A NAMRBD gateway HTTP control endpoint has reported not-ready for at least two minutes."
+          }
+        },
+        {
+          "alert": "NAMRBDISCSIGatewayNotReady",
+          "expr": "namrbd_iscsi_gateway_ready == 0",
+          "for": "2m",
+          "labels": {
+            "severity": "critical",
+            "component": "namrbd-iscsi-gateway"
+          },
+          "annotations": {
+            "summary": "NAMRBD iSCSI gateway is not ready",
+            "description": "A NAMRBD iSCSI gateway observability endpoint has reported not-ready for at least two minutes."
+          }
+        }
+      ]
+    },
+    {
+      "name": "namrbd-community-operations.rules",
+      "rules": [
+        {
+          "alert": "NAMRBDSBSNodeDown",
+          "expr": "sbs_service_nodes{state=\"down\"} > 0",
+          "for": "5m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS node is down",
+            "description": "At least one SBS node has been classified as down by the service control plane."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSVolumeDegraded",
+          "expr": "sbs_service_volumes{state=\"degraded\"} > 0",
+          "for": "5m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS volume is degraded",
+            "description": "At least one replicated volume has lost full health according to SBS placement state."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSRepairBacklog",
+          "expr": "sbs_service_repair_backlog_current > 0",
+          "for": "15m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS repair backlog is active",
+            "description": "SBS has active repair placement work for at least fifteen minutes."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSRepairBacklogStale",
+          "expr": "sbs_service_repair_backlog_oldest_age_seconds > 1800",
+          "for": "5m",
+          "labels": {
+            "severity": "critical",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS repair backlog is stale",
+            "description": "The oldest failed repair or rebalance batch has been waiting longer than thirty minutes."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSRepairBacklogFailures",
+          "expr": "sbs_service_repair_backlog_failed_total > 0",
+          "for": "10m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS repair or rebalance failures exist",
+            "description": "SBS repair or rebalance child batches have failed and are awaiting retry or operator review."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSRebalanceBacklog",
+          "expr": "sbs_service_rebalance_backlog_current > 0",
+          "for": "30m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS rebalance backlog is active",
+            "description": "SBS has active rebalance placement work for at least thirty minutes."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSProbeFailures",
+          "expr": "sbs_service_nodes_with_probe_failures > 0",
+          "for": "10m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS node probes are failing",
+            "description": "At least one SBS node has a non-zero reconciler probe failure streak."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSRetiredPayloadBacklog",
+          "expr": "sbs_service_retired_payload_backlog_chunks > 0",
+          "for": "30m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD retired payload backlog is active",
+            "description": "Retired payload cleanup has pending chunks for at least thirty minutes."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSTransitionFailures",
+          "expr": "sbs_service_transition_failed_batches > 0",
+          "for": "10m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS maintenance transition failures exist",
+            "description": "SBS maintenance has recorded failed transition batches that require operator review."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSRetiredPayloadFailures",
+          "expr": "sbs_service_retired_payload_failed_batches > 0",
+          "for": "10m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD retired payload cleanup failures exist",
+            "description": "Retired payload garbage collection has failed batches that may delay space reclamation."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSPlacementApplyFailures",
+          "expr": "sum(increase(sbs_service_placement_apply_requests_total{class!=\"ok\"}[10m])) > 0",
+          "for": "2m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS placement apply failures are occurring",
+            "description": "The internal placement apply RPC path has reported non-ok outcomes in the last ten minutes."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSDataLowAvailableRatio",
+          "expr": "(sbs_data_store_capacity_bytes > 0) and ((sbs_data_store_available_bytes / sbs_data_store_capacity_bytes) < 0.10)",
+          "for": "10m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-data"
+          },
+          "annotations": {
+            "summary": "NAMRBD SBS data store has low available capacity ratio",
+            "description": "An SBS data store has less than ten percent available capacity. Tune this ratio for your deployment."
+          }
+        }
+      ]
+    }
+  ]
+}

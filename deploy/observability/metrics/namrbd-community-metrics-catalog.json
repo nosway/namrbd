@@ -1,0 +1,651 @@
+{
+  "schema_version": "namrbd.community.metrics.v1",
+  "description": "Public metric catalog for NAMRBD Community SBS service and data endpoints.",
+  "source_endpoints": [
+    {
+      "component": "sbs-service",
+      "path": "/metrics",
+      "format": "prometheus-text"
+    },
+    {
+      "component": "sbs-data",
+      "path": "/metrics",
+      "format": "prometheus-text"
+    },
+    {
+      "component": "namrbd-gateway",
+      "path": "/metrics",
+      "format": "prometheus-text"
+    },
+    {
+      "component": "namrbd-iscsi-gateway",
+      "path": "/metrics",
+      "format": "prometheus-text"
+    }
+  ],
+  "metrics": [
+    {
+      "name": "sbs_service_ready",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [],
+      "description": "Whether the sbs-service process is locally ready."
+    },
+    {
+      "name": "sbs_service_leader",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [],
+      "description": "Whether this instance currently owns the leader lease."
+    },
+    {
+      "name": "sbs_service_nodes",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [
+        "state"
+      ],
+      "description": "Number of known nodes by lifecycle and health."
+    },
+    {
+      "name": "sbs_service_volumes",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [
+        "state"
+      ],
+      "description": "Number of volumes by health."
+    },
+    {
+      "name": "sbs_service_transition_backlog",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [
+        "reason"
+      ],
+      "description": "Number of active placement transitions by reason."
+    },
+    {
+      "name": "sbs_service_repair_backlog_current",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Active repair placement transitions."
+    },
+    {
+      "name": "sbs_service_rebalance_backlog_current",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Active rebalance placement transitions."
+    },
+    {
+      "name": "sbs_service_transition_backlog_bytes",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "bytes",
+      "labels": [
+        "reason"
+      ],
+      "description": "Active placement transition backlog bytes by reason."
+    },
+    {
+      "name": "sbs_service_transition_backlog_chunks",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "chunks",
+      "labels": [
+        "reason"
+      ],
+      "description": "Active placement transition backlog allocation chunks by reason."
+    },
+    {
+      "name": "sbs_service_retired_payload_backlog_bytes",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "bytes",
+      "labels": [],
+      "description": "Retired payload backlog bytes awaiting cleanup."
+    },
+    {
+      "name": "sbs_service_retired_payload_backlog_chunks",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "chunks",
+      "labels": [],
+      "description": "Retired payload backlog allocation chunks awaiting cleanup."
+    },
+    {
+      "name": "sbs_service_retired_payload_failed_batches",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Failed payload-gc child batches awaiting retry."
+    },
+    {
+      "name": "sbs_service_retired_payload_oldest_failed_batch_age_seconds",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Age in seconds of the oldest failed payload-gc child batch."
+    },
+    {
+      "name": "sbs_service_transition_failed_batches",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Failed transition child batches awaiting retry."
+    },
+    {
+      "name": "sbs_service_repair_backlog_failed_total",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Failed repair and rebalance transition child batches awaiting retry."
+    },
+    {
+      "name": "sbs_service_transition_recent_batches",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Active transition child batches touching recently mutated pages."
+    },
+    {
+      "name": "sbs_service_transition_small_batches",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Active transition child batches with single-page backlog."
+    },
+    {
+      "name": "sbs_service_transition_requeued",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Parent transitions requeued for retry."
+    },
+    {
+      "name": "sbs_service_transition_retry_pages",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "pages",
+      "labels": [],
+      "description": "Remaining retry pages across requeued transitions."
+    },
+    {
+      "name": "sbs_service_transition_retry_windows",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Remaining retry windows across requeued transitions."
+    },
+    {
+      "name": "sbs_service_transition_retry_window_bytes",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "bytes",
+      "labels": [],
+      "description": "Remaining retry window bytes across requeued transitions."
+    },
+    {
+      "name": "sbs_service_transition_retry_window_chunks",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "chunks",
+      "labels": [],
+      "description": "Remaining retry window allocation chunks across requeued transitions."
+    },
+    {
+      "name": "sbs_service_maintenance_cooldown_volumes",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Volumes temporarily deprioritized by maintenance fairness cooldown."
+    },
+    {
+      "name": "sbs_service_maintenance_cooldown_max_remaining_seconds",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Longest remaining fairness cooldown across volumes."
+    },
+    {
+      "name": "sbs_service_nodes_with_probe_failures",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Nodes with non-zero reconciler probe failure streak."
+    },
+    {
+      "name": "sbs_service_max_consecutive_probe_failures",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Maximum reconciler probe failure streak across nodes."
+    },
+    {
+      "name": "sbs_service_nodes_in_recovery_cooldown",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Nodes excluded from new placement because they recently recovered."
+    },
+    {
+      "name": "sbs_service_max_recovery_cooldown_remaining_seconds",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Longest remaining recovered-node cooldown before reuse."
+    },
+    {
+      "name": "sbs_service_transition_oldest_failed_batch_age_seconds",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Age in seconds of the oldest failed transition child batch."
+    },
+    {
+      "name": "sbs_service_repair_backlog_oldest_age_seconds",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Age in seconds of the oldest failed repair or rebalance transition child batch."
+    },
+    {
+      "name": "sbs_service_rebalance_backlog_oscillation_window_seconds",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Maintenance fairness cooldown window that explains normal short rebalance oscillation."
+    },
+    {
+      "name": "sbs_service_operations",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [
+        "state"
+      ],
+      "description": "Number of admin operations by state."
+    },
+    {
+      "name": "sbs_service_throttle_config",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [
+        "kind"
+      ],
+      "description": "Current maintenance concurrency configuration."
+    },
+    {
+      "name": "sbs_service_pause_state",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [
+        "kind"
+      ],
+      "description": "Whether a maintenance category is paused."
+    },
+    {
+      "name": "sbs_service_placement_apply_requests_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "class"
+      ],
+      "description": "Internal placement apply RPC requests by outcome class."
+    },
+    {
+      "name": "sbs_service_placement_apply_duration_seconds_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Total internal placement apply RPC handling duration."
+    },
+    {
+      "name": "sbs_service_write_session_requests_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "class"
+      ],
+      "description": "Internal write session RPC requests by outcome class."
+    },
+    {
+      "name": "sbs_service_write_session_duration_seconds_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Total internal write session RPC handling duration."
+    },
+    {
+      "name": "sbs_service_chunk_id_allocator_requests_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "class"
+      ],
+      "description": "Internal chunk ID allocator RPC requests by outcome class."
+    },
+    {
+      "name": "sbs_service_chunk_id_allocator_duration_seconds_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Total internal chunk ID allocator RPC handling duration."
+    },
+    {
+      "name": "sbs_service_placement_resolver_requests_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "class"
+      ],
+      "description": "Internal placement resolver RPC requests by outcome class."
+    },
+    {
+      "name": "sbs_service_placement_resolver_duration_seconds_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Total internal placement resolver RPC handling duration."
+    },
+    {
+      "name": "sbs_data_ready",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [],
+      "description": "Whether the sbs-data process is ready."
+    },
+    {
+      "name": "sbs_data_volumes_total",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Number of locally known volumes."
+    },
+    {
+      "name": "sbs_data_open_sessions",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Number of currently open writer sessions."
+    },
+    {
+      "name": "sbs_data_allocation_pages_total",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Number of persisted allocation page metadata records."
+    },
+    {
+      "name": "sbs_data_extent_pages_total",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Deprecated alias for sbs_data_allocation_pages_total."
+    },
+    {
+      "name": "sbs_data_garbage_chunks_total",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "chunks",
+      "labels": [],
+      "description": "Number of garbage chunk records pending cleanup."
+    },
+    {
+      "name": "sbs_data_idempotency_records_total",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Number of stored idempotency records."
+    },
+    {
+      "name": "sbs_data_store_state",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [
+        "store_id",
+        "shard_id",
+        "state"
+      ],
+      "description": "Store health state as a numeric gauge."
+    },
+    {
+      "name": "sbs_data_store_allocation_weight",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "weight",
+      "labels": [
+        "store_id"
+      ],
+      "description": "Store allocation weight."
+    },
+    {
+      "name": "sbs_data_store_capacity_bytes",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "bytes",
+      "labels": [
+        "store_id"
+      ],
+      "description": "Store filesystem capacity in bytes."
+    },
+    {
+      "name": "sbs_data_store_available_bytes",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "bytes",
+      "labels": [
+        "store_id"
+      ],
+      "description": "Store filesystem available bytes."
+    },
+    {
+      "name": "sbs_data_store_pebble_disk_usage_bytes",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "bytes",
+      "labels": [
+        "store_id"
+      ],
+      "description": "Store Pebble disk usage in bytes."
+    },
+    {
+      "name": "sbs_data_store_compaction_pending_bytes",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "bytes",
+      "labels": [
+        "store_id"
+      ],
+      "description": "Estimated bytes that need compaction."
+    },
+    {
+      "name": "sbs_data_store_compaction_in_progress_bytes",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "bytes",
+      "labels": [
+        "store_id"
+      ],
+      "description": "Bytes in in-progress compactions."
+    },
+    {
+      "name": "namrbd_gateway_ready",
+      "component": "namrbd-gateway",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [],
+      "description": "Whether the namrbd-gateway HTTP control endpoint is ready."
+    },
+    {
+      "name": "namrbd_gateway_runtime_info",
+      "component": "namrbd-gateway",
+      "type": "gauge",
+      "unit": "info",
+      "labels": [
+        "gateway_id",
+        "runtime_mode",
+        "admin_endpoint_configured"
+      ],
+      "description": "Static namrbd-gateway runtime metadata."
+    },
+    {
+      "name": "namrbd_gateway_io_requests_total",
+      "component": "namrbd-gateway",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "operation",
+        "class"
+      ],
+      "description": "Gateway I/O requests by operation and result class."
+    },
+    {
+      "name": "namrbd_gateway_io_bytes_total",
+      "component": "namrbd-gateway",
+      "type": "counter",
+      "unit": "bytes",
+      "labels": [
+        "operation"
+      ],
+      "description": "Gateway I/O bytes by operation."
+    },
+    {
+      "name": "namrbd_gateway_io_latency_milliseconds_total",
+      "component": "namrbd-gateway",
+      "type": "counter",
+      "unit": "milliseconds",
+      "labels": [
+        "operation"
+      ],
+      "description": "Gateway I/O latency by operation."
+    },
+    {
+      "name": "namrbd_gateway_sbs_retries_total",
+      "component": "namrbd-gateway",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "kind"
+      ],
+      "description": "Gateway SBS retry events summarized by kind."
+    },
+    {
+      "name": "namrbd_gateway_sbs_retry_events_total",
+      "component": "namrbd-gateway",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "kind"
+      ],
+      "description": "Gateway SBS retry events by source metric key."
+    },
+    {
+      "name": "namrbd_gateway_discard_bytes_total",
+      "component": "namrbd-gateway",
+      "type": "counter",
+      "unit": "bytes",
+      "labels": [],
+      "description": "Gateway DISCARD bytes observed."
+    },
+    {
+      "name": "namrbd_gateway_zero_bytes_total",
+      "component": "namrbd-gateway",
+      "type": "counter",
+      "unit": "bytes",
+      "labels": [],
+      "description": "Gateway logical zero bytes observed."
+    },
+    {
+      "name": "namrbd_gateway_discard_policy_total",
+      "component": "namrbd-gateway",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "policy"
+      ],
+      "description": "Gateway DISCARD observations by policy."
+    },
+    {
+      "name": "namrbd_gateway_discard_alignment_fallbacks_total",
+      "component": "namrbd-gateway",
+      "type": "counter",
+      "unit": "count",
+      "labels": [],
+      "description": "Gateway DISCARD requests that fell back because reclaim geometry was unaligned."
+    },
+    {
+      "name": "namrbd_iscsi_gateway_ready",
+      "component": "namrbd-iscsi-gateway",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [],
+      "description": "Whether the namrbd-iscsi-gateway process is ready."
+    },
+    {
+      "name": "namrbd_iscsi_gateway_runtime_info",
+      "component": "namrbd-iscsi-gateway",
+      "type": "gauge",
+      "unit": "info",
+      "labels": [
+        "backend",
+        "export_id",
+        "target_iqn",
+        "auth_mode",
+        "volume_id"
+      ],
+      "description": "Static namrbd-iscsi-gateway runtime metadata."
+    },
+    {
+      "name": "namrbd_iscsi_gateway_registry_loaded",
+      "component": "namrbd-iscsi-gateway",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [],
+      "description": "Whether SBS registry state was loaded before serving."
+    }
+  ]
+}

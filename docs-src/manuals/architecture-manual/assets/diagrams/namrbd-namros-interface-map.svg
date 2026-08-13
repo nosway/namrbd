@@ -1,0 +1,257 @@
+<svg viewBox="0 0 1620 1060" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, 'Apple SD Gothic Neo', sans-serif">
+  <defs>
+    <marker id="aI" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 Z" fill="#4338ca"/></marker>
+    <marker id="aG" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 Z" fill="#047857"/></marker>
+    <marker id="aA" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 Z" fill="#b45309"/></marker>
+    <marker id="aS" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 Z" fill="#475569"/></marker>
+    <marker id="aX" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 Z" fill="#6b7280"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="1620" height="1060" fill="#ffffff"/>
+
+  <!-- Title & legend -->
+  <text x="40" y="36" font-size="20" font-weight="bold" fill="#0f172a">NAMRBD / NAMROS Component Interface Diagram</text>
+  <text x="40" y="56" font-size="11" fill="#64748b">Protocols and ports are code defaults (2026-08)</text>
+  <g font-size="10" fill="#334155">
+    <rect x="600" y="22" width="16" height="12" fill="#dbeafe" stroke="#1d4ed8"/><text x="622" y="32">Service / daemon / module</text>
+    <rect x="752" y="22" width="16" height="12" fill="#fef3c7" stroke="#b45309"/><text x="774" y="32">CLI command</text>
+    <rect x="862" y="22" width="16" height="12" fill="#ffffff" stroke="#6b7280" stroke-dasharray="3 2"/><text x="884" y="32">External client / system</text>
+    <rect x="1010" y="22" width="16" height="12" fill="#e0e7ff" stroke="#6366f1"/><text x="1032" y="32">NAMRBD namespace</text>
+    <rect x="1150" y="22" width="16" height="12" fill="#d1fae5" stroke="#059669"/><text x="1172" y="32">NAMROS namespace</text>
+  </g>
+
+  <!-- Zones -->
+  <rect x="40" y="80" width="700" height="560" fill="#eef2ff" fill-opacity="0.45" stroke="#6366f1" stroke-dasharray="7 4"/>
+  <rect x="770" y="80" width="810" height="560" fill="#ecfdf5" fill-opacity="0.5" stroke="#10b981" stroke-dasharray="7 4"/>
+  <rect x="40" y="680" width="1540" height="320" fill="#f8fafc" stroke="#64748b" stroke-dasharray="7 4"/>
+  <text x="55" y="100" font-size="13" font-weight="bold" fill="#4338ca">NAMRBD Product (Block Storage)</text>
+  <text x="785" y="100" font-size="13" font-weight="bold" fill="#047857">NAMROS Product (S3-Compatible Object Storage)</text>
+  <text x="55" y="975" font-size="13" font-weight="bold" fill="#475569">Common Storage Substrate (SBS) &amp; Metadata Stores</text>
+
+  <!-- ===================== NAMRBD zone ===================== -->
+  <!-- namrbdctl (CLI) -->
+  <rect x="70" y="130" width="160" height="55" rx="6" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+  <text x="150" y="152" font-size="12" font-weight="bold" fill="#78350f" text-anchor="middle">namrbdctl</text>
+  <text x="150" y="168" font-size="9" fill="#92400e" text-anchor="middle">CLI · netlink / REST / etcd</text>
+
+  <!-- kernel module -->
+  <rect x="290" y="120" width="210" height="75" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="395" y="145" font-size="12" font-weight="bold" fill="#1e3a8a" text-anchor="middle">namrbd kernel module</text>
+  <text x="395" y="161" font-size="9.5" fill="#1e40af" text-anchor="middle">namrbd_blk.ko · namrbd_ctrl.ko</text>
+  <text x="395" y="176" font-size="9.5" fill="#1e40af" text-anchor="middle">host block device (kernel module)</text>
+
+  <!-- iSCSI initiator (external) -->
+  <rect x="560" y="115" width="155" height="45" rx="6" fill="#ffffff" stroke="#6b7280" stroke-dasharray="4 3"/>
+  <text x="637" y="133" font-size="10" font-weight="bold" fill="#374151" text-anchor="middle">iSCSI Initiator</text>
+  <text x="637" y="147" font-size="8.5" fill="#6b7280" text-anchor="middle">(external host)</text>
+
+  <!-- namrbd-iscsi-gateway -->
+  <rect x="545" y="230" width="185" height="65" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="637" y="253" font-size="12" font-weight="bold" fill="#1e3a8a" text-anchor="middle">namrbd-iscsi-gateway</text>
+  <text x="637" y="269" font-size="9" fill="#1e40af" text-anchor="middle">iSCSI target daemon · :3260</text>
+  <text x="637" y="283" font-size="9" fill="#1e40af" text-anchor="middle">direct to sbs-data (bypasses gateway)</text>
+
+  <!-- namrbd-gateway -->
+  <rect x="290" y="340" width="210" height="80" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="395" y="365" font-size="12" font-weight="bold" fill="#1e3a8a" text-anchor="middle">namrbd-gateway</text>
+  <text x="395" y="381" font-size="9.5" fill="#1e40af" text-anchor="middle">block volume gateway daemon</text>
+  <text x="395" y="397" font-size="9.5" fill="#1e40af" text-anchor="middle">REST :9701 · dataplane :9700</text>
+
+  <!-- sbsctl (CLI) -->
+  <rect x="70" y="480" width="160" height="55" rx="6" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+  <text x="150" y="502" font-size="12" font-weight="bold" fill="#78350f" text-anchor="middle">sbsctl</text>
+  <text x="150" y="518" font-size="9" fill="#92400e" text-anchor="middle">CLI · SBS cluster admin</text>
+
+
+  <!-- NAMRBD arrows -->
+  <!-- namrbdctl -> kernel : netlink -->
+  <path d="M150,130 V108 H395 V120" fill="none" stroke="#b45309" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#aA)"/>
+  <text x="425" y="101" font-size="9.5" fill="#92400e" text-anchor="middle">Generic Netlink (NAMRBD_CTRL) — device/attach control</text>
+  <!-- namrbdctl -> gateway : REST -->
+  <path d="M150,185 V370 H290" fill="none" stroke="#b45309" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#aA)"/>
+  <text transform="translate(140,280) rotate(-90)" font-size="9.5" fill="#92400e" text-anchor="middle">HTTP REST :9701 (info / discovery)</text>
+  <!-- namrbdctl -> etcd -->
+  <path d="M70,160 H55 V830 H90" fill="none" stroke="#b45309" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#aA)"/>
+  <text transform="translate(65,320) rotate(-90)" font-size="9.5" fill="#92400e" text-anchor="middle">etcd v3 gRPC :2379 (direct metadata reads)</text>
+  <!-- kernel -> gateway dataplane -->
+  <path d="M350,195 V340" fill="none" stroke="#4338ca" stroke-width="2" marker-end="url(#aI)"/>
+  <text x="342" y="248" font-size="9.5" fill="#3730a3" text-anchor="end">(namrbd_blk.ko)</text>
+  <text x="342" y="262" font-size="9.5" fill="#3730a3" text-anchor="end">custom binary wire protocol v1/v2</text>
+  <text x="342" y="274" font-size="9.5" fill="#3730a3" text-anchor="end">TCP :9700 · block I/O dataplane</text>
+  <!-- kernel -> gateway REST -->
+  <path d="M445,195 V340" fill="none" stroke="#4338ca" stroke-width="1.8" marker-end="url(#aI)"/>
+  <text x="452" y="248" font-size="9.5" fill="#3730a3">(namrbd_ctrl.ko)</text>
+  <text x="452" y="262" font-size="9.5" fill="#3730a3">HTTP REST :9701</text>
+  <text x="452" y="274" font-size="9.5" fill="#3730a3">attach control</text>
+  <!-- initiator -> iscsi-gw -->
+  <path d="M637,160 V230" fill="none" stroke="#6b7280" stroke-width="1.8" marker-end="url(#aX)"/>
+  <text x="645" y="196" font-size="9.5" fill="#4b5563">iSCSI / TCP :3260</text>
+  <!-- iscsi-gw -> sbs-data -->
+  <path d="M637,295 V735 H900 V780" fill="none" stroke="#4338ca" stroke-width="1.8" marker-end="url(#aI)"/>
+  <text transform="translate(626,505) rotate(-90)" font-size="9.5" fill="#3730a3" text-anchor="middle">gRPC sbs.v1.VolumeService :9444 (direct)</text>
+  <!-- gateway -> etcd -->
+  <path d="M330,420 V700 H200 V780" fill="none" stroke="#4338ca" stroke-width="1.8" marker-end="url(#aI)"/>
+  <text transform="translate(319,540) rotate(-90)" font-size="9.5" fill="#3730a3" text-anchor="middle">etcd v3 gRPC :2379 (root /namrbd)</text>
+  <!-- gateway -> sbs-service -->
+  <path d="M400,420 V752 H460 V780" fill="none" stroke="#4338ca" stroke-width="1.8" marker-end="url(#aI)"/>
+  <text transform="translate(389,540) rotate(-90)" font-size="9.5" fill="#3730a3" text-anchor="middle">gRPC :9443 (placement / write authority)</text>
+  <!-- gateway -> sbs-data -->
+  <path d="M470,420 V755 H840 V780" fill="none" stroke="#4338ca" stroke-width="1.8" marker-end="url(#aI)"/>
+  <text transform="translate(459,540) rotate(-90)" font-size="9.5" fill="#3730a3" text-anchor="middle">gRPC :9444 (chunk I/O) · HTTP :9082</text>
+  <!-- sbsctl -> sbs-service -->
+  <path d="M150,535 V760 H405 V850 H420" fill="none" stroke="#b45309" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#aA)"/>
+  <text x="162" y="572" font-size="9.5" fill="#92400e">gRPC :9443 (admin)</text>
+  <text x="162" y="588" font-size="9" fill="#92400e">(testio: sbs-data gRPC :9444)</text>
+
+  <!-- ===================== NAMROS zone ===================== -->
+  <!-- S3 client -->
+  <rect x="840" y="110" width="180" height="45" rx="6" fill="#ffffff" stroke="#6b7280" stroke-dasharray="4 3"/>
+  <text x="930" y="128" font-size="10" font-weight="bold" fill="#374151" text-anchor="middle">S3 Client</text>
+  <text x="930" y="142" font-size="8.5" fill="#6b7280" text-anchor="middle">aws-cli · boto3 · mc · s3fs</text>
+
+  <!-- namros-gateway -->
+  <rect x="790" y="235" width="270" height="80" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="925" y="260" font-size="12" font-weight="bold" fill="#1e3a8a" text-anchor="middle">namros-gateway</text>
+  <text x="925" y="277" font-size="9.5" fill="#1e40af" text-anchor="middle">S3 object gateway daemon</text>
+  <text x="925" y="293" font-size="9.5" fill="#1e40af" text-anchor="middle">HTTP :9000 (S3 API · console · /metrics · /debug)</text>
+  <text x="925" y="307" font-size="8.5" fill="#1e40af" text-anchor="middle">independent of NAMRBD · shares only SBS &amp; metadata stores</text>
+
+  <!-- S3 -> gateway -->
+  <path d="M930,155 V235" fill="none" stroke="#6b7280" stroke-width="1.8" marker-end="url(#aX)"/>
+  <text x="940" y="186" font-size="9.5" fill="#4b5563">HTTP-based S3 REST API</text>
+  <text x="940" y="200" font-size="9.5" fill="#4b5563">(SigV4) :9000</text>
+
+  <!-- ops tools group -->
+  <rect x="1150" y="170" width="420" height="450" rx="8" fill="#ffffff" fill-opacity="0.55" stroke="#059669" stroke-width="1.5" stroke-dasharray="8 4"/>
+  <text x="1200" y="192" font-size="11" font-weight="bold" fill="#047857">NAMROS Operations Tools Group</text>
+
+  <!-- externals above group -->
+  <rect x="1170" y="105" width="160" height="45" rx="6" fill="#ffffff" stroke="#6b7280" stroke-dasharray="4 3"/>
+  <text x="1250" y="124" font-size="10" font-weight="bold" fill="#374151" text-anchor="middle">AI Assistant</text>
+  <text x="1250" y="138" font-size="8.5" fill="#6b7280" text-anchor="middle">(MCP client)</text>
+  <rect x="1345" y="105" width="105" height="45" rx="6" fill="#ffffff" stroke="#6b7280" stroke-dasharray="4 3"/>
+  <text x="1397" y="131" font-size="10" font-weight="bold" fill="#374151" text-anchor="middle">Alertmanager</text>
+  <rect x="1470" y="105" width="100" height="45" rx="6" fill="#ffffff" stroke="#6b7280" stroke-dasharray="4 3"/>
+  <text x="1520" y="131" font-size="10" font-weight="bold" fill="#374151" text-anchor="middle">Prometheus</text>
+
+  <!-- group boxes: col A -->
+  <rect x="1170" y="210" width="185" height="58" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="1262" y="230" font-size="11" font-weight="bold" fill="#1e3a8a" text-anchor="middle">namros-mcp</text>
+  <text x="1262" y="245" font-size="8.5" fill="#1e40af" text-anchor="middle">MCP server (stdio · no port)</text>
+  <text x="1262" y="258" font-size="8.5" fill="#1e40af" text-anchor="middle">queries gateway &amp; etcd state</text>
+
+  <rect x="1170" y="310" width="185" height="58" rx="6" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+  <text x="1262" y="330" font-size="11" font-weight="bold" fill="#78350f" text-anchor="middle">namros-ops-report</text>
+  <text x="1262" y="345" font-size="8.5" fill="#92400e" text-anchor="middle">CLI · ops report (JSON stdout)</text>
+  <text x="1262" y="358" font-size="8.5" fill="#92400e" text-anchor="middle">collects SBS/GW/etcd snapshots</text>
+
+  <rect x="1170" y="410" width="185" height="58" rx="6" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+  <text x="1262" y="430" font-size="11" font-weight="bold" fill="#78350f" text-anchor="middle">namros-admin</text>
+  <text x="1262" y="445" font-size="8.5" fill="#92400e" text-anchor="middle">CLI · direct metadata operations</text>
+  <text x="1262" y="458" font-size="8.5" fill="#92400e" text-anchor="middle">(bypasses gateway)</text>
+
+  <!-- group boxes: col B -->
+  <rect x="1375" y="210" width="185" height="58" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="1467" y="230" font-size="10.5" font-weight="bold" fill="#1e3a8a" text-anchor="middle">namros-notification-adapter</text>
+  <text x="1467" y="245" font-size="8.5" fill="#1e40af" text-anchor="middle">daemon · HTTP :19120</text>
+  <text x="1467" y="258" font-size="8.5" fill="#1e40af" text-anchor="middle">webhook receiver only</text>
+
+  <rect x="1375" y="310" width="185" height="58" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="1467" y="330" font-size="11" font-weight="bold" fill="#1e3a8a" text-anchor="middle">namros-sbs-exporter</text>
+  <text x="1467" y="345" font-size="8.5" fill="#1e40af" text-anchor="middle">daemon · HTTP :19110</text>
+  <text x="1467" y="358" font-size="8.5" fill="#1e40af" text-anchor="middle">Prometheus exporter</text>
+
+  <!-- externals -> tools -->
+  <path d="M1250,150 V165 H1180 V210" fill="none" stroke="#6b7280" stroke-width="1.6" marker-end="url(#aX)"/>
+  <text x="1240" y="161" font-size="8.5" fill="#4b5563" text-anchor="middle">MCP JSON-RPC 2.0 (stdio)</text>
+  <path d="M1397,150 V210" fill="none" stroke="#6b7280" stroke-width="1.6" marker-end="url(#aX)"/>
+  <text x="1404" y="190" font-size="8.5" fill="#4b5563">HTTP POST :19120</text>
+  <text x="1404" y="202" font-size="8.5" fill="#4b5563">/alertmanager/webhook</text>
+  <path d="M1520,150 V175 H1572 V339 H1560" fill="none" stroke="#6b7280" stroke-width="1.6" marker-end="url(#aX)"/>
+  <text x="1462" y="167" font-size="8.5" fill="#4b5563">HTTP GET :19110 /metrics</text>
+
+  <!-- namros-gateway outgoing -->
+  <path d="M810,315 V660 H270 V780" fill="none" stroke="#047857" stroke-width="1.8" marker-end="url(#aG)"/>
+  <text transform="translate(799,488) rotate(-90)" font-size="9.5" fill="#065f46" text-anchor="middle">etcd v3 gRPC :2379 (/namros/gateways)</text>
+  <path d="M880,315 V725 H600 V780" fill="none" stroke="#047857" stroke-width="1.8" marker-end="url(#aG)"/>
+  <text transform="translate(869,500) rotate(-90)" font-size="9.5" fill="#065f46" text-anchor="middle">gRPC :9443 (chunk ID alloc) · HTTP :9081 (observability)</text>
+  <path d="M950,315 V745 H1010 V780" fill="none" stroke="#047857" stroke-width="1.8" marker-end="url(#aG)"/>
+  <text transform="translate(939,530) rotate(-90)" font-size="9.5" fill="#065f46" text-anchor="middle">gRPC :9444 (object chunk I/O)</text>
+  <path d="M1020,315 V670 H1490 V780" fill="none" stroke="#047857" stroke-width="1.8" marker-end="url(#aG)"/>
+  <text transform="translate(1009,492) rotate(-90)" font-size="9.5" fill="#065f46" text-anchor="middle">TxnKV gRPC (PD :2379) · keyspace /namros/v1</text>
+
+  <!-- tools outgoing -->
+  <path d="M1170,245 H1060" fill="none" stroke="#047857" stroke-width="1.6" marker-end="url(#aG)"/>
+  <text x="1115" y="237" font-size="9" fill="#065f46" text-anchor="middle">HTTP :9000</text>
+  <text x="1115" y="260" font-size="8.5" fill="#065f46" text-anchor="middle">(health · debug)</text>
+  <path d="M1170,332 H1100 V290 H1060" fill="none" stroke="#b45309" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#aA)"/>
+  <text x="1104" y="280" font-size="8.5" fill="#92400e" text-anchor="middle">HTTP :9000 (bundle)</text>
+  <path d="M1170,352 H1135 V648 H320 V780" fill="none" stroke="#b45309" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#aA)"/>
+  <text transform="translate(1126,500) rotate(-90)" font-size="9" fill="#92400e" text-anchor="middle">mcp / ops-report → etcd gRPC :2379 (registry reads)</text>
+  <path d="M1260,468 V740 H1440 V780" fill="none" stroke="#b45309" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#aA)"/>
+  <text transform="translate(1274,560) rotate(-90)" font-size="9" fill="#92400e" text-anchor="middle">TiKV gRPC (PD :2379)</text>
+  <path d="M1467,368 V712 H650 V780" fill="none" stroke="#047857" stroke-width="1.6" marker-end="url(#aG)"/>
+  <rect x="1170" y="694" width="290" height="15" fill="#ffffff" opacity="0.9"/>
+  <text x="1315" y="705" font-size="9" fill="#065f46" text-anchor="middle">HTTP GET :9081 /api/v1/sbs/cluster (also ops-report)</text>
+
+  <!-- ===================== Substrate ===================== -->
+  <!-- etcd -->
+  <rect x="90" y="780" width="260" height="160" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="215" y="802" font-size="12" font-weight="bold" fill="#1e3a8a" text-anchor="middle">etcd · client :2379</text>
+  <text x="215" y="817" font-size="9" fill="#1e40af" text-anchor="middle">coordination / gateway metadata</text>
+  <rect x="102" y="830" width="112" height="60" rx="4" fill="#e0e7ff" stroke="#6366f1"/>
+  <text x="158" y="849" font-size="8.5" font-weight="bold" fill="#3730a3" text-anchor="middle">root /namrbd</text>
+  <text x="158" y="863" font-size="8" fill="#4338ca" text-anchor="middle">volume/attach/GW records</text>
+  <text x="158" y="875" font-size="8" fill="#4338ca" text-anchor="middle">(namrbd-gateway)</text>
+  <rect x="226" y="830" width="112" height="60" rx="4" fill="#d1fae5" stroke="#059669"/>
+  <text x="282" y="849" font-size="8.5" font-weight="bold" fill="#065f46" text-anchor="middle">/namros/gateways</text>
+  <text x="282" y="863" font-size="8" fill="#047857" text-anchor="middle">GW registry &amp; leases</text>
+  <text x="282" y="875" font-size="8" fill="#047857" text-anchor="middle">active-active coordination</text>
+
+  <!-- sbs-service -->
+  <rect x="420" y="780" width="260" height="150" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="550" y="802" font-size="12" font-weight="bold" fill="#1e3a8a" text-anchor="middle">sbs-service</text>
+  <text x="550" y="817" font-size="9" fill="#1e40af" text-anchor="middle">SBS control-plane daemon</text>
+  <text x="550" y="832" font-size="8.5" fill="#1e40af" text-anchor="middle">gRPC :9443 (admin·internal) · HTTP :9081</text>
+  <text x="550" y="908" font-size="8.5" fill="#1e40af" text-anchor="middle">serves NAMRBD / NAMROS via</text>
+  <text x="550" y="920" font-size="8.5" fill="#1e40af" text-anchor="middle">dedicated volume IDs &amp; volume pools</text>
+
+  <!-- sbs-data -->
+  <rect x="790" y="780" width="300" height="170" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="940" y="802" font-size="12" font-weight="bold" fill="#1e3a8a" text-anchor="middle">sbs-data</text>
+  <text x="940" y="817" font-size="8.5" fill="#1e40af" text-anchor="middle">node-local storage daemon · gRPC :9444 · HTTP :9082</text>
+  <text x="940" y="831" font-size="8" fill="#1e40af" text-anchor="middle">(Pebble local store)</text>
+  <rect x="802" y="845" width="135" height="65" rx="4" fill="#e0e7ff" stroke="#6366f1"/>
+  <text x="869" y="866" font-size="8.5" font-weight="bold" fill="#3730a3" text-anchor="middle">NAMRBD namespace</text>
+  <text x="869" y="881" font-size="8" fill="#4338ca" text-anchor="middle">block volume chunks / EC shards</text>
+  <rect x="949" y="845" width="130" height="65" rx="4" fill="#d1fae5" stroke="#059669"/>
+  <text x="1014" y="866" font-size="8.5" font-weight="bold" fill="#065f46" text-anchor="middle">NAMROS namespace</text>
+  <text x="1014" y="881" font-size="8" fill="#047857" text-anchor="middle">dedicated object volumes / pools</text>
+
+  <!-- tikv -->
+  <rect x="1250" y="780" width="280" height="160" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="1390" y="802" font-size="11.5" font-weight="bold" fill="#1e3a8a" text-anchor="middle">TiKV + PD · PD :2379 / store :20160</text>
+  <text x="1390" y="817" font-size="9" fill="#1e40af" text-anchor="middle">transactional metadata store</text>
+  <rect x="1262" y="830" width="125" height="60" rx="4" fill="#e0e7ff" stroke="#6366f1"/>
+  <text x="1324" y="849" font-size="8.5" font-weight="bold" fill="#3730a3" text-anchor="middle">sbs/cluster</text>
+  <text x="1324" y="863" font-size="8" fill="#4338ca" text-anchor="middle">SBS cluster metadata</text>
+  <text x="1324" y="875" font-size="8" fill="#4338ca" text-anchor="middle">(owned by sbs-service)</text>
+  <rect x="1399" y="830" width="120" height="60" rx="4" fill="#d1fae5" stroke="#059669"/>
+  <text x="1459" y="849" font-size="8.5" font-weight="bold" fill="#065f46" text-anchor="middle">keyspace /namros/v1</text>
+  <text x="1459" y="863" font-size="8" fill="#047857" text-anchor="middle">S3 buckets / objects / IAM</text>
+
+  <!-- substrate internal arrows -->
+  <path d="M680,852 H790" fill="none" stroke="#475569" stroke-width="1.8" marker-end="url(#aS)"/>
+  <text x="735" y="834" font-size="9" fill="#334155" text-anchor="middle">gRPC :9444</text>
+  <text x="735" y="846" font-size="8.5" fill="#334155" text-anchor="middle">(replicate / repair)</text>
+  <path d="M680,895 H790" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#aS)"/>
+  <text x="735" y="878" font-size="9" fill="#334155" text-anchor="middle">HTTP :9082</text>
+  <text x="735" y="890" font-size="8.5" fill="#334155" text-anchor="middle">(store admin)</text>
+  <path d="M550,930 V985 H1324 V940" fill="none" stroke="#475569" stroke-width="1.8" marker-end="url(#aS)"/>
+  <rect x="760" y="970" width="330" height="15" fill="#f8fafc" opacity="0.9"/>
+  <text x="925" y="981" font-size="9.5" fill="#334155" text-anchor="middle">TxnKV gRPC (PD :2379) — membership · placement · EC metadata</text>
+
+  <!-- Footnotes -->
+  <text x="40" y="1022" font-size="10" fill="#64748b">* Ports are code defaults; docs and lab environments use overrides (e.g. namrbd-gateway 9899/9898, sbs-data 9460, NAMROS lab gateways 19090-19093, etcd 12379).</text>
+  <text x="40" y="1040" font-size="10" fill="#64748b">* Internal gRPC paths are plaintext (insecure) by default; TLS is optional on some gateway/TiKV paths only.</text>
+</svg>

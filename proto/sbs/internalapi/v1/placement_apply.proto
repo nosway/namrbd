@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package sbs.internalapi.v1;
+
+option go_package = "github.com/nosway/namrbd/sbs/internalapi/v1;internalv1";
+
+import "sbs/internalapi/v1/payload_encryption.proto";
+
+// PlacementApplyService is an internal-only authority surface for applying
+// committed placement effects owned by sbs-service.
+service PlacementApplyService {
+  rpc ApplyPlacementChanges(ApplyPlacementChangesRequest) returns (ApplyPlacementChangesResponse);
+}
+
+message ApplyPlacementChangesRequest {
+  string volume_id = 1;
+  uint64 committed_revision = 2;
+  repeated AllocationPage allocation_pages = 3;
+  repeated uint64 normalize_extent_ids = 4;
+  repeated uint64 retired_physical_chunk_ids = 5;
+}
+
+message ApplyPlacementChangesResponse {
+  string volume_id = 1;
+  uint64 committed_revision = 2;
+}
+
+message AllocationPage {
+  string volume_id = 1;
+  uint64 page_no = 2;
+  uint32 page_bytes = 3;
+  uint32 chunk_size_bytes = 4;
+  uint64 revision = 5;
+  repeated AllocationExtent extents = 6;
+}
+
+message AllocationExtent {
+  uint64 logical_chunk_start = 1;
+  uint32 chunk_count = 2;
+  AllocationKind kind = 3;
+  uint64 physical_chunk_start = 4;
+  string backing_ref = 5;
+  uint64 generation = 6;
+  string checksum = 7;
+  PayloadEncryptionHeader encryption = 8;
+}
+
+enum AllocationKind {
+  ALLOCATION_KIND_UNSPECIFIED = 0;
+  ALLOCATION_KIND_ZERO = 1;
+  ALLOCATION_KIND_DATA = 2;
+  ALLOCATION_KIND_SHARED = 3;
+}

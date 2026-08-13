@@ -1,0 +1,15 @@
+.git
+.cache
+bin
+tmp
+*.log
+*.test
+.DS_Store
+scripts
+qa-suite
+docs
+docs-src
+site
+enterprise
+stale-codes
+tools

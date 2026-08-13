@@ -1,0 +1,43 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: namrbd-replicated
+  labels:
+    app.kubernetes.io/name: namrbd-csi
+  annotations:
+    namrbd.io/discard-exposure: "__DISCARD_EXPOSURE_STATE__"
+    namrbd.io/discard-validation-profile: "__DISCARD_VALIDATION_PROFILE__"
+provisioner: __DRIVER_NAME__
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+mountOptions: __DISCARD_MOUNT_OPTIONS__
+parameters:
+  redundancy_backend: replicated
+  replication_factor: "3"
+  topology_mode: prefer
+  block_size: "4K"
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: namrbd-ec-6-3
+  labels:
+    app.kubernetes.io/name: namrbd-csi
+    namrbd.io/edition: enterprise
+  annotations:
+    namrbd.io/enterprise-only: "true"
+    namrbd.io/discard-exposure: "__DISCARD_EXPOSURE_STATE__"
+    namrbd.io/discard-validation-profile: "__DISCARD_VALIDATION_PROFILE__"
+provisioner: __DRIVER_NAME__
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+mountOptions: __DISCARD_MOUNT_OPTIONS__
+parameters:
+  redundancy_backend: ec
+  ec_profile: ec-6-3
+  topology_mode: strict
+  block_size: "4K"
+  allocation_chunk_size: "128K"
+  allocation_page_size: "4M"

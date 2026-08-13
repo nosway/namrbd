@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 1280 760">
+  <title id="title">Erasure coding backend storage path</title>
+  <desc id="desc">An erasure coding backend storage path diagram showing PhysicalObjectRef resolution, EC profile, stripe generation, data and parity shards, full-stripe writes, partial-write merge, healthy reads, and degraded reconstruction.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L8 4 L0 8z" fill="#0b6b8f"/></marker>
+    <marker id="smallarrow" markerWidth="6" markerHeight="6" refX="5.1" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L6 3 L0 6z" fill="#0b6b8f"/></marker>
+    <marker id="grayarrow" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L8 4 L0 8z" fill="#596574"/></marker>
+    <style>
+      .canvas{fill:#fbfcfd}.lane{fill:#f4f8fb;stroke:#d8e0e8;stroke-width:1.5}.common{fill:#e9f5f8;stroke:#86bac9;stroke-width:2}.meta{fill:#fff7e8;stroke:#dfb86f;stroke-width:2}.data{fill:#fff;stroke:#cbd6df;stroke-width:1.8}.parity{fill:#fff2ed;stroke:#d7a28d;stroke-width:1.8}.ok{fill:#eef6ee;stroke:#9cc39d;stroke-width:1.8}.warn{fill:#fff7e8;stroke:#dfb86f;stroke-width:1.8}.title{fill:#17202a;font:700 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.small{fill:#596574;font:500 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.micro{fill:#596574;font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.label{fill:#17202a;font:700 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.line{fill:none;stroke:#0b6b8f;stroke-width:3}.arrow{fill:none;stroke:#0b6b8f;stroke-width:3;marker-end:url(#arrow)}.arrow-small{fill:none;stroke:#0b6b8f;stroke-width:2.4;marker-end:url(#smallarrow)}.dash{fill:none;stroke:#596574;stroke-width:2.3;stroke-dasharray:7 7;marker-end:url(#grayarrow)}
+    </style>
+  </defs>
+
+  <rect class="canvas" width="1280" height="760" rx="18"/>
+  <text class="title" x="44" y="48">Erasure Coding Backend Storage Path</text>
+  <text class="small" x="44" y="76">Enterprise edition only: EC keeps logical visibility common, then encodes DATA into stripe generations and shards.</text>
+
+  <rect class="lane" x="40" y="108" width="1200" height="160" rx="14"/>
+  <text class="micro" x="66" y="140">Descriptor resolution below PhysicalObjectRef</text>
+  <rect class="common" x="80" y="164" width="210" height="64" rx="9"/>
+  <text class="label" x="104" y="190">PhysicalObjectRef</text>
+  <text class="micro" x="104" y="208">backend=ec, gen N</text>
+  <rect class="meta" x="366" y="164" width="204" height="64" rx="9"/>
+  <text class="label" x="390" y="190">EC profile</text>
+  <text class="micro" x="390" y="208">k=4 data, m=2 parity</text>
+  <rect class="meta" x="646" y="164" width="226" height="64" rx="9"/>
+  <text class="label" x="670" y="190">Stripe generation</text>
+  <text class="micro" x="670" y="208">immutable visible ref</text>
+  <rect class="ok" x="948" y="164" width="216" height="64" rx="9"/>
+  <text class="label" x="972" y="190">Topology placement</text>
+  <text class="micro" x="972" y="208">spread shards by zone</text>
+  <path class="arrow" d="M290 196 H366"/>
+  <path class="arrow" d="M570 196 H646"/>
+  <path class="arrow" d="M872 196 H948"/>
+
+  <rect class="lane" x="40" y="302" width="1200" height="218" rx="14"/>
+  <text class="micro" x="66" y="334">Stripe layout on sbs-data</text>
+  <rect class="data" x="86" y="386" width="156" height="74" rx="9"/>
+  <text class="label" x="112" y="414">D0</text>
+  <text class="micro" x="112" y="432">zone A data</text>
+  <rect class="data" x="280" y="386" width="156" height="74" rx="9"/>
+  <text class="label" x="306" y="414">D1</text>
+  <text class="micro" x="306" y="432">zone B data</text>
+  <rect class="data" x="474" y="386" width="156" height="74" rx="9"/>
+  <text class="label" x="500" y="414">D2</text>
+  <text class="micro" x="500" y="432">zone C data</text>
+  <rect class="data" x="668" y="386" width="156" height="74" rx="9"/>
+  <text class="label" x="694" y="414">D3</text>
+  <text class="micro" x="694" y="432">zone D data</text>
+  <rect class="parity" x="862" y="386" width="156" height="74" rx="9"/>
+  <text class="label" x="888" y="414">P0</text>
+  <text class="micro" x="888" y="432">parity shard</text>
+  <rect class="parity" x="1056" y="386" width="156" height="74" rx="9"/>
+  <text class="label" x="1082" y="414">P1</text>
+  <text class="micro" x="1082" y="432">parity shard</text>
+  <path class="line" d="M1056 228 V354"/>
+  <path class="arrow-small" d="M1056 354 H164 V386"/>
+  <path class="arrow-small" d="M1056 354 H358 V386"/>
+  <path class="arrow-small" d="M1056 354 H552 V386"/>
+  <path class="arrow-small" d="M1056 354 H746 V386"/>
+  <path class="arrow-small" d="M1056 354 H940 V386"/>
+  <path class="arrow-small" d="M1056 354 H1134 V386"/>
+  <text class="small" x="84" y="486">Full-stripe write: split DATA, compute parity, persist all required shard payloads, then publish the AE.</text>
+
+  <rect class="lane" x="40" y="556" width="1200" height="140" rx="14"/>
+  <text class="micro" x="66" y="588">Read and partial-write behavior</text>
+  <rect class="ok" x="86" y="616" width="252" height="48" rx="8"/>
+  <text class="label" x="112" y="645">healthy read: read needed D shards</text>
+  <rect class="parity" x="392" y="616" width="274" height="48" rx="8"/>
+  <text class="label" x="420" y="645">degraded read: reconstruct from D/P</text>
+  <rect class="warn" x="720" y="616" width="244" height="48" rx="8"/>
+  <text class="label" x="748" y="645">partial write: read old view</text>
+  <rect class="meta" x="1010" y="616" width="168" height="48" rx="8"/>
+  <text class="label" x="1034" y="645">new stripe gen</text>
+  <path class="dash" d="M964 640 H1010"/>
+  <text class="small" x="66" y="724">ZERO AllocationEntries skip EC entirely; rebuild, scrub, drain, and rebalance operate only on DATA shard refs.</text>
+</svg>

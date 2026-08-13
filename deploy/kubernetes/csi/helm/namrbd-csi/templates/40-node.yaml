@@ -1,0 +1,123 @@
+{{- if .Values.node.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: namrbd-csi-node
+  namespace: {{ include "namrbd-csi.namespace" . }}
+  labels:
+    {{- include "namrbd-csi.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: namrbd-csi
+      app.kubernetes.io/component: node
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: namrbd-csi
+        app.kubernetes.io/component: node
+      annotations:
+        namrbd.io/admin-endpoint: {{ .Values.config.adminEndpoint | quote }}
+        namrbd.io/admin-endpoints: {{ include "namrbd-csi.adminEndpoints" . | quote }}
+        namrbd.io/gateway-url: {{ .Values.config.gatewayURL | quote }}
+    spec:
+      serviceAccountName: namrbd-csi-node
+      hostNetwork: true
+      containers:
+        - name: namrbd-csi-driver
+          image: {{ include "namrbd-csi.driverImage" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            privileged: true
+            allowPrivilegeEscalation: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          args:
+            - "--endpoint=unix:///csi/csi.sock"
+            - "--admin-endpoint=$(NAMRBD_ADMIN_ENDPOINT)"
+            - "--admin-endpoints=$(NAMRBD_ADMIN_ENDPOINTS)"
+            - "--cluster-id=$(NAMRBD_CLUSTER_ID)"
+            - "--sbs-cluster-id=$(NAMRBD_SBS_CLUSTER_ID)"
+            - "--driver-name=$(NAMRBD_CSI_DRIVER_NAME)"
+            - "--node-id=$(NODE_NAME)"
+            - "--gateway-url=$(NAMRBD_GATEWAY_URL)"
+            - "--namrbdctl=/usr/local/bin/namrbdctl"
+          envFrom:
+            - configMapRef:
+                name: namrbd-csi-config
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            {{- if .Values.credentials.enabled }}
+            - name: NAMRBD_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "namrbd-csi.credentialsSecretName" . }}
+                  key: bearer-token
+                  optional: true
+            {{- end }}
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: kubelet-dir
+              mountPath: /var/lib/kubelet
+              mountPropagation: Bidirectional
+            - name: dev-dir
+              mountPath: /dev
+            - name: sys-dir
+              mountPath: /sys
+            - name: modules-dir
+              mountPath: /lib/modules
+              readOnly: true
+        {{- if .Values.sidecars.nodeDriverRegistrar.enabled }}
+        - name: node-driver-registrar
+          image: {{ .Values.sidecars.nodeDriverRegistrar.image | quote }}
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--kubelet-registration-path={{ .Values.config.kubeletRoot }}/plugins/{{ .Values.driverName }}/csi.sock"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+        {{- end }}
+        {{- if .Values.sidecars.livenessProbe.enabled }}
+        - name: liveness-probe
+          image: {{ .Values.sidecars.livenessProbe.image | quote }}
+          args:
+            - "--csi-address=/csi/csi.sock"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        {{- end }}
+      volumes:
+        - name: socket-dir
+          hostPath:
+            path: {{ printf "%s/plugins/%s" .Values.config.kubeletRoot .Values.driverName | quote }}
+            type: DirectoryOrCreate
+        - name: registration-dir
+          hostPath:
+            path: {{ printf "%s/plugins_registry" .Values.config.kubeletRoot | quote }}
+            type: Directory
+        - name: kubelet-dir
+          hostPath:
+            path: {{ .Values.config.kubeletRoot | quote }}
+            type: Directory
+        - name: dev-dir
+          hostPath:
+            path: /dev
+            type: Directory
+        - name: sys-dir
+          hostPath:
+            path: /sys
+            type: Directory
+        - name: modules-dir
+          hostPath:
+            path: /lib/modules
+            type: Directory
+{{- end }}

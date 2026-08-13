@@ -1,0 +1,25 @@
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: __DRIVER_NAME__
+spec:
+  attachRequired: false
+  podInfoOnMount: true
+  fsGroupPolicy: File
+  volumeLifecycleModes:
+    - Persistent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: namrbd-csi-config
+  namespace: __NAMESPACE__
+data:
+  NAMRBD_CLUSTER_ID: "__CLUSTER_ID__"
+  NAMRBD_SBS_CLUSTER_ID: "__SBS_CLUSTER_ID__"
+  NAMRBD_ADMIN_ENDPOINT: "__ADMIN_ENDPOINT__"
+  NAMRBD_ADMIN_ENDPOINTS: "__ADMIN_ENDPOINTS__"
+  NAMRBD_GATEWAY_URL: "__GATEWAY_URL__"
+  NAMRBD_CSI_DRIVER_NAME: "__DRIVER_NAME__"
+  NAMRBD_CSI_SOCKET_DIR: "/csi"
+  NAMRBD_KUBELET_ROOT: "/var/lib/kubelet"

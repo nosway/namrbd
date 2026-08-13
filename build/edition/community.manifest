@@ -1,0 +1,116 @@
+# NAMRBD community edition source manifest.
+#
+# Format:
+#   include <path>
+#   exclude <path>
+#
+# Community is the replicated storage core edition. It includes replicated
+# volume lifecycle, basic replicated snapshot/restore/read-view/CSI/discard
+# documentation, basic iSCSI daemon and sbsctl iSCSI control surfaces
+# with a 3-volume export cap, and shared command surfaces. EC, user-visible clone/materialize,
+# advanced mobility/DR/security/performance/iSCSI scale surfaces, stale archived
+# code, and legacy namrbd-meta surfaces are excluded from future public mirror
+# export.
+
+include go.mod
+include go.sum
+include Makefile
+include mkdocs.yml
+include tools/check-docs-render.py
+include .gitignore
+include README.md
+include LICENSE
+include NOTICE
+include THIRD_PARTY_NOTICES.md
+include CONTRIBUTING.md
+include SECURITY.md
+include CODE_OF_CONDUCT.md
+include CODEOWNERS
+include .github
+include LICENSES
+
+include cmd/namrbd-debug
+include cmd/namrbd-gateway
+include cmd/namrbd-iscsi-gateway
+include cmd/namrbd-csi-driver
+include cmd/namrbd-mcp
+include cmd/namrbdctl
+include cmd/sbs-data
+include cmd/sbs-service
+include cmd/sbsctl
+
+include control
+include deploy/kubernetes/csi
+include deploy/observability
+include docs-src
+include examples
+include gateway
+include iscsi
+include internal
+include kernel
+include proto
+include protocol
+include sbs
+include third_party/gotgt
+include version
+include volumeid
+include web
+
+include packaging/docker/Dockerfile.sbs
+include build/edition/community.manifest
+
+exclude stale-codes
+exclude enterprise
+exclude docs/enterprise
+exclude docs/community-source-export.md
+exclude docs/html-docs
+exclude qa-suite
+exclude scripts
+exclude .cache
+exclude bin
+exclude tmp
+exclude scripts/namrbd-remote-harness.sh
+exclude scripts/compact-write-ack-trace.sh
+exclude scripts/write-path-phase-attribution.sh
+exclude scripts/phase-f-small-lab.env
+exclude scripts/phase-f-9node-lab.env
+exclude scripts/phase-k-18node-lab.env
+exclude build/edition/enterprise.manifest
+exclude docs/harness-engineering-guidelines.md
+exclude docs/namrbd-harness-agent-system-draft.md
+exclude docs/community-public-repo-content-review.md
+exclude docs/Phase-I-implementation-plan.md
+exclude docs/fresh-9node-sbs-cluster-installation-guide.md
+exclude docs/phase-f-installation-operations-guide.md
+exclude docs/phase-l-k8s-csi-18node-lab-guide.md
+exclude docs/user-manual-work-plan.md
+exclude docs/phase-j-snapshot-clone-api-design.md
+exclude docs/phase-j-reference-gc-design.md
+exclude docs/phase-l-authoritative-docs.md
+exclude docs/phase-l-entry-plan.md
+exclude docs/phase-l-slice-detailed-design.md
+exclude docs/phase-k-authoritative-docs.md
+exclude docs/phase-k-entry-plan.md
+exclude docs/phase-k-slice-detailed-design.md
+exclude docs/phase-k-ec-rough-design-input.md
+exclude docs/phase-m-slice-detailed-design.md
+exclude cmd/namrbd-iscsictl
+exclude cmd/namrbd-gateway/phase_p_repository_enterprise.go
+exclude cmd/namrbd-gateway/phase_p_repository_enterprise_test.go
+exclude cmd/sbsctl/backup_commands_enterprise.go
+exclude cmd/sbsctl/backup_commands_enterprise_test.go
+exclude cmd/sbsctl/dedupe_commands_enterprise.go
+exclude cmd/sbsctl/dedupe_commands_enterprise_test.go
+exclude cmd/sbsctl/dr_commands_enterprise.go
+exclude cmd/sbsctl/enterprise_commands.go
+exclude cmd/sbsctl/enterprise_commands_test.go
+exclude cmd/sbsctl/main_ec_admin_test.go
+exclude cmd/sbsctl/mobility_commands_enterprise.go
+exclude cmd/sbsctl/mobility_commands_enterprise_test.go
+exclude cmd/sbsctl/performance_commands_enterprise.go
+exclude cmd/sbsctl/performance_commands_enterprise_test.go
+exclude cmd/sbsctl/security_commands_enterprise.go
+exclude cmd/sbsctl/security_commands_enterprise_test.go
+exclude gateway/service/chunk_payload_encryption.go
+exclude gateway/service/chunk_payload_encryption_test.go
+exclude iscsi/edition_enterprise.go

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 1200 640">
+  <title id="title">Topology placement and maintenance</title>
+  <desc id="desc">A topology placement diagram showing zones, nodes, stores, SBS placement planning, replica or EC layout, and maintenance state boundaries.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L8 4 L0 8z" fill="#0b6b8f"/></marker>
+    <marker id="dasharrow" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L8 4 L0 8z" fill="#596574"/></marker>
+    <style>
+      .canvas{fill:#fbfcfd}.band{fill:#f4f8fb;stroke:#d8e0e8;stroke-width:1.5}.box{fill:#fff;stroke:#d8e0e8;stroke-width:1.8}.intent{fill:#fff7e8;stroke:#e0c089;stroke-width:1.9}.place{fill:#e9f5f8;stroke:#9bc6d4;stroke-width:1.9}.store{fill:#f7f8fb;stroke:#cbd6df;stroke-width:1.9}.title{fill:#17202a;font:700 19px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.small{fill:#596574;font:500 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.arrow{fill:none;stroke:#0b6b8f;stroke-width:3.2;marker-end:url(#arrow)}.dash{fill:none;stroke:#596574;stroke-width:2.5;stroke-dasharray:8 7;marker-end:url(#dasharrow)}
+    </style>
+  </defs>
+  <rect class="canvas" width="1200" height="640" rx="16"/>
+  <text class="title" x="42" y="48">Topology, Placement, And Maintenance</text>
+  <text class="small" x="42" y="74">Topology describes failure domains; placement and maintenance publish safe metadata transitions.</text>
+
+  <rect class="band" x="34" y="120" width="1132" height="182" rx="12"/>
+  <rect class="intent" x="78" y="178" width="200" height="82" rx="9"/>
+  <text class="title" x="104" y="210">Operator intent</text>
+  <text class="small" x="104" y="234">zones and policies</text>
+  <rect class="box" x="364" y="178" width="170" height="82" rx="9"/>
+  <text class="title" x="394" y="210">Zones</text>
+  <text class="small" x="394" y="234">failure domains</text>
+  <rect class="box" x="620" y="178" width="170" height="82" rx="9"/>
+  <text class="title" x="650" y="210">Nodes</text>
+  <text class="small" x="650" y="234">SBS members</text>
+  <rect class="box" x="876" y="178" width="170" height="82" rx="9"/>
+  <text class="title" x="906" y="210">Stores</text>
+  <text class="small" x="906" y="234">local capacity</text>
+  <path class="arrow" d="M278 219 H364"/>
+  <path class="arrow" d="M534 219 H620"/>
+  <path class="arrow" d="M790 219 H876"/>
+
+  <rect class="band" x="34" y="350" width="1132" height="204" rx="12"/>
+  <rect class="place" x="154" y="420" width="210" height="82" rx="9"/>
+  <text class="title" x="182" y="452">sbs-service</text>
+  <text class="small" x="182" y="476">placement planner</text>
+  <rect class="place" x="494" y="420" width="210" height="82" rx="9"/>
+  <text class="title" x="522" y="452">Published layout</text>
+  <text class="small" x="522" y="476">replica set or EC shards</text>
+  <rect class="store" x="834" y="420" width="210" height="82" rx="9"/>
+  <text class="title" x="855" y="452">Maintenance state</text>
+  <text class="small" x="862" y="476">preflight, move, verify</text>
+  <path class="arrow" d="M364 461 H494"/>
+  <path class="arrow" d="M704 461 H834"/>
+
+  <path class="dash" d="M961 260 V420"/>
+  <path class="dash" d="M449 260 C449 330 259 330 259 420"/>
+  <text class="small" x="58" y="594">Rule: byte balance never outranks topology safety; unsafe maintenance must stop at preflight or publish an explicit weak state.</text>
+</svg>

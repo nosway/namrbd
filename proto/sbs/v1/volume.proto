@@ -1,0 +1,307 @@
+syntax = "proto3";
+
+package sbs.v1;
+
+option go_package = "github.com/nosway/namrbd/sbs/v1;sbsv1";
+
+service VolumeService {
+  rpc OpenVolume(OpenVolumeRequest) returns (OpenVolumeResponse);
+  rpc CloseVolume(CloseVolumeRequest) returns (CloseVolumeResponse);
+  rpc GetVolumeProfile(GetVolumeProfileRequest) returns (GetVolumeProfileResponse);
+  rpc GetVolumeStatus(GetVolumeStatusRequest) returns (GetVolumeStatusResponse);
+
+  rpc Read(ReadRequest) returns (ReadResponse);
+  rpc Write(WriteRequest) returns (WriteResponse);
+  rpc ReadPhysicalChunk(ReadPhysicalChunkRequest) returns (ReadPhysicalChunkResponse);
+  rpc WritePhysicalChunk(WritePhysicalChunkRequest) returns (WritePhysicalChunkResponse);
+  rpc WriteECShard(WriteECShardRequest) returns (WriteECShardResponse);
+  rpc ReadECShard(ReadECShardRequest) returns (ReadECShardResponse);
+  rpc DeleteECShard(DeleteECShardRequest) returns (DeleteECShardResponse);
+  rpc Flush(FlushRequest) returns (FlushResponse);
+  rpc Discard(DiscardRequest) returns (DiscardResponse);
+  rpc Zero(ZeroRequest) returns (ZeroResponse);
+}
+
+message RequestContext {
+  string request_id = 1;
+  string gateway_id = 2;
+  string host_id = 3;
+  string session_id = 4;
+  string attachment_id = 5;
+  uint64 generation = 6;
+  string idempotency_key = 7;
+  int64 deadline_unix_ms = 8;
+  string trace_id = 9;
+}
+
+message VolumeProfile {
+  uint64 size_bytes = 1;
+  uint32 block_size = 2;
+  uint32 max_io_size = 3;
+  bool supports_flush = 4;
+  bool supports_discard = 5;
+  bool supports_zero = 6;
+  string consistency_mode = 7;
+}
+
+enum AccessMode {
+  ACCESS_MODE_UNSPECIFIED = 0;
+  ACCESS_MODE_EXCLUSIVE_WRITER = 1;
+}
+
+enum VolumeState {
+  VOLUME_STATE_UNSPECIFIED = 0;
+  VOLUME_STATE_READY = 1;
+  VOLUME_STATE_DEGRADED = 2;
+  VOLUME_STATE_RECOVERING = 3;
+  VOLUME_STATE_UNAVAILABLE = 4;
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_NOT_FOUND = 1;
+  ERROR_CODE_BAD_REQUEST = 2;
+  ERROR_CODE_STALE_GENERATION = 3;
+  ERROR_CODE_ATTACHMENT_MISMATCH = 4;
+  ERROR_CODE_IDEMPOTENCY_CONFLICT = 5;
+  ERROR_CODE_UNAVAILABLE = 6;
+  ERROR_CODE_TIMEOUT = 7;
+  ERROR_CODE_INTERNAL = 8;
+}
+
+message ErrorDetail {
+  ErrorCode code = 1;
+  string message = 2;
+  bool retryable = 3;
+}
+
+message OpenVolumeRequest {
+  string volume_id = 1;
+  AccessMode access_mode = 2;
+  RequestContext context = 3;
+}
+
+message OpenVolumeResponse {
+  string status = 1;
+  string volume_handle = 2;
+  string volume_id = 3;
+  uint64 volume_revision = 4;
+  VolumeProfile profile = 5;
+  string server_version = 6;
+}
+
+message CloseVolumeRequest {
+  string volume_id = 1;
+  string volume_handle = 2;
+  RequestContext context = 3;
+}
+
+message CloseVolumeResponse {
+  string status = 1;
+}
+
+message GetVolumeProfileRequest {
+  string volume_id = 1;
+  RequestContext context = 2;
+}
+
+message GetVolumeProfileResponse {
+  string volume_id = 1;
+  VolumeProfile profile = 2;
+}
+
+message GetVolumeStatusRequest {
+  string volume_id = 1;
+  RequestContext context = 2;
+}
+
+message GetVolumeStatusResponse {
+  string volume_id = 1;
+  VolumeState state = 2;
+  bool readable = 3;
+  bool writable = 4;
+  uint64 volume_revision = 5;
+}
+
+message ReadRequest {
+  string volume_id = 1;
+  string volume_handle = 2;
+  uint64 offset_bytes = 3;
+  uint64 length_bytes = 4;
+  RequestContext context = 5;
+}
+
+message ReadResponse {
+  string volume_id = 1;
+  uint64 offset_bytes = 2;
+  uint64 length_bytes = 3;
+  bytes data = 4;
+  uint64 volume_revision = 5;
+}
+
+message WriteRequest {
+  string volume_id = 1;
+  string volume_handle = 2;
+  uint64 offset_bytes = 3;
+  uint64 length_bytes = 4;
+  bytes data = 5;
+  RequestContext context = 6;
+}
+
+message WriteResponse {
+  string status = 1;
+  string volume_id = 2;
+  uint64 offset_bytes = 3;
+  uint64 length_bytes = 4;
+  string commit_id = 5;
+  uint64 volume_revision = 6;
+}
+
+message ReadPhysicalChunkRequest {
+  string volume_id = 1;
+  string volume_handle = 2;
+  uint64 physical_chunk_id = 3;
+  uint64 chunk_offset_bytes = 4;
+  uint64 length_bytes = 5;
+  RequestContext context = 6;
+}
+
+message ReadPhysicalChunkResponse {
+  string volume_id = 1;
+  uint64 physical_chunk_id = 2;
+  uint64 chunk_offset_bytes = 3;
+  uint64 length_bytes = 4;
+  bytes data = 5;
+  uint64 volume_revision = 6;
+}
+
+message WritePhysicalChunkRequest {
+  string volume_id = 1;
+  string volume_handle = 2;
+  uint64 physical_chunk_id = 3;
+  uint64 chunk_offset_bytes = 4;
+  uint64 length_bytes = 5;
+  bytes data = 6;
+  RequestContext context = 7;
+}
+
+message WritePhysicalChunkResponse {
+  string status = 1;
+  string volume_id = 2;
+  uint64 physical_chunk_id = 3;
+  uint64 chunk_offset_bytes = 4;
+  uint64 length_bytes = 5;
+  string commit_id = 6;
+  uint64 volume_revision = 7;
+}
+
+message WriteECShardRequest {
+  string volume_id = 1;
+  string volume_handle = 2;
+  string object_id = 3;
+  string stripe_id = 4;
+  uint64 stripe_generation = 5;
+  uint32 shard_id = 6;
+  string role = 7;
+  uint32 role_index = 8;
+  string store_id = 9;
+  bytes data = 10;
+  string checksum = 11;
+  RequestContext context = 12;
+}
+
+message WriteECShardResponse {
+  string status = 1;
+  string volume_id = 2;
+  string object_id = 3;
+  string stripe_id = 4;
+  uint64 stripe_generation = 5;
+  uint32 shard_id = 6;
+  string role = 7;
+  uint32 role_index = 8;
+  string store_id = 9;
+  uint64 length_bytes = 10;
+  string checksum = 11;
+}
+
+message ReadECShardRequest {
+  string volume_id = 1;
+  string volume_handle = 2;
+  string object_id = 3;
+  string stripe_id = 4;
+  uint64 stripe_generation = 5;
+  uint32 shard_id = 6;
+  string store_id = 7;
+  uint64 offset_bytes = 8;
+  uint64 length_bytes = 9;
+  RequestContext context = 10;
+}
+
+message ReadECShardResponse {
+  string volume_id = 1;
+  string object_id = 2;
+  string stripe_id = 3;
+  uint64 stripe_generation = 4;
+  uint32 shard_id = 5;
+  string store_id = 6;
+  uint64 offset_bytes = 7;
+  uint64 length_bytes = 8;
+  bytes data = 9;
+  string checksum = 10;
+}
+
+message DeleteECShardRequest {
+  string volume_id = 1;
+  string volume_handle = 2;
+  string object_id = 3;
+  string stripe_id = 4;
+  uint64 stripe_generation = 5;
+  uint32 shard_id = 6;
+  string store_id = 7;
+  RequestContext context = 8;
+}
+
+message DeleteECShardResponse {
+  string status = 1;
+  string volume_id = 2;
+  string object_id = 3;
+  string stripe_id = 4;
+  uint64 stripe_generation = 5;
+  uint32 shard_id = 6;
+  string store_id = 7;
+}
+
+message FlushRequest {
+  string volume_id = 1;
+  string volume_handle = 2;
+  RequestContext context = 3;
+}
+
+message FlushResponse {
+  string status = 1;
+  uint64 volume_revision = 2;
+}
+
+message DiscardRequest {
+  string volume_id = 1;
+  uint64 offset_bytes = 2;
+  uint64 length_bytes = 3;
+  RequestContext context = 4;
+}
+
+message DiscardResponse {
+  string status = 1;
+  uint64 volume_revision = 2;
+}
+
+message ZeroRequest {
+  string volume_id = 1;
+  uint64 offset_bytes = 2;
+  uint64 length_bytes = 3;
+  RequestContext context = 4;
+}
+
+message ZeroResponse {
+  string status = 1;
+  uint64 volume_revision = 2;
+}

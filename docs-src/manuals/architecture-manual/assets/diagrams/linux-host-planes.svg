@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 1200 640">
+  <title id="title">Linux host control and data planes</title>
+  <desc id="desc">A Linux host diagram separating namrbdctl, namrbd_ctrl, namrbd_blk, gateway control, gateway dataplane, and SBS operations.</desc>
+  <defs>
+    <marker id="arrow-control" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L8 4 L0 8z" fill="#8a5a12"/></marker>
+    <marker id="arrow-data" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L8 4 L0 8z" fill="#0b6b8f"/></marker>
+    <style>
+      .canvas{fill:#fbfcfd}.lane{fill:#f4f8fb;stroke:#d8e0e8;stroke-width:1.5}.host{fill:#e9f5f8;stroke:#9bc6d4;stroke-width:1.9}.controlbox{fill:#fff7e8;stroke:#e0c089;stroke-width:1.9}.box{fill:#fff;stroke:#d8e0e8;stroke-width:1.8}.title{fill:#17202a;font:700 19px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.small{fill:#596574;font:500 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.lane-title{fill:#596574;font:700 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.control{fill:none;stroke:#8a5a12;stroke-width:3.1;marker-end:url(#arrow-control)}.data{fill:none;stroke:#0b6b8f;stroke-width:3.5;marker-end:url(#arrow-data)}
+    </style>
+  </defs>
+  <rect class="canvas" width="1200" height="640" rx="16"/>
+  <text class="title" x="42" y="48">Linux Host Control And Data Plane</text>
+  <text class="small" x="42" y="74">Control applies an attachment manifest; data handles foreground block I/O.</text>
+
+  <rect class="lane" x="34" y="114" width="1132" height="200" rx="12"/>
+  <text class="lane-title" x="58" y="146">Control plane</text>
+  <rect class="controlbox" x="88" y="190" width="200" height="82" rx="9"/>
+  <text class="title" x="116" y="222">namrbdctl</text>
+  <text class="small" x="116" y="246">operator tool</text>
+  <rect class="controlbox" x="368" y="190" width="210" height="82" rx="9"/>
+  <text class="title" x="396" y="222">namrbd_ctrl.ko</text>
+  <text class="small" x="396" y="246">kernel control module</text>
+  <rect class="host" x="658" y="190" width="210" height="82" rx="9"/>
+  <text class="title" x="686" y="222">namrbd_blk.ko</text>
+  <text class="small" x="686" y="246">device activation</text>
+  <rect class="box" x="948" y="190" width="160" height="82" rx="9"/>
+  <text class="title" x="976" y="222">Gateway</text>
+  <text class="small" x="976" y="246">attachment state</text>
+  <path class="control" d="M288 231 H368"/>
+  <path class="control" d="M578 231 H658"/>
+  <path class="control" d="M948 231 H868"/>
+
+  <rect class="lane" x="34" y="364" width="1132" height="210" rx="12"/>
+  <text class="lane-title" x="58" y="396">Data plane</text>
+  <rect class="host" x="88" y="444" width="200" height="82" rx="9"/>
+  <text class="title" x="116" y="476">Linux block layer</text>
+  <text class="small" x="116" y="500">filesystem / raw I/O</text>
+  <rect class="host" x="368" y="444" width="210" height="82" rx="9"/>
+  <text class="title" x="396" y="476">namrbd_blk.ko</text>
+  <text class="small" x="396" y="500">lane and path choice</text>
+  <rect class="box" x="658" y="444" width="240" height="82" rx="9"/>
+  <text class="title" x="686" y="476">Gateway dataplane</text>
+  <text class="small" x="686" y="500">request conversion</text>
+  <rect class="box" x="978" y="444" width="160" height="82" rx="9"/>
+  <text class="title" x="1006" y="476">SBS</text>
+  <text class="small" x="1006" y="500">storage operation</text>
+  <path class="data" d="M288 485 H368"/>
+  <path class="data" d="M578 485 H658"/>
+  <path class="data" d="M898 485 H978"/>
+
+  <text class="small" x="58" y="610">Rule: namrbd_ctrl applies control state; namrbd_blk owns the local block device and dataplane dispatch.</text>
+</svg>

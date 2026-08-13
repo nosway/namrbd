@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 1280 720">
+  <title id="title">Logical to physical mapping</title>
+  <desc id="desc">A logical-to-physical mapping diagram showing offset calculation, allocation entry state, ZERO and DATA read branches, partial write merge, physical references, and backend dispatch.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="5.5" markerHeight="5.5" refX="4.7" refY="2.75" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L5.5 2.75 L0 5.5z" fill="#0b6b8f"/></marker>
+    <style>
+      .canvas{fill:#fbfcfd}.lane{fill:#f4f8fb;stroke:#d8e0e8;stroke-width:1.5}.logical{fill:#e9f5f8;stroke:#86bac9;stroke-width:2}.meta{fill:#fff7e8;stroke:#dfb86f;stroke-width:2}.zero{fill:#f7f8fb;stroke:#aebdcc;stroke-width:1.8}.data{fill:#fff;stroke:#cbd6df;stroke-width:1.8}.write{fill:#fff2ed;stroke:#d7a28d;stroke-width:1.8}.backend{fill:#edf1fb;stroke:#9cafd8;stroke-width:1.8}.ok{fill:#eef6ee;stroke:#9cc39d;stroke-width:1.8}.title{fill:#17202a;font:700 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.small{fill:#596574;font:500 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.micro{fill:#596574;font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.label{fill:#17202a;font:700 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.arrow{fill:none;stroke:#0b6b8f;stroke-width:3;marker-end:url(#arrow)}
+    </style>
+  </defs>
+
+  <rect class="canvas" width="1280" height="720" rx="18"/>
+  <text class="title" x="44" y="48">Logical-To-Physical Mapping</text>
+  <text class="small" x="44" y="76">The calculation finds an AllocationEntry; the entry decides whether data storage is touched.</text>
+
+  <rect class="lane" x="40" y="108" width="1200" height="150" rx="14"/>
+  <text class="micro" x="66" y="140">Offset calculation</text>
+  <rect class="logical" x="78" y="166" width="174" height="58" rx="8"/>
+  <text class="label" x="102" y="190">off, len, 4 KiB</text>
+  <text class="micro" x="102" y="208">host request</text>
+  <rect class="logical" x="316" y="166" width="196" height="58" rx="8"/>
+  <text class="label" x="340" y="190">extent_index</text>
+  <text class="micro" x="340" y="208">off / extent_size</text>
+  <rect class="logical" x="576" y="166" width="230" height="58" rx="8"/>
+  <text class="label" x="600" y="190">alloc_chunk_index</text>
+  <text class="micro" x="600" y="208">offset / chunk_size</text>
+  <rect class="meta" x="870" y="166" width="236" height="58" rx="8"/>
+  <text class="label" x="894" y="190">Allocation Page</text>
+  <text class="micro" x="894" y="208">load owning AE record</text>
+  <path class="arrow" d="M252 195 H316"/>
+  <path class="arrow" d="M512 195 H576"/>
+  <path class="arrow" d="M806 195 H870"/>
+
+  <rect class="lane" x="40" y="292" width="580" height="330" rx="14"/>
+  <text class="micro" x="66" y="324">Read branch</text>
+  <rect class="meta" x="82" y="362" width="178" height="76" rx="9"/>
+  <text class="label" x="108" y="394">AllocationEntry</text>
+  <text class="micro" x="108" y="414">kind + generation</text>
+  <rect class="zero" x="340" y="326" width="214" height="74" rx="9"/>
+  <text class="label" x="366" y="358">kind = ZERO</text>
+  <text class="micro" x="366" y="378">return zero buffer</text>
+  <rect class="data" x="340" y="456" width="214" height="74" rx="9"/>
+  <text class="label" x="366" y="488">kind = DATA</text>
+  <text class="micro" x="366" y="508">follow physical_ref</text>
+  <rect class="backend" x="184" y="560" width="288" height="42" rx="8"/>
+  <text class="label" x="214" y="587">sbs-data used only for DATA</text>
+  <path class="arrow" d="M260 386 H308 V363 H340"/>
+  <path class="arrow" d="M260 414 H308 V493 H340"/>
+  <path class="arrow" d="M447 530 V560"/>
+
+  <rect class="lane" x="660" y="292" width="580" height="330" rx="14"/>
+  <text class="micro" x="686" y="324">Write branch</text>
+  <rect class="write" x="702" y="346" width="186" height="62" rx="9"/>
+  <text class="label" x="724" y="372">partial chunk?</text>
+  <text class="micro" x="724" y="390">merge old view if needed</text>
+  <rect class="write" x="958" y="346" width="200" height="62" rx="9"/>
+  <text class="label" x="982" y="372">all-zero result?</text>
+  <text class="micro" x="982" y="390">publish ZERO AE</text>
+  <rect class="data" x="702" y="470" width="206" height="62" rx="9"/>
+  <text class="label" x="726" y="496">persist payload</text>
+  <text class="micro" x="726" y="514">replica chunks or shards</text>
+  <rect class="backend" x="970" y="470" width="178" height="62" rx="9"/>
+  <text class="label" x="992" y="496">PhysicalObjectRef</text>
+  <text class="micro" x="992" y="514">new generation</text>
+  <rect class="ok" x="844" y="570" width="200" height="42" rx="8"/>
+  <text class="label" x="876" y="597">commit AE swap</text>
+  <path class="arrow" d="M888 377 H958"/>
+  <path class="arrow" d="M795 408 V470"/>
+  <path class="arrow" d="M908 501 H970"/>
+  <path class="arrow" d="M1059 532 V548 H1018 V570"/>
+  <path class="arrow" d="M1058 408 V438 H1168 V591 H1044"/>
+
+  <text class="small" x="66" y="674">Storage cost moves from disk/network to metadata correctness: the fast path must resolve and publish AE state precisely.</text>
+</svg>
