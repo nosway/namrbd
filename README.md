@@ -9,7 +9,8 @@ connectivity.
 ![NAMRBD platform overview](docs-src/manuals/architecture-manual/assets/diagrams/platform-overview.svg)
 
 There is a sibling project NAMROS (https://github.com/nosway/namros) which provides S3 compatible object storage based on SBS backend of NAMRBD.
-The relationship of two projects is shown in the ![architecture diagram]((docs-src/manuals/architecture-manual/assets/diagrams/namrbd-namros-interface-map.svg)
+The relationship of two projects is shown in the figure.
+![architecture diagram](docs-src/manuals/architecture-manual/assets/diagrams/namrbd-namros-interface-map.svg)
 
 The public Community Edition source tree is intended to be usable as a normal
 open-source checkout for building, testing, inspecting, and packaging
