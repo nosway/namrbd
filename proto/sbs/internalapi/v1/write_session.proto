@@ -1,0 +1,235 @@
+syntax = "proto3";
+
+package sbs.internalapi.v1;
+
+option go_package = "github.com/nosway/namrbd/sbs/internalapi/v1;internalv1";
+
+import "sbs/internalapi/v1/placement_apply.proto";
+
+// WriteSessionService is an internal-only authority surface for committing the
+// state/control-record half of a gateway write.
+service WriteSessionService {
+  rpc GetVolumeState(GetVolumeStateRequest) returns (GetVolumeStateResponse);
+  rpc PutVolumeState(PutVolumeStateRequest) returns (PutVolumeStateResponse);
+  rpc GetIdempotencyRecord(GetIdempotencyRecordRequest) returns (GetIdempotencyRecordResponse);
+  rpc PutIdempotencyRecord(PutIdempotencyRecordRequest) returns (PutIdempotencyRecordResponse);
+  rpc GetMutationOperation(GetMutationOperationRequest) returns (GetMutationOperationResponse);
+  rpc PutMutationOperation(PutMutationOperationRequest) returns (PutMutationOperationResponse);
+  rpc PutWriteIntent(PutWriteIntentRequest) returns (PutWriteIntentResponse);
+  rpc CommitWriteState(CommitWriteStateRequest) returns (CommitWriteStateResponse);
+  rpc CommitPageScopedWriteMetadata(CommitPageScopedWriteMetadataRequest) returns (CommitPageScopedWriteMetadataResponse);
+  rpc CommitRangeLocalWriteState(CommitRangeLocalWriteStateRequest) returns (CommitRangeLocalWriteStateResponse);
+  rpc CommitAppendOnlyWriteStateAndQueueEffects(CommitAppendOnlyWriteStateAndQueueEffectsRequest) returns (CommitAppendOnlyWriteStateAndQueueEffectsResponse);
+  rpc CommitCloneDeltaAllocationPages(CommitCloneDeltaAllocationPagesRequest) returns (CommitCloneDeltaAllocationPagesResponse);
+}
+
+message GetVolumeStateRequest {
+  string volume_id = 1;
+}
+
+message GetVolumeStateResponse {
+  VolumeState volume_state = 1;
+}
+
+message PutVolumeStateRequest {
+  VolumeState volume_state = 1;
+}
+
+message PutVolumeStateResponse {}
+
+message GetIdempotencyRecordRequest {
+  string volume_id = 1;
+  string idempotency_key = 2;
+}
+
+message GetIdempotencyRecordResponse {
+  IdempotencyRecord idempotency_record = 1;
+}
+
+message PutIdempotencyRecordRequest {
+  IdempotencyRecord idempotency_record = 1;
+}
+
+message PutIdempotencyRecordResponse {}
+
+message GetMutationOperationRequest {
+  string volume_id = 1;
+  string operation_id = 2;
+}
+
+message GetMutationOperationResponse {
+  MutationOperationRecord mutation_operation = 1;
+}
+
+message PutMutationOperationRequest {
+  MutationOperationRecord mutation_operation = 1;
+}
+
+message PutMutationOperationResponse {}
+
+message PutWriteIntentRequest {
+  IdempotencyRecord idempotency_record = 1;
+  MutationOperationRecord mutation_operation = 2;
+}
+
+message PutWriteIntentResponse {}
+
+message CommitWriteStateRequest {
+  string volume_id = 1;
+  uint64 expected_epoch = 2;
+  uint64 expected_revision = 3;
+  string idempotency_key = 4;
+  IdempotencyResultState expected_idempotency_state = 5;
+  uint64 committed_revision = 6;
+}
+
+message CommitWriteStateResponse {
+  VolumeState volume_state = 1;
+  IdempotencyRecord idempotency_record = 2;
+}
+
+message CommitPageScopedWriteMetadataRequest {
+  string volume_id = 1;
+  uint64 expected_epoch = 2;
+  uint64 expected_revision = 3;
+  string idempotency_key = 4;
+  IdempotencyResultState expected_idempotency_state = 5;
+  uint64 committed_revision = 6;
+  repeated AllocationPage allocation_pages = 7;
+  repeated uint64 normalize_extent_ids = 8;
+  string mutation_operation_id = 9;
+  MutationOperationState expected_mutation_state = 10;
+  repeated uint64 affected_extent_ids = 11;
+  repeated uint64 affected_page_nos = 12;
+  repeated uint64 retired_physical_chunk_ids = 13;
+  repeated AllocationPageChunkRange affected_page_chunk_ranges = 14;
+}
+
+message CommitPageScopedWriteMetadataResponse {
+  VolumeState volume_state = 1;
+  IdempotencyRecord idempotency_record = 2;
+}
+
+message CommitRangeLocalWriteStateRequest {
+  string volume_id = 1;
+  uint64 expected_epoch = 2;
+  uint64 expected_revision = 3;
+  string idempotency_key = 4;
+  IdempotencyResultState expected_idempotency_state = 5;
+  uint64 committed_revision = 6;
+  repeated AllocationPage allocation_pages = 7;
+  repeated uint64 normalize_extent_ids = 8;
+  string mutation_operation_id = 9;
+  MutationOperationState expected_mutation_state = 10;
+  repeated uint64 affected_extent_ids = 11;
+  repeated uint64 affected_page_nos = 12;
+  repeated uint64 retired_physical_chunk_ids = 13;
+  repeated AllocationPageChunkRange affected_page_chunk_ranges = 14;
+}
+
+message CommitRangeLocalWriteStateResponse {
+  VolumeState volume_state = 1;
+  IdempotencyRecord idempotency_record = 2;
+}
+
+message CommitAppendOnlyWriteStateAndQueueEffectsRequest {
+  string volume_id = 1;
+  uint64 expected_epoch = 2;
+  uint64 expected_revision = 3;
+  string idempotency_key = 4;
+  IdempotencyResultState expected_idempotency_state = 5;
+  uint64 committed_revision = 6;
+  repeated AllocationPage allocation_pages = 7;
+  repeated uint64 normalize_extent_ids = 8;
+  string mutation_operation_id = 9;
+  MutationOperationState expected_mutation_state = 10;
+  repeated uint64 affected_extent_ids = 11;
+  repeated uint64 affected_page_nos = 12;
+  repeated uint64 retired_physical_chunk_ids = 13;
+  MutationOperationRecord mutation_operation = 14;
+  repeated AllocationPageChunkRange affected_page_chunk_ranges = 15;
+  string attachment_id = 16;
+  uint64 generation = 17;
+  bool allow_missing_write_intent = 18;
+}
+
+message CommitAppendOnlyWriteStateAndQueueEffectsResponse {
+  VolumeState volume_state = 1;
+  IdempotencyRecord idempotency_record = 2;
+}
+
+message CommitCloneDeltaAllocationPagesRequest {
+  string clone_id = 1;
+  repeated AllocationPage allocation_pages = 2;
+}
+
+message CommitCloneDeltaAllocationPagesResponse {}
+
+message VolumeState {
+  string volume_id = 1;
+  uint64 epoch = 2;
+  uint64 revision = 3;
+  string placement_policy_id = 4;
+  string protection_policy = 5;
+  string status = 6;
+}
+
+message IdempotencyRecord {
+  string volume_id = 1;
+  string idempotency_key = 2;
+  string attachment_id = 3;
+  uint64 generation = 4;
+  uint64 epoch = 5;
+  uint64 revision = 6;
+  string operation = 7;
+  IdempotencyResultState result_state = 8;
+}
+
+enum IdempotencyResultState {
+  IDEMPOTENCY_RESULT_STATE_UNSPECIFIED = 0;
+  IDEMPOTENCY_RESULT_STATE_PENDING = 1;
+  IDEMPOTENCY_RESULT_STATE_COMMITTED = 2;
+  IDEMPOTENCY_RESULT_STATE_FAILED = 3;
+}
+
+message MutationOperationRecord {
+  string operation_id = 1;
+  string volume_id = 2;
+  string kind = 3;
+  MutationOperationState state = 4;
+  uint64 placement_revision = 5;
+  uint64 allocation_revision = 6;
+  uint64 writer_fencing_epoch = 7;
+  string idempotency_key = 8;
+  repeated uint64 affected_extent_ids = 9;
+  repeated uint64 affected_page_nos = 10;
+  repeated uint64 completed_page_nos = 11;
+  repeated MutationPageWindow retry_page_windows = 12;
+  repeated uint64 retired_physical_chunk_ids = 13;
+  int64 started_at_unix = 14;
+  int64 last_updated_at_unix = 15;
+  string error_message = 16;
+}
+
+message MutationPageWindow {
+  uint64 extent_id = 1;
+  uint64 start_page_no = 2;
+  uint64 end_page_no = 3;
+  uint64 data_bytes = 4;
+  uint64 data_chunks = 5;
+}
+
+message AllocationPageChunkRange {
+  uint64 page_no = 1;
+  uint64 start_chunk = 2;
+  uint64 end_chunk = 3;
+}
+
+enum MutationOperationState {
+  MUTATION_OPERATION_STATE_UNSPECIFIED = 0;
+  MUTATION_OPERATION_STATE_PENDING = 1;
+  MUTATION_OPERATION_STATE_RUNNING = 2;
+  MUTATION_OPERATION_STATE_COMMITTED = 3;
+  MUTATION_OPERATION_STATE_FAILED = 4;
+  MUTATION_OPERATION_STATE_ROLLED_BACK = 5;
+}

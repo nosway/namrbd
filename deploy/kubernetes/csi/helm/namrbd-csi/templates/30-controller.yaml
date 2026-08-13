@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: namrbd-csi-controller
+  namespace: {{ include "namrbd-csi.namespace" . }}
+  labels:
+    {{- include "namrbd-csi.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: namrbd-csi
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: namrbd-csi
+        app.kubernetes.io/component: controller
+      annotations:
+        namrbd.io/admin-endpoint: {{ .Values.config.adminEndpoint | quote }}
+        namrbd.io/admin-endpoints: {{ include "namrbd-csi.adminEndpoints" . | quote }}
+        namrbd.io/gateway-url: {{ .Values.config.gatewayURL | quote }}
+    spec:
+      serviceAccountName: namrbd-csi-controller
+      containers:
+        - name: namrbd-csi-driver
+          image: {{ include "namrbd-csi.driverImage" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "--endpoint=unix:///csi/csi.sock"
+            - "--admin-endpoint=$(NAMRBD_ADMIN_ENDPOINT)"
+            - "--admin-endpoints=$(NAMRBD_ADMIN_ENDPOINTS)"
+            - "--cluster-id=$(NAMRBD_CLUSTER_ID)"
+            - "--sbs-cluster-id=$(NAMRBD_SBS_CLUSTER_ID)"
+            - "--driver-name=$(NAMRBD_CSI_DRIVER_NAME)"
+          envFrom:
+            - configMapRef:
+                name: namrbd-csi-config
+          {{- if .Values.credentials.enabled }}
+          env:
+            - name: NAMRBD_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "namrbd-csi.credentialsSecretName" . }}
+                  key: bearer-token
+                  optional: true
+          {{- end }}
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        {{- if .Values.sidecars.csiProvisioner.enabled }}
+        - name: csi-provisioner
+          image: {{ .Values.sidecars.csiProvisioner.image | quote }}
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--feature-gates=Topology=true"
+            - "--leader-election=true"
+            - "--timeout={{ .Values.sidecars.csiProvisioner.timeout }}"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        {{- end }}
+        {{- if .Values.sidecars.csiAttacher.enabled }}
+        - name: csi-attacher
+          image: {{ .Values.sidecars.csiAttacher.image | quote }}
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--leader-election=true"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        {{- end }}
+        {{- if .Values.sidecars.csiSnapshotter.enabled }}
+        - name: csi-snapshotter
+          image: {{ .Values.sidecars.csiSnapshotter.image | quote }}
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--leader-election=true"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        {{- end }}
+        {{- if .Values.sidecars.csiResizer.enabled }}
+        - name: csi-resizer
+          image: {{ .Values.sidecars.csiResizer.image | quote }}
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--leader-election=true"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        {{- end }}
+        {{- if .Values.sidecars.livenessProbe.enabled }}
+        - name: liveness-probe
+          image: {{ .Values.sidecars.livenessProbe.image | quote }}
+          args:
+            - "--csi-address=/csi/csi.sock"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        {{- end }}
+      volumes:
+        - name: socket-dir
+          emptyDir: {}

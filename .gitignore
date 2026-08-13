@@ -1,0 +1,42 @@
+# ----- Kernel module (kbuild) -----
+kernel/module/*.o
+kernel/module/*.ko
+kernel/module/*.mod
+kernel/module/*.mod.c
+kernel/module/.*.cmd
+kernel/module/.*.d
+kernel/module/Module.symvers
+kernel/module/modules.order
+kernel/module/.tmp_*
+
+# ----- Go -----
+# Binaries built in-tree (scripts build to /tmp or BIN_DIR)
+/bin/
+/cmd/namrbdctl/namrbdctl
+/cmd/namrbd-gateway/namrbd-gateway
+.cache/
+*.exe
+# Optional: uncomment if you use vendoring
+# /vendor/
+
+# ----- IDE / Editor -----
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+*.code-workspace
+
+# ----- OS -----
+.DS_Store
+Thumbs.db
+
+# ----- Local / Test (if any under repo) -----
+/tmp/
+*.log
+*.test
+deploy/kubernetes/csi/helm/namrbd-csi/values.env
+
+# ----- Doc tooling (python-pptx vendor for slide generation) -----
+/tools/pptx_vendor/
+/site/

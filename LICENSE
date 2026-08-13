@@ -1,0 +1,29 @@
+NAMRBD Licensing
+================
+
+Unless a file or directory contains a different license notice, NAMRBD source
+code and documentation are licensed under the Apache License, Version 2.0.
+
+The Linux kernel module sources under:
+
+  kernel/module/
+
+are licensed under GPL-2.0-only. Those files carry SPDX license identifiers and
+must remain compatible with the Linux kernel module licensing boundary.
+
+Vendored or forked third-party source retains its upstream license. The
+NAMRBD-managed gotgt fork under:
+
+  third_party/gotgt/
+
+preserves the upstream Apache-2.0 license and keeps NAMRBD patch notes in
+`third_party/gotgt/NAMRBD_PATCHES.md`.
+
+License texts are provided under `LICENSES/`:
+
+  LICENSES/Apache-2.0.txt
+  LICENSES/GPL-2.0-only.txt
+  LICENSES/BSD-3-Clause.txt
+
+This file describes the repository license policy. It is not a substitute for
+the license notices embedded in individual files or third-party directories.

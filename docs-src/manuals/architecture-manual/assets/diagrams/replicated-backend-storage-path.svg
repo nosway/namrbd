@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 1280 720">
+  <title id="title">Replicated backend storage path</title>
+  <desc id="desc">A replicated backend storage path diagram showing PhysicalObjectRef resolution, replica set state, quorum writes, eligible replica reads, data-only maintenance, and allocation metadata publication.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L8 4 L0 8z" fill="#0b6b8f"/></marker>
+    <marker id="grayarrow" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L8 4 L0 8z" fill="#596574"/></marker>
+    <style>
+      .canvas{fill:#fbfcfd}.lane{fill:#f4f8fb;stroke:#d8e0e8;stroke-width:1.5}.common{fill:#e9f5f8;stroke:#86bac9;stroke-width:2}.meta{fill:#fff7e8;stroke:#dfb86f;stroke-width:2}.replica{fill:#fff;stroke:#cbd6df;stroke-width:1.8}.store{fill:#f7f8fb;stroke:#aebdcc;stroke-width:1.8}.ok{fill:#eef6ee;stroke:#9cc39d;stroke-width:1.8}.warn{fill:#fff2ed;stroke:#d7a28d;stroke-width:1.8}.title{fill:#17202a;font:700 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.small{fill:#596574;font:500 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.micro{fill:#596574;font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.label{fill:#17202a;font:700 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.line{fill:none;stroke:#0b6b8f;stroke-width:3}.arrow{fill:none;stroke:#0b6b8f;stroke-width:3;marker-end:url(#arrow)}.dash{fill:none;stroke:#596574;stroke-width:2.3;stroke-dasharray:7 7;marker-end:url(#grayarrow)}
+    </style>
+  </defs>
+
+  <rect class="canvas" width="1280" height="720" rx="18"/>
+  <text class="title" x="44" y="48">Replicated Backend Storage Path</text>
+  <text class="small" x="44" y="76">The common mapper publishes logical visibility; the replicated descriptor handles physical chunk quorum.</text>
+
+  <rect class="lane" x="40" y="108" width="1200" height="168" rx="14"/>
+  <text class="micro" x="66" y="140">Descriptor resolution below PhysicalObjectRef</text>
+  <rect class="common" x="80" y="168" width="216" height="68" rx="9"/>
+  <text class="label" x="104" y="196">PhysicalObjectRef</text>
+  <text class="micro" x="104" y="214">backend=replicated, gen N</text>
+  <rect class="meta" x="382" y="168" width="220" height="68" rx="9"/>
+  <text class="label" x="406" y="196">ReplicaSetState</text>
+  <text class="micro" x="406" y="214">RF=3, write quorum=2</text>
+  <rect class="replica" x="688" y="168" width="270" height="68" rx="9"/>
+  <text class="label" x="712" y="196">Replica physical refs</text>
+  <text class="micro" x="712" y="214">chunk A, chunk B, chunk C</text>
+  <rect class="ok" x="1040" y="168" width="132" height="68" rx="9"/>
+  <text class="label" x="1062" y="196">Policy</text>
+  <text class="micro" x="1062" y="214">read eligible</text>
+  <path class="arrow" d="M296 202 H382"/>
+  <path class="arrow" d="M602 202 H688"/>
+  <path class="arrow" d="M958 202 H1040"/>
+
+  <rect class="lane" x="40" y="314" width="1200" height="228" rx="14"/>
+  <text class="micro" x="66" y="346">Payload write path on sbs-data</text>
+  <rect class="store" x="94" y="392" width="202" height="74" rx="9"/>
+  <text class="label" x="118" y="420">sbs-data A</text>
+  <text class="micro" x="118" y="438">Replica chunk A</text>
+  <rect class="store" x="376" y="392" width="202" height="74" rx="9"/>
+  <text class="label" x="400" y="420">sbs-data B</text>
+  <text class="micro" x="400" y="438">Replica chunk B</text>
+  <rect class="store" x="658" y="392" width="202" height="74" rx="9"/>
+  <text class="label" x="682" y="420">sbs-data C</text>
+  <text class="micro" x="682" y="438">Replica chunk C</text>
+  <rect class="ok" x="940" y="376" width="224" height="106" rx="9"/>
+  <text class="label" x="966" y="406">Quorum satisfied</text>
+  <text class="micro" x="966" y="426">enough payload copies durable</text>
+  <text class="micro" x="966" y="448">then commit AE metadata</text>
+  <path class="line" d="M823 236 V352"/>
+  <path class="arrow" d="M823 352 H195 V392"/>
+  <path class="arrow" d="M823 352 H477 V392"/>
+  <path class="arrow" d="M823 352 H759 V392"/>
+  <path class="dash" d="M296 429 H376"/>
+  <path class="dash" d="M578 429 H658"/>
+  <path class="arrow" d="M860 429 H940"/>
+
+  <rect class="lane" x="40" y="580" width="1200" height="92" rx="14"/>
+  <rect class="ok" x="86" y="606" width="252" height="42" rx="8"/>
+  <text class="label" x="112" y="633">READ: choose one eligible replica</text>
+  <rect class="warn" x="418" y="606" width="316" height="42" rx="8"/>
+  <text class="label" x="446" y="633">ZERO AE: skip replicated backend entirely</text>
+  <rect class="meta" x="814" y="606" width="336" height="42" rx="8"/>
+  <text class="label" x="842" y="633">repair, drain, rebalance move DATA refs only</text>
+</svg>

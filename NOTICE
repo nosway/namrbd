@@ -1,0 +1,16 @@
+NAMRBD
+Copyright 2026 Taewoong Kim
+
+This product includes software developed for the NAMRBD Community Edition.
+
+Unless separately marked, NAMRBD user-space source and documentation are
+licensed under the Apache License, Version 2.0. The Linux kernel module under
+`kernel/module/` is licensed under GPL-2.0-only.
+
+This product includes a NAMRBD-managed fork of github.com/gostor/gotgt under
+`third_party/gotgt`. The fork preserves the upstream Apache-2.0 license and
+records NAMRBD-specific patch notes in `third_party/gotgt/NAMRBD_PATCHES.md`.
+
+Third-party dependencies are licensed by their respective copyright holders.
+Dependency license metadata should be regenerated as part of the release
+process before publishing binary artifacts.

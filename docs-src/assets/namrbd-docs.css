@@ -1,0 +1,275 @@
+/* NAMRBD documentation components.
+ *
+ * Component styles carried over from the standalone HTML manual set. Page
+ * chrome (top bar, sidebar, language switch, chapter card, base typography,
+ * tables) is intentionally omitted because the theme owns those surfaces.
+ */
+
+:root {
+  --namrbd-panel: #ffffff;
+  --namrbd-panel-soft: #eef4f8;
+  --namrbd-muted: #596574;
+  --namrbd-line: #d8e0e8;
+  --namrbd-accent: #0b6b8f;
+  --namrbd-warn: #8a5a12;
+}
+
+[data-md-color-scheme="slate"] {
+  --namrbd-panel: #1f2733;
+  --namrbd-panel-soft: #232c39;
+  --namrbd-muted: #9fb0c0;
+  --namrbd-line: #3a4654;
+  --namrbd-accent: #7fc4dd;
+  --namrbd-warn: #d7a55a;
+}
+
+/* Callouts ---------------------------------------------------------------- */
+
+.summary,
+.note {
+  border: 1px solid var(--namrbd-line);
+  border-radius: 8px;
+  background: var(--namrbd-panel-soft);
+  padding: 16px 18px;
+  margin: 18px 0;
+}
+
+.note {
+  border-left: 5px solid var(--namrbd-warn);
+}
+
+.summary > :first-child,
+.note > :first-child {
+  margin-top: 0;
+}
+
+.summary > :last-child,
+.note > :last-child {
+  margin-bottom: 0;
+}
+
+/* Edition boundary markers ------------------------------------------------ */
+
+.edition-boundary {
+  display: inline-block;
+  margin: 0 0 12px;
+  border: 1px solid #f59e0b;
+  border-left-width: 5px;
+  border-radius: 4px;
+  background: #fff7ed;
+  color: #7c2d12;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.edition-boundary-inline {
+  display: inline-block;
+  margin-left: 8px;
+  border: 1px solid #f59e0b;
+  border-left-width: 4px;
+  border-radius: 4px;
+  background: #fff7ed;
+  color: #7c2d12;
+  padding: 3px 7px;
+  vertical-align: middle;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+/* Diagrams ---------------------------------------------------------------- */
+
+.diagram {
+  margin: 22px 0;
+  border: 1px solid var(--namrbd-line);
+  border-radius: 8px;
+  background: var(--namrbd-panel);
+  padding: 18px;
+}
+
+.diagram-title {
+  margin-bottom: 14px;
+  color: var(--namrbd-muted);
+  font-weight: 680;
+}
+
+.diagram-caption {
+  margin: 14px 0 0;
+  color: var(--namrbd-muted);
+  font-size: 14px;
+}
+
+.architecture-figure {
+  margin: 24px 0;
+  border: 1px solid var(--namrbd-line);
+  border-radius: 8px;
+  background: var(--namrbd-panel);
+  padding: 14px;
+}
+
+/* Markdown image syntax lets mkdocs resolve the published path, at the cost of
+ * a wrapping paragraph the standalone HTML manuals did not have. */
+.architecture-figure p {
+  margin: 0;
+}
+
+.architecture-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.architecture-figure figcaption {
+  margin: 12px 4px 2px;
+  color: var(--namrbd-muted);
+  font-size: 14px;
+}
+
+/* Flow rows --------------------------------------------------------------- */
+
+.flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.box,
+.box-soft,
+.box-accent,
+.box-warn {
+  min-width: 150px;
+  border: 1px solid var(--namrbd-line);
+  border-radius: 8px;
+  background: var(--namrbd-panel);
+  padding: 12px 14px;
+  text-align: center;
+  font-weight: 650;
+}
+
+.box-soft {
+  background: var(--namrbd-panel-soft);
+}
+
+.box-accent {
+  border-color: #9bc6d4;
+  background: #e9f5f8;
+}
+
+.box-warn {
+  border-color: #e0c089;
+  background: #fff7e8;
+}
+
+[data-md-color-scheme="slate"] .box-accent {
+  border-color: #4d7f92;
+  background: #23343c;
+}
+
+[data-md-color-scheme="slate"] .box-warn {
+  border-color: #7a6032;
+  background: #3a3121;
+}
+
+.arrow {
+  color: var(--namrbd-muted);
+  font-weight: 800;
+}
+
+/* Card grids -------------------------------------------------------------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.mini-card,
+.card {
+  border: 1px solid var(--namrbd-line);
+  border-radius: 8px;
+  background: var(--namrbd-panel);
+  padding: 14px;
+}
+
+.mini-card > :first-child,
+.card > :first-child {
+  margin-top: 0;
+}
+
+.mini-card > :last-child,
+.card > :last-child {
+  margin-bottom: 0;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.card-eyebrow {
+  color: var(--namrbd-muted);
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.badge {
+  display: inline-block;
+  border: 1px solid var(--namrbd-line);
+  border-radius: 999px;
+  background: var(--namrbd-panel-soft);
+  padding: 2px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.badge.enterprise {
+  border-color: #f59e0b;
+  background: #fff7ed;
+  color: #7c2d12;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--namrbd-line);
+  border-radius: 8px;
+  background: var(--namrbd-panel);
+  padding: 8px 12px;
+  font-weight: 650;
+}
+
+/* Chapter footer navigation ----------------------------------------------- */
+
+.chapter-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 36px;
+  border-top: 1px solid var(--namrbd-line);
+  padding-top: 18px;
+}
+
+.chapter-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  border: 1px solid var(--namrbd-line);
+  border-radius: 8px;
+  background: var(--namrbd-panel);
+  padding: 9px 12px;
+}
+
+/* Narrow viewports -------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .flow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .arrow {
+    text-align: center;
+  }
+}

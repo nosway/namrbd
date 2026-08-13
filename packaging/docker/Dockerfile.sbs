@@ -1,0 +1,122 @@
+# syntax=docker/dockerfile:1.7
+
+ARG GO_VERSION=1.26.5
+ARG ALPINE_VERSION=3.22
+
+FROM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS build-base
+RUN apk add --no-cache ca-certificates git
+
+WORKDIR /src/namrbd
+
+COPY go.mod go.sum ./
+COPY third_party/gotgt/go.mod third_party/gotgt/go.sum ./third_party/gotgt/
+RUN --mount=type=cache,target=/go/pkg/mod \
+	--mount=type=cache,target=/root/.cache/go-build \
+	go mod download
+
+COPY . .
+
+FROM build-base AS build-namrbd-gateway
+RUN --mount=type=cache,target=/root/.cache/go-build \
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/namrbd-gateway ./cmd/namrbd-gateway
+
+FROM build-base AS build-namrbd-iscsi-gateway
+RUN --mount=type=cache,target=/root/.cache/go-build \
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/namrbd-iscsi-gateway ./cmd/namrbd-iscsi-gateway
+
+FROM build-base AS build-namrbd-csi-driver
+RUN --mount=type=cache,target=/root/.cache/go-build \
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/namrbd-csi-driver ./cmd/namrbd-csi-driver \
+	&& CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/namrbdctl ./cmd/namrbdctl
+
+FROM build-base AS build-sbs-service
+RUN --mount=type=cache,target=/root/.cache/go-build \
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/sbs-service ./cmd/sbs-service
+
+FROM build-base AS build-sbs-data
+RUN --mount=type=cache,target=/root/.cache/go-build \
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/sbs-data ./cmd/sbs-data
+
+FROM build-base AS build-sbsctl
+RUN --mount=type=cache,target=/root/.cache/go-build \
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/sbsctl ./cmd/sbsctl
+
+FROM alpine:${ALPINE_VERSION} AS community-runtime-base
+ARG VERSION=dev
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="NAMRBD Community runtime" \
+	org.opencontainers.image.description="NAMRBD Community runtime base for gateway, iSCSI, and SBS images" \
+	org.opencontainers.image.source="https://github.com/nosway/namrbd" \
+	org.opencontainers.image.version="${VERSION}" \
+	org.opencontainers.image.revision="${VCS_REF}" \
+	org.opencontainers.image.created="${BUILD_DATE}" \
+	org.opencontainers.image.licenses="Apache-2.0"
+RUN apk add --no-cache ca-certificates wget \
+	&& addgroup -g 65532 namrbd \
+	&& adduser -D -G namrbd -u 65532 namrbd \
+	&& mkdir -p /var/lib/namrbd /var/lib/namrbd/gateway /var/lib/namrbd/iscsi /tmp \
+	&& chown -R 65532:65532 /var/lib/namrbd /tmp
+USER 65532:65532
+
+FROM community-runtime-base AS namrbd-gateway
+LABEL org.opencontainers.image.title="NAMRBD gateway" \
+	org.opencontainers.image.description="NAMRBD Community block gateway"
+COPY --from=build-namrbd-gateway /out/namrbd-gateway /usr/local/bin/namrbd-gateway
+EXPOSE 9701 9700
+ENTRYPOINT ["/usr/local/bin/namrbd-gateway"]
+
+FROM community-runtime-base AS namrbd-iscsi-gateway
+LABEL org.opencontainers.image.title="NAMRBD iSCSI gateway" \
+	org.opencontainers.image.description="NAMRBD Community iSCSI gateway"
+COPY --from=build-namrbd-iscsi-gateway /out/namrbd-iscsi-gateway /usr/local/bin/namrbd-iscsi-gateway
+EXPOSE 3260
+ENTRYPOINT ["/usr/local/bin/namrbd-iscsi-gateway"]
+
+FROM alpine:${ALPINE_VERSION} AS namrbd-csi-driver
+ARG VERSION=dev
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="NAMRBD CSI driver" \
+	org.opencontainers.image.description="NAMRBD Community Kubernetes CSI driver" \
+	org.opencontainers.image.source="https://github.com/nosway/namrbd" \
+	org.opencontainers.image.version="${VERSION}" \
+	org.opencontainers.image.revision="${VCS_REF}" \
+	org.opencontainers.image.created="${BUILD_DATE}" \
+	org.opencontainers.image.licenses="Apache-2.0"
+RUN apk add --no-cache ca-certificates e2fsprogs kmod util-linux xfsprogs
+COPY --from=build-namrbd-csi-driver /out/namrbd-csi-driver /usr/local/bin/namrbd-csi-driver
+COPY --from=build-namrbd-csi-driver /out/namrbdctl /usr/local/bin/namrbdctl
+ENTRYPOINT ["/usr/local/bin/namrbd-csi-driver"]
+
+FROM community-runtime-base AS sbs-service
+COPY --from=build-sbs-service /out/sbs-service /usr/local/bin/sbs-service
+EXPOSE 9443 9081
+ENTRYPOINT ["/usr/local/bin/sbs-service"]
+
+FROM community-runtime-base AS sbs-data
+COPY --from=build-sbs-data /out/sbs-data /usr/local/bin/sbs-data
+EXPOSE 9444 9082
+ENTRYPOINT ["/usr/local/bin/sbs-data"]
+
+FROM alpine:${ALPINE_VERSION} AS sbsctl
+ARG VERSION=dev
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="NAMRBD sbsctl" \
+	org.opencontainers.image.description="NAMRBD Community SBS administration client" \
+	org.opencontainers.image.source="https://github.com/nosway/namrbd" \
+	org.opencontainers.image.version="${VERSION}" \
+	org.opencontainers.image.revision="${VCS_REF}" \
+	org.opencontainers.image.created="${BUILD_DATE}" \
+	org.opencontainers.image.licenses="Apache-2.0"
+RUN apk add --no-cache ca-certificates curl jq wget \
+	&& addgroup -g 65532 namrbd \
+	&& adduser -D -G namrbd -u 65532 namrbd \
+	&& mkdir -p /workspace /tmp \
+	&& chown -R 65532:65532 /workspace /tmp
+COPY --from=build-sbsctl /out/sbsctl /usr/local/bin/sbsctl
+USER 65532:65532
+WORKDIR /workspace
+ENTRYPOINT ["/bin/sh", "-lc"]
+CMD ["sbsctl --help"]

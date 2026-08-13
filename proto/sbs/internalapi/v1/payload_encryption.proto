@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package sbs.internalapi.v1;
+
+option go_package = "github.com/nosway/namrbd/sbs/internalapi/v1;internalv1";
+
+message PayloadEncryptionHeader {
+  int32 header_version = 1;
+  string cipher_suite = 2;
+  string encryption_scope = 3;
+  string security_policy_id = 4;
+  uint64 policy_generation = 5;
+  string key_provider_id = 6;
+  string data_key_id = 7;
+  string key_id = 8;
+  uint64 key_version = 9;
+  uint64 key_generation = 10;
+  string object_id = 11;
+  string backend_type = 12;
+  string nonce_hex = 13;
+  string nonce_source = 14;
+  string aad_digest = 15;
+  uint64 logical_offset = 16;
+  string stripe_id = 17;
+  optional uint32 shard_id = 18;
+  uint64 plaintext_length = 19;
+  uint64 ciphertext_length = 20;
+  uint32 auth_tag_bytes = 21;
+  string auth_tag_hex = 22;
+}

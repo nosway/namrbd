@@ -1,0 +1,75 @@
+{
+  "global": {
+    "scrape_interval": "15s",
+    "evaluation_interval": "15s"
+  },
+  "scrape_configs": [
+    {
+      "job_name": "namrbd-sbs-service",
+      "metrics_path": "/metrics",
+      "scheme": "http",
+      "static_configs": [
+        {
+          "targets": [
+            "service-01.example.com:9081"
+          ],
+          "labels": {
+            "cluster": "namrbd-community",
+            "component": "sbs-service"
+          }
+        }
+      ]
+    },
+    {
+      "job_name": "namrbd-sbs-data",
+      "metrics_path": "/metrics",
+      "scheme": "http",
+      "static_configs": [
+        {
+          "targets": [
+            "data-01.example.com:9082"
+          ],
+          "labels": {
+            "cluster": "namrbd-community",
+            "component": "sbs-data"
+          }
+        }
+      ]
+    },
+    {
+      "job_name": "namrbd-gateway",
+      "metrics_path": "/metrics",
+      "scheme": "http",
+      "static_configs": [
+        {
+          "targets": [
+            "gateway-01.example.com:9701"
+          ],
+          "labels": {
+            "cluster": "namrbd-community",
+            "component": "namrbd-gateway"
+          }
+        }
+      ]
+    },
+    {
+      "job_name": "namrbd-iscsi-gateway",
+      "metrics_path": "/metrics",
+      "scheme": "http",
+      "static_configs": [
+        {
+          "targets": [
+            "iscsi-gateway-01.example.com:9090"
+          ],
+          "labels": {
+            "cluster": "namrbd-community",
+            "component": "namrbd-iscsi-gateway"
+          }
+        }
+      ]
+    }
+  ],
+  "rule_files": [
+    "namrbd-community-alerts.json"
+  ]
+}

@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package sbs.admin.v1;
+
+option go_package = "github.com/nosway/namrbd/sbs/admin/v1;adminv1";
+
+import "google/protobuf/timestamp.proto";
+import "sbs/admin/v1/admin.proto";
+
+service OperationsService {
+  rpc GetOperation(GetOperationRequest) returns (GetOperationResponse);
+  rpc ListOperations(ListOperationsRequest) returns (ListOperationsResponse);
+}
+
+enum OperationState {
+  OPERATION_STATE_UNSPECIFIED = 0;
+  OPERATION_STATE_QUEUED = 1;
+  OPERATION_STATE_RUNNING = 2;
+  OPERATION_STATE_COMPLETED = 3;
+  OPERATION_STATE_FAILED = 4;
+  OPERATION_STATE_CANCELED = 5;
+}
+
+message OperationStatus {
+  string operation_id = 1;
+  string kind = 2;
+  OperationState state = 3;
+  string target_node_id = 4;
+  string target_volume_id = 5;
+  uint64 extents_remaining = 6;
+  uint64 bytes_remaining = 7;
+  string phase = 8;
+  string blocking_reason = 9;
+  google.protobuf.Timestamp started_at = 10;
+  google.protobuf.Timestamp last_progress_at = 11;
+  string error_message = 12;
+}
+
+message GetOperationRequest {
+  ClusterRef cluster = 1;
+  string operation_id = 2;
+}
+
+message GetOperationResponse {
+  ClusterRef cluster = 1;
+  OperationStatus operation = 2;
+}
+
+message ListOperationsRequest {
+  ClusterRef cluster = 1;
+  string kind = 2;
+  OperationState state = 3;
+}
+
+message ListOperationsResponse {
+  ClusterRef cluster = 1;
+  repeated OperationStatus operations = 2;
+}

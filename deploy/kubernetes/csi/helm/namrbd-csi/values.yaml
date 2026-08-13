@@ -1,0 +1,90 @@
+namespaceOverride: namrbd-system
+createNamespace: true
+driverName: csi.namrbd.io
+
+image:
+  repository: ghcr.io/nosway/namrbd-csi-driver
+  tag: local
+  pullPolicy: IfNotPresent
+
+sidecars:
+  csiProvisioner:
+    enabled: true
+    image: registry.k8s.io/sig-storage/csi-provisioner:v5.2.0
+    timeout: 60s
+  csiAttacher:
+    enabled: true
+    image: registry.k8s.io/sig-storage/csi-attacher:v4.8.1
+  csiSnapshotter:
+    enabled: true
+    image: registry.k8s.io/sig-storage/csi-snapshotter:v8.2.0
+  csiResizer:
+    enabled: true
+    image: registry.k8s.io/sig-storage/csi-resizer:v1.13.2
+  nodeDriverRegistrar:
+    enabled: true
+    image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.13.0
+  livenessProbe:
+    enabled: true
+    image: registry.k8s.io/sig-storage/livenessprobe:v2.15.0
+
+controller:
+  replicas: 1
+
+node:
+  enabled: true
+
+config:
+  clusterID: namrbd-community
+  sbsClusterID: sbs-community
+  adminEndpoint: namrbd-sbs-service:9897
+  adminEndpoints: []
+  gatewayURL: http://namrbd-gateway:9701
+  socketDir: /csi
+  kubeletRoot: /var/lib/kubelet
+
+credentials:
+  enabled: false
+  existingSecret: namrbd-csi-credentials
+  create: false
+  bearerToken: ""
+  tlsCaPem: ""
+
+storageClasses:
+  replicated:
+    create: true
+    name: namrbd-replicated
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    discard:
+      exposureState: disabled
+      validationProfile: operator-validated
+      mountOptions: []
+    parameters:
+      redundancy_backend: replicated
+      replication_factor: "3"
+      topology_mode: prefer
+      block_size: "4K"
+  ec63:
+    create: false
+    name: namrbd-ec-6-3
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    discard:
+      exposureState: disabled
+      validationProfile: enterprise-validated
+      mountOptions: []
+    parameters:
+      redundancy_backend: ec
+      ec_profile: ec-6-3
+      topology_mode: strict
+      block_size: "4K"
+      allocation_chunk_size: "128K"
+      allocation_page_size: "4M"
+
+volumeSnapshotClass:
+  create: true
+  name: namrbd-snapshot
+  deletionPolicy: Delete

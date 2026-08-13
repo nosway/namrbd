@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package sbs.internalapi.v1;
+
+option go_package = "github.com/nosway/namrbd/sbs/internalapi/v1;internalv1";
+
+// ChunkIDAllocatorService is an internal-only authority surface for allocating
+// monotonic physical chunk IDs owned by sbs-service.
+service ChunkIDAllocatorService {
+  rpc AllocateChunkIDs(AllocateChunkIDsRequest) returns (AllocateChunkIDsResponse);
+}
+
+message AllocateChunkIDsRequest {
+  string volume_id = 1;
+  uint32 count = 2;
+}
+
+message AllocateChunkIDsResponse {
+  string volume_id = 1;
+  uint32 count = 2;
+  uint64 start_chunk_id = 3;
+}

@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: namrbd-csi-controller
+  namespace: __NAMESPACE__
+  labels:
+    app.kubernetes.io/name: namrbd-csi
+    app.kubernetes.io/component: controller
+spec:
+  replicas: __CONTROLLER_REPLICAS__
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: namrbd-csi
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: namrbd-csi
+        app.kubernetes.io/component: controller
+      annotations:
+        namrbd.io/admin-endpoint: "__ADMIN_ENDPOINT__"
+        namrbd.io/admin-endpoints: "__ADMIN_ENDPOINTS__"
+        namrbd.io/gateway-url: "__GATEWAY_URL__"
+    spec:
+      serviceAccountName: namrbd-csi-controller
+      containers:
+        - name: namrbd-csi-driver
+          image: __CSI_DRIVER_IMAGE__
+          imagePullPolicy: __IMAGE_PULL_POLICY__
+          args:
+            - "--endpoint=unix:///csi/csi.sock"
+            - "--admin-endpoint=$(NAMRBD_ADMIN_ENDPOINT)"
+            - "--admin-endpoints=$(NAMRBD_ADMIN_ENDPOINTS)"
+            - "--cluster-id=$(NAMRBD_CLUSTER_ID)"
+            - "--sbs-cluster-id=$(NAMRBD_SBS_CLUSTER_ID)"
+            - "--driver-name=$(NAMRBD_CSI_DRIVER_NAME)"
+          envFrom:
+            - configMapRef:
+                name: namrbd-csi-config
+          env:
+            - name: NAMRBD_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: namrbd-csi-credentials
+                  key: bearer-token
+                  optional: true
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-provisioner
+          image: __CSI_PROVISIONER_IMAGE__
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--feature-gates=Topology=true"
+            - "--leader-election=true"
+            - "--timeout=__CSI_PROVISIONER_TIMEOUT__"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-attacher
+          image: __CSI_ATTACHER_IMAGE__
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--leader-election=true"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-snapshotter
+          image: __CSI_SNAPSHOTTER_IMAGE__
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--leader-election=true"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-resizer
+          image: __CSI_RESIZER_IMAGE__
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--leader-election=true"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: liveness-probe
+          image: __CSI_LIVENESSPROBE_IMAGE__
+          args:
+            - "--csi-address=/csi/csi.sock"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+      volumes:
+        - name: socket-dir
+          emptyDir: {}

@@ -1,0 +1,9 @@
+{{- if .Values.createNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "namrbd-csi.namespace" . }}
+  labels:
+    {{- include "namrbd-csi.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+{{- end }}

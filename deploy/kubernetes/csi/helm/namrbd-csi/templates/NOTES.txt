@@ -1,0 +1,4 @@
+NAMRBD CSI has been rendered for namespace {{ include "namrbd-csi.namespace" . }}.
+
+If bearer-token authentication is enabled, create the Secret outside the chart
+or set credentials.create=true with values supplied at deploy time.

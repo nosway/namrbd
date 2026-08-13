@@ -1,0 +1,46 @@
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: {{ .Values.driverName | quote }}
+  labels:
+    {{- include "namrbd-csi.labels" . | nindent 4 }}
+spec:
+  attachRequired: false
+  podInfoOnMount: true
+  fsGroupPolicy: File
+  volumeLifecycleModes:
+    - Persistent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: namrbd-csi-config
+  namespace: {{ include "namrbd-csi.namespace" . }}
+  labels:
+    {{- include "namrbd-csi.labels" . | nindent 4 }}
+data:
+  NAMRBD_CLUSTER_ID: {{ .Values.config.clusterID | quote }}
+  NAMRBD_SBS_CLUSTER_ID: {{ .Values.config.sbsClusterID | quote }}
+  NAMRBD_ADMIN_ENDPOINT: {{ .Values.config.adminEndpoint | quote }}
+  NAMRBD_ADMIN_ENDPOINTS: {{ include "namrbd-csi.adminEndpoints" . | quote }}
+  NAMRBD_GATEWAY_URL: {{ .Values.config.gatewayURL | quote }}
+  NAMRBD_CSI_DRIVER_NAME: {{ .Values.driverName | quote }}
+  NAMRBD_CSI_SOCKET_DIR: {{ .Values.config.socketDir | quote }}
+  NAMRBD_KUBELET_ROOT: {{ .Values.config.kubeletRoot | quote }}
+{{- if and .Values.credentials.enabled .Values.credentials.create }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "namrbd-csi.credentialsSecretName" . }}
+  namespace: {{ include "namrbd-csi.namespace" . }}
+  labels:
+    {{- include "namrbd-csi.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  bearer-token: {{ required "credentials.bearerToken is required when credentials.create=true" .Values.credentials.bearerToken | quote }}
+  {{- if .Values.credentials.tlsCaPem }}
+  tls-ca.pem: |-
+    {{- .Values.credentials.tlsCaPem | nindent 4 }}
+  {{- end }}
+{{- end }}

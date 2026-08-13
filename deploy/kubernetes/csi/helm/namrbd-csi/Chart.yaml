@@ -1,0 +1,13 @@
+apiVersion: v2
+name: namrbd-csi
+description: NAMRBD Community CSI driver
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - namrbd
+  - csi
+  - storage
+home: https://github.com/nosway/namrbd
+sources:
+  - https://github.com/nosway/namrbd

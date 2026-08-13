@@ -1,0 +1,148 @@
+syntax = "proto3";
+
+package sbs.internalapi.v1;
+
+import "sbs/internalapi/v1/placement_apply.proto";
+
+option go_package = "github.com/nosway/namrbd/sbs/internalapi/v1;internalv1";
+
+// PlacementResolverService is an internal-only read surface for placement and
+// allocation planning inputs owned by sbs-service.
+service PlacementResolverService {
+  rpc ResolveExtentPlacements(ResolveExtentPlacementsRequest) returns (ResolveExtentPlacementsResponse);
+  rpc ResolveAllocationPages(ResolveAllocationPagesRequest) returns (ResolveAllocationPagesResponse);
+  rpc ResolveSnapshotAllocationPages(ResolveSnapshotAllocationPagesRequest) returns (ResolveSnapshotAllocationPagesResponse);
+  rpc ResolveCloneAllocationPages(ResolveCloneAllocationPagesRequest) returns (ResolveCloneAllocationPagesResponse);
+}
+
+message ResolveExtentPlacementsRequest {
+  string volume_id = 1;
+  uint64 offset_bytes = 2;
+  uint64 length_bytes = 3;
+}
+
+message ResolveExtentPlacementsResponse {
+  repeated ResolvedExtentPlacement placements = 1;
+}
+
+message ResolveAllocationPagesRequest {
+  string volume_id = 1;
+  uint64 offset_bytes = 2;
+  uint64 length_bytes = 3;
+  uint32 page_bytes = 4;
+  uint32 chunk_size_bytes = 5;
+}
+
+message ResolveAllocationPagesResponse {
+  repeated ResolvedAllocationPage allocation_pages = 1;
+}
+
+message ResolveSnapshotAllocationPagesRequest {
+  string snapshot_id = 1;
+  uint64 offset_bytes = 2;
+  uint64 length_bytes = 3;
+  uint32 page_bytes = 4;
+  uint32 chunk_size_bytes = 5;
+}
+
+message ResolveSnapshotAllocationPagesResponse {
+  repeated ResolvedAllocationPage allocation_pages = 1;
+}
+
+message ResolveCloneAllocationPagesRequest {
+  string clone_id = 1;
+  uint64 offset_bytes = 2;
+  uint64 length_bytes = 3;
+  uint32 page_bytes = 4;
+  uint32 chunk_size_bytes = 5;
+}
+
+message ResolveCloneAllocationPagesResponse {
+  repeated ResolvedAllocationPage allocation_pages = 1;
+}
+
+message ResolvedExtentPlacement {
+  ExtentMapping extent_mapping = 1;
+  ReplicaSet replica_set = 2;
+  repeated NodeMembership nodes = 3;
+}
+
+message ResolvedAllocationPage {
+  AllocationPage page = 1;
+  uint64 range_start_chunk = 2;
+  uint64 range_end_chunk = 3;
+  bool covers_whole_page = 4;
+}
+
+message ExtentMapping {
+  string volume_id = 1;
+  uint64 extent_id = 2;
+  uint64 logical_offset = 3;
+  uint64 length_bytes = 4;
+  uint64 chunk_id = 5;
+  string placement_ref = 6;
+  uint64 revision = 7;
+}
+
+message ReplicaSet {
+  string replica_set_id = 1;
+  string volume_id = 2;
+  string placement_ref = 3;
+  uint64 epoch = 4;
+  repeated ReplicaDescriptor replicas = 5;
+  string primary_replica_id = 6;
+  uint32 write_quorum = 7;
+  uint32 read_quorum = 8;
+  repeated string failure_domains = 9;
+}
+
+message ReplicaDescriptor {
+  string node_id = 1;
+  string replica_id = 2;
+  ReplicaRole role = 3;
+  string failure_domain = 4;
+}
+
+enum ReplicaRole {
+  REPLICA_ROLE_UNSPECIFIED = 0;
+  REPLICA_ROLE_PRIMARY = 1;
+  REPLICA_ROLE_SECONDARY = 2;
+}
+
+message NodeMembership {
+  string node_id = 1;
+  string replica_id = 2;
+  NodeLifecycleState lifecycle_state = 3;
+  NodeHealthState health_state = 4;
+  string zone = 5;
+  string host = 6;
+  uint64 capacity_bytes = 7;
+  uint64 used_bytes = 8;
+  int64 last_heartbeat_unix = 9;
+  string version = 10;
+  repeated string capabilities = 11;
+  string admin_http_endpoint = 12;
+  repeated SBSEndpoint sbs_endpoints = 13;
+}
+
+enum NodeLifecycleState {
+  NODE_LIFECYCLE_STATE_UNSPECIFIED = 0;
+  NODE_LIFECYCLE_STATE_JOINING = 1;
+  NODE_LIFECYCLE_STATE_ACTIVE = 2;
+  NODE_LIFECYCLE_STATE_DRAINING = 3;
+  NODE_LIFECYCLE_STATE_REMOVED = 4;
+}
+
+enum NodeHealthState {
+  NODE_HEALTH_STATE_UNSPECIFIED = 0;
+  NODE_HEALTH_STATE_HEALTHY = 1;
+  NODE_HEALTH_STATE_SUSPECT = 2;
+  NODE_HEALTH_STATE_DOWN = 3;
+}
+
+message SBSEndpoint {
+  string address = 1;
+  uint32 port = 2;
+  bool use_tls = 3;
+  string server_name = 4;
+}

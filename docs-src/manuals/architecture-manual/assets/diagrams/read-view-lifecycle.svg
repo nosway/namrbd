@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 1200 620">
+  <title id="title">Read view lifecycle</title>
+  <desc id="desc">A read-view lifecycle diagram showing live volume, snapshot root, clone-like view, materialization, flatten, and reachability protection.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L8 4 L0 8z" fill="#0b6b8f"/></marker>
+    <marker id="dasharrow" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L8 4 L0 8z" fill="#596574"/></marker>
+    <style>
+      .canvas{fill:#fbfcfd}.box{fill:#fff;stroke:#d8e0e8;stroke-width:1.8}.live{fill:#e9f5f8;stroke:#9bc6d4;stroke-width:1.9}.snap{fill:#fff7e8;stroke:#e0c089;stroke-width:1.9}.store{fill:#f7f8fb;stroke:#cbd6df;stroke-width:1.9}.title{fill:#17202a;font:700 19px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.small{fill:#596574;font:500 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.arrow{fill:none;stroke:#0b6b8f;stroke-width:3.2;marker-end:url(#arrow)}.dash{fill:none;stroke:#596574;stroke-width:2.5;stroke-dasharray:8 7;marker-end:url(#dasharrow)}
+    </style>
+  </defs>
+  <rect class="canvas" width="1200" height="620" rx="16"/>
+  <text class="title" x="42" y="48">Read Views, Snapshots, And Clones</text>
+  <text class="small" x="42" y="74">A read view is the identity used to resolve logical ranges; VolumeRevision is observability, not read identity.</text>
+
+  <rect class="live" x="72" y="178" width="190" height="92" rx="9"/>
+  <text class="title" x="85" y="212">Live volume</text>
+  <text class="small" x="85" y="236">current allocation pages</text>
+  <rect class="snap" x="332" y="178" width="190" height="92" rx="9"/>
+  <text class="title" x="360" y="212">Snapshot root</text>
+  <text class="small" x="360" y="236">immutable cut</text>
+  <rect class="box" x="592" y="178" width="200" height="92" rx="9"/>
+  <text class="title" x="620" y="212">Clone-like view</text>
+  <text class="small" x="620" y="236">delta over base root</text>
+  <rect class="box" x="862" y="178" width="220" height="92" rx="9"/>
+  <text class="title" x="875" y="212">Independent volume</text>
+  <text class="small" x="890" y="236">materialized or flattened</text>
+
+  <path class="arrow" d="M262 224 H332"/>
+  <path class="arrow" d="M522 224 H592"/>
+  <path class="arrow" d="M792 224 H862"/>
+
+  <rect class="store" x="332" y="396" width="190" height="82" rx="9"/>
+  <text class="title" x="360" y="428">Base objects</text>
+  <text class="small" x="360" y="452">protected by roots</text>
+  <rect class="store" x="592" y="396" width="200" height="82" rx="9"/>
+  <text class="title" x="620" y="428">Clone delta</text>
+  <text class="small" x="620" y="452">target-owned writes</text>
+  <rect class="store" x="862" y="396" width="220" height="82" rx="9"/>
+  <text class="title" x="890" y="428">GC candidates</text>
+  <text class="small" x="890" y="452">after all roots release</text>
+
+  <path class="dash" d="M427 270 V396"/>
+  <path class="dash" d="M692 270 V396"/>
+  <path class="dash" d="M972 270 V396"/>
+  <path class="dash" d="M522 437 H592"/>
+  <path class="dash" d="M792 437 H862"/>
+
+  <text class="small" x="58" y="558">Clone reads resolve delta first, then base snapshot root, then zero. Flatten removes the base dependency.</text>
+</svg>

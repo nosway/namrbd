@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 1400 900">
+  <title id="title">NAMRBD platform overview</title>
+  <desc id="desc">A NAMRBD component diagram showing English-labeled control flow, dataplane flow, and metadata authority across Linux hosts, gateways, SBS services, etcd, TiKV, sbs-data, and local Pebble stores.</desc>
+  <defs>
+    <marker id="arrow-control" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 8 4 L 0 8 z" fill="#8a5a12"/>
+    </marker>
+    <marker id="arrow-data" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 8 4 L 0 8 z" fill="#0b6b8f"/>
+    </marker>
+    <marker id="arrow-state" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 8 4 L 0 8 z" fill="#596574"/>
+    </marker>
+    <style>
+      .canvas { fill: #fbfcfd; }
+      .band { fill: #f4f8fb; stroke: #d8e0e8; stroke-width: 1.5; }
+      .band-title { fill: #596574; font: 700 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .box { fill: #ffffff; stroke: #d8e0e8; stroke-width: 1.8; }
+      .box-control { fill: #fff7e8; stroke: #e0c089; stroke-width: 1.9; }
+      .box-data { fill: #e9f5f8; stroke: #9bc6d4; stroke-width: 1.9; }
+      .box-store { fill: #f7f8fb; stroke: #cbd6df; stroke-width: 1.9; }
+      .title { fill: #17202a; font: 700 19px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .small { fill: #596574; font: 500 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .edge-label { fill: #596574; font: 700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .rule { fill: #596574; font: 700 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .control { fill: none; stroke: #8a5a12; stroke-width: 3.2; marker-end: url(#arrow-control); }
+      .data { fill: none; stroke: #0b6b8f; stroke-width: 3.6; marker-end: url(#arrow-data); }
+      .state { fill: none; stroke: #596574; stroke-width: 2.6; stroke-dasharray: 8 7; marker-end: url(#arrow-state); }
+      .legend-line-control { stroke: #8a5a12; stroke-width: 3.2; }
+      .legend-line-data { stroke: #0b6b8f; stroke-width: 3.6; }
+      .legend-line-state { stroke: #596574; stroke-width: 2.6; stroke-dasharray: 8 7; }
+    </style>
+  </defs>
+
+  <rect class="canvas" x="0" y="0" width="1400" height="900" rx="16"/>
+
+  <text class="title" x="46" y="48">NAMRBD Platform Overview</text>
+  <text class="small" x="46" y="74">Linux-first block I/O, gateway adaptation, SBS metadata authority, and backend payload execution</text>
+
+  <g aria-label="legend">
+    <line class="legend-line-control" x1="910" y1="42" x2="972" y2="42"/>
+    <text class="edge-label" x="986" y="47">control flow</text>
+    <line class="legend-line-data" x1="910" y1="70" x2="972" y2="70"/>
+    <text class="edge-label" x="986" y="75">dataplane flow</text>
+    <line class="legend-line-state" x1="1160" y1="42" x2="1222" y2="42"/>
+    <text class="edge-label" x="1236" y="47">authority / stores</text>
+  </g>
+
+  <rect class="band" x="34" y="106" width="1332" height="178" rx="12"/>
+  <text class="band-title" x="58" y="137">External control and integration</text>
+
+  <rect class="box-control" x="82" y="176" width="240" height="82" rx="9"/>
+  <text class="title" x="110" y="207">Operator</text>
+  <text class="small" x="110" y="230">sbsctl / namrbdctl</text>
+
+  <rect class="box-control" x="406" y="176" width="240" height="82" rx="9"/>
+  <text class="title" x="434" y="207">Kubernetes / CSI</text>
+  <text class="small" x="434" y="230">PVC, PV, Snapshot</text>
+
+  <rect class="box-control" x="730" y="176" width="250" height="82" rx="9"/>
+  <text class="title" x="758" y="207">Gateway control API</text>
+  <text class="small" x="758" y="230">attach, manifest, status</text>
+
+  <rect class="box-store" x="1128" y="176" width="214" height="82" rx="9"/>
+  <text class="title" x="1162" y="207">etcd</text>
+  <text class="small" x="1162" y="230">host control metadata</text>
+
+  <path class="control" d="M 322 203 C 450 132 610 132 730 203"/>
+
+  <path class="control" d="M 646 222 H 730"/>
+
+  <path class="state" d="M 980 217 H 1128"/>
+
+  <rect class="band" x="34" y="330" width="1332" height="188" rx="12"/>
+  <text class="band-title" x="58" y="361">Linux host and gateway dataplane</text>
+
+  <rect class="box-data" x="82" y="404" width="280" height="86" rx="9"/>
+  <text class="title" x="110" y="435">Linux app / filesystem</text>
+  <text class="small" x="110" y="458">read, write, flush, discard</text>
+
+  <rect class="box-data" x="446" y="404" width="280" height="86" rx="9"/>
+  <text class="title" x="474" y="435">NAMRBD kernel device</text>
+  <text class="small" x="474" y="458">blk-mq, lanes, path health</text>
+
+  <rect class="box-data" x="810" y="404" width="260" height="86" rx="9"/>
+  <text class="title" x="838" y="435">namrbd-gateway</text>
+  <text class="small" x="838" y="458">I/O frame conversion</text>
+
+  <path class="data" d="M 362 447 H 446"/>
+
+  <path class="data" d="M 726 447 H 810"/>
+
+  <rect class="band" x="34" y="566" width="1332" height="254" rx="12"/>
+  <text class="band-title" x="58" y="598">SBS cluster authority and storage execution</text>
+
+  <rect class="box-store" x="82" y="688" width="240" height="86" rx="9"/>
+  <text class="title" x="110" y="719">TiKV cluster</text>
+  <text class="small" x="110" y="742">SBS metadata backend</text>
+
+  <rect class="box" x="406" y="688" width="240" height="86" rx="9"/>
+  <text class="title" x="434" y="719">sbs-service</text>
+  <text class="small" x="434" y="742">metadata, placement, GC</text>
+
+  <rect class="box" x="730" y="688" width="250" height="86" rx="9"/>
+  <text class="title" x="758" y="719">sbs-data nodes</text>
+  <text class="small" x="758" y="742">payload read/write/delete</text>
+
+  <rect class="box-store" x="1128" y="688" width="204" height="86" rx="9"/>
+  <text class="title" x="1162" y="719">Pebble</text>
+  <text class="small" x="1162" y="742">local payload stores</text>
+
+  <path class="control" d="M 855 258 V 626 H 526 V 688"/>
+
+  <path class="data" d="M 855 490 V 688"/>
+
+  <path class="state" d="M 406 731 H 322"/>
+
+  <path class="state" d="M 980 731 H 1128"/>
+
+  <path class="state" d="M 202 688 V 636 H 526 V 688"/>
+
+  <path class="state" d="M 855 688 V 636 H 1215 V 688"/>
+
+  <text class="rule" x="58" y="862">Rule: gateway and kernel route host-facing I/O; sbs-service owns storage metadata semantics; sbs-data owns node-local execution.</text>
+</svg>

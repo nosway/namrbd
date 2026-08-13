@@ -1,0 +1,11 @@
+{{- if .Values.volumeSnapshotClass.create }}
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: {{ .Values.volumeSnapshotClass.name }}
+  labels:
+    {{- include "namrbd-csi.labels" . | nindent 4 }}
+driver: {{ .Values.driverName }}
+deletionPolicy: {{ .Values.volumeSnapshotClass.deletionPolicy }}
+parameters: {}
+{{- end }}
