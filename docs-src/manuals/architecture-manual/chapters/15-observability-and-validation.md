@@ -2,18 +2,18 @@ Chapter 16
 
 Edition boundary: Community edition validation fields and Enterprise edition only evidence fields are both present.
 
-# Observability And Harness
+# Observability And Validation
 
-## Harness
+## Validation Work Loop
 
 - Contract map
 - Observable fields
 - Local gates
-- Remote/lab notes
+- Remote validation notes
 
 <div class="summary" markdown="1">
 
-NAMRBD treats code, smoke scripts, load scripts, logs, docs, deployment state, and regression targets as one verification harness. Architecture reviews should name the broken contract, touched path, expected observable, and regression risk.
+NAMRBD treats code, smoke checks, load checks, logs, docs, deployment state, and regression targets as one validation workflow. Architecture reviews should name the broken contract, touched path, expected observable, and regression risk.
 
 A validation claim is useful only when the observable proves the intended mode was active. JSON-producing scripts write JSON only to stdout; logs and diagnostics go to stderr.
 
@@ -50,7 +50,7 @@ The read-only operations console at `/console/` is a static dashboard served by 
 
 Evidence bundles built from this surface should capture product/build identity, source authority and freshness, query snapshots, operation history, warning/error summaries, redaction state, runbook suggestions, and reasons that evidence is unavailable. They are useful for support and incident review only when secrets, tokens, raw payloads, and private deployment paths are excluded.
 
-## Harness Gate Categories
+## Validation Gate Categories
 
 | Category | Purpose | Minimum Evidence |
 |----|----|----|
@@ -58,11 +58,11 @@ Evidence bundles built from this surface should capture product/build identity, 
 | Unit and contract gates | Exercise the smallest package, script function, jq filter, or API contract touched by the change. | Package or fixture name, `ok_count`, `error_count`, and contract-specific observables. |
 | Smoke gates | Run a small end-to-end path for attach, I/O, snapshot, restore, discard, EC, topology, or CSI behavior. | Mode fields proving the intended path was active, first/last error, and resulting metadata or device state. |
 | Load and soak gates | Exercise performance, concurrency, failover, and long-running behavior without weakening correctness claims. | Run duration, request counts, latency/error summary, active topology/path state, and warning lines. |
-| Remote lab gates | Validate changes that require real gateway, SBS, data-node, kernel, or multi-node topology behavior. | Sync/deploy state, restart state, lab size, final summary table, and explicit note if a lab run was skipped. |
+| Remote deployment gates | Validate changes that require real gateway, SBS, data-node, kernel, or multi-node topology behavior. | Sync/deploy state, restart state, deployment size, final summary table, and explicit note if a remote validation run was skipped. |
 
 <div class="diagram" markdown="1">
 
-<div class="diagram-title">Harness work loop</div>
+<div class="diagram-title">Validation work loop</div>
 
 <div class="flow" markdown="1">
 
@@ -74,7 +74,7 @@ Evidence bundles built from this surface should capture product/build identity, 
 
 <div class="arrow">-\></div>
 
-<div class="box">touched harness</div>
+<div class="box">touched validation surface</div>
 
 <div class="arrow">-\></div>
 
@@ -84,7 +84,7 @@ Evidence bundles built from this surface should capture product/build identity, 
 
 </div>
 
-Result summaries should include `ok_count`, `error_count`, first error, last error, and enough deploy, restart, remote, or lab state to avoid implying validation that did not happen. Backup/DR validation additionally records whether restore-readback evidence was skipped, cached, or required, and which orchestrator and kernel host roles were used when a remote lab run was actually executed.
+Result summaries should include `ok_count`, `error_count`, first error, last error, and enough deploy, restart, remote, or topology state to avoid implying validation that did not happen. Backup/DR validation additionally records whether restore-readback evidence was skipped, cached, or required, and which orchestrator and kernel host roles were used when a remote validation run was actually executed.
 
 Security/Compliance validation uses the same rule. Evidence can prove encrypted payload observability, kernel key admission, encrypted backup artifact restore/readback, crypto erase post-read failure, and data-key rotation paths only for the exact provider, build, and deployment under test. It must not claim live external KMS network use, external-provider destroy, or broader kernel readback unless a later gate explicitly records that evidence.
 

@@ -43,7 +43,7 @@ etcd는 NAMRBD **gateway control-plane authority**다. `sbs-service`는 etcd를 
 
 - **etcd 3멤버** (홀수, Raft quorum = 2/3)
 - 멤버를 **서로 다른 호스트**(가능하면 rack/zone)에 배치
-- NAMRBD gateway가 있는 호스트와 **동일 머신에 etcd를 co-locate하지 않는 것**을 권장(리소스·장애 격리). lab에서는 단일 호스트 3프로세스도 가능하나 HA sign-off용은 아님.
+- NAMRBD gateway가 있는 호스트와 **동일 머신에 etcd를 co-locate하지 않는 것**을 권장(리소스·장애 격리). 개발 검증에서는 단일 호스트 3프로세스도 가능하나 HA sign-off용은 아님.
 
 ```
               +---------------------------+
@@ -288,11 +288,11 @@ namrbdctl volume-list \
 
 | 환경    | `--etcd-root` 예시 |
 |---------|--------------------|
-| lab     | `/namrbd/lab-9n`   |
+| validation | `/namrbd/validation` |
 | staging | `/namrbd/stage`    |
 | prod    | `/namrbd/prod`     |
 
-lab smoke에서 prefix 삭제:
+validation smoke에서 prefix 삭제:
 
 ``` bash
 etcdctl --endpoints="$ENDPOINTS" del "${NAMRBD_ETCD_ROOT}" --prefix
@@ -417,7 +417,7 @@ namrbdctl validate-all --etcd-endpoints "$NAMRBD_ETCD_ENDPOINTS" --etcd-root "$N
 
 인증서 rotation 시: etcd 멤버 rolling → gateway 재기동 → smoke.
 
-## 11. NAMRBD 검증 harness
+## 11. NAMRBD 검증 절차
 
 | 목적 | 검증 내용 |
 |----|----|
@@ -425,7 +425,7 @@ namrbdctl validate-all --etcd-endpoints "$NAMRBD_ETCD_ENDPOINTS" --etcd-root "$N
 | two-gateway attach fencing | 두 gateway가 같은 volume에 접근할 때 attachment, generation, single-writer fencing이 일관되게 유지되는지 확인 |
 | Legacy RawKV tikv + etcd | legacy RawKV payload persistence가 필요한 경우에만 historical compatibility evidence로 확인 |
 
-실행 시에는 `NAMRBD_ETCD_ENDPOINTS`와 `NAMRBD_ETCD_ROOT`를 명시하고, 현재 유지보수되는 cluster validation harness가 summary JSON에 `ok_count`, `error_count`, first error, last error, attach fencing result를 기록하는지 확인합니다.
+실행 시에는 `NAMRBD_ETCD_ENDPOINTS`와 `NAMRBD_ETCD_ROOT`를 명시하고, 현재 유지보수되는 cluster validation 절차가 summary JSON에 `ok_count`, `error_count`, first error, last error, attach fencing result를 기록하는지 확인합니다.
 
 HA sign-off는 **서로 다른 호스트 3멤버 etcd**에서 two-gateway·attach fencing 시나리오를 통과한 결과로 판단한다.
 

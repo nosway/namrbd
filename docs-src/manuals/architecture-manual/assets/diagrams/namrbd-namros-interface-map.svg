@@ -252,6 +252,6 @@
   <text x="925" y="981" font-size="9.5" fill="#334155" text-anchor="middle">TxnKV gRPC (PD :2379) — membership · placement · EC metadata</text>
 
   <!-- Footnotes -->
-  <text x="40" y="1022" font-size="10" fill="#64748b">* Ports are code defaults; docs and lab environments use overrides (e.g. namrbd-gateway 9899/9898, sbs-data 9460, NAMROS lab gateways 19090-19093, etcd 12379).</text>
+  <text x="40" y="1022" font-size="10" fill="#64748b">* Ports are code defaults; validation and deployment environments may override gateway, data, and metadata endpoints.</text>
   <text x="40" y="1040" font-size="10" fill="#64748b">* Internal gRPC paths are plaintext (insecure) by default; TLS is optional on some gateway/TiKV paths only.</text>
 </svg>

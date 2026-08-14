@@ -42,7 +42,7 @@ Keep environment boundaries explicit:
 
 - 동일 게이트웨이 서비스 그룹: 반드시 동일한 `--etcd-endpoints` 및 `--etcd-root`를 공유해야 합니다.
 - 동일 SBS 스토리지 클러스터: 반드시 동일한 TiKV/PD 엔드포인트 세트와 keyspace를 공유해야 합니다.
-- dev/stage/prod/lab 개발 및 상용 격리: 반드시 상이한 roots/keyspaces 설정을 분리 관리하십시오.
+- dev/stage/prod/validation 환경 격리: 반드시 상이한 roots/keyspaces 설정을 분리 관리하십시오.
 
 ### 2.1 Membership Change Workflow
 
@@ -366,7 +366,7 @@ sbsctl backup purge plan \
   --output json
 ```
 
-Backup/DR 제어 레이어는 destructive purge executor, background copy scheduler, 또는 automated remote DR을 추가하지 않습니다. Enterprise security/compliance controls는 이미 유효한 Backup/DR state를 감싸지만 integrity와 restore-drill rules 없이 artifact를 available로 만들지는 않습니다. `sbs-service`가 변경된 배포에서는 lab에서 API 결과를 해석하기 전에 반드시 `sbs-service`를 restart/redeploy해야 합니다.
+Backup/DR 제어 레이어는 destructive purge executor, background copy scheduler, 또는 automated remote DR을 추가하지 않습니다. Enterprise security/compliance controls는 이미 유효한 Backup/DR state를 감싸지만 integrity와 restore-drill rules 없이 artifact를 available로 만들지는 않습니다. `sbs-service`가 변경된 배포에서는 validation 환경에서 API 결과를 해석하기 전에 반드시 `sbs-service`를 restart/redeploy해야 합니다.
 
 ### 4.6 Enterprise Security Control Plane <span class="edition-boundary-inline">Enterprise edition only</span>
 
@@ -429,7 +429,7 @@ namrbd-iscsi-gateway \
   --json
 ```
 
-`--allow-gotgt-wildcard-listen`는 현재 gotgt listener 제한을 반영한 옵션입니다. isolated fixture 또는 통제된 lab/deployment network에서만 사용하고, initiator source-IP ACL로 해석하지 않습니다.
+`--allow-gotgt-wildcard-listen`는 현재 gotgt listener 제한을 반영한 옵션입니다. isolated fixture 또는 통제된 validation/deployment network에서만 사용하고, initiator source-IP ACL로 해석하지 않습니다.
 
 운영 적용 전 체크리스트:
 
@@ -439,7 +439,7 @@ namrbd-iscsi-gateway \
 - Binary, portal, SBS endpoint, target, export, attachment, command mapping 변경 후에는 initiator evidence를 해석하기 전에 target gateway를 재시작합니다.
 - Community 배포는 3개의 distinct iSCSI-exported-volume cap을 지킵니다. 더 큰 export scale, HA, MPIO/ALUA, 고급 보안/감사, 대규모 관측성은 Enterprise로 계획합니다.
 
-Linux initiator 유효성 입증 시에는 부분적인 세션 로그를 수동으로 해석하지 말고 유지보수되는 iSCSI smoke harness 결과로 판정하십시오. 인정 가능한 증거에는 gateway summary JSON, operation JSONL, initiator session detail, readback 성공 여부, `ok_count`, `error_count`, 그리고 해당 실행에서 gateway를 재시작했는지가 포함되어야 합니다.
+Linux initiator 유효성 입증 시에는 부분적인 세션 로그를 수동으로 해석하지 말고 유지보수되는 iSCSI smoke validation 결과로 판정하십시오. 인정 가능한 증거에는 gateway summary JSON, operation JSONL, initiator session detail, readback 성공 여부, `ok_count`, `error_count`, 그리고 해당 실행에서 gateway를 재시작했는지가 포함되어야 합니다.
 
 `cmd/namrbd-iscsi-gateway`, `iscsi` package, gotgt fork patch, backend adapter semantics, iSCSI command mapping을 바꾼 경우에는 live iSCSI gateway process를 재시작한 뒤 initiator evidence를 판정합니다.
 
@@ -502,7 +502,7 @@ Generated public/community export artifact validation remains a separate release
 
 ## 8. Closure And Validation
 
-Closure는 검토 대상 source revision, binary, image, service restart, kernel module state에 대해 배포된 제품 경로가 fresh evidence를 가진다는 뜻입니다. Private lab path, 과거 hostname, cached artifact를 public support claim처럼 재사용하지 않습니다.
+Closure는 검토 대상 source revision, binary, image, service restart, kernel module state에 대해 배포된 제품 경로가 fresh evidence를 가진다는 뜻입니다. Private validation path, 과거 hostname, cached artifact를 public support claim처럼 재사용하지 않습니다.
 
 기본 iSCSI target access는 Linux open-iscsi를 필수 compatibility baseline으로 둡니다. Validation package에는 fixture startup, SBS-backed Linux initiator discovery/login, guarded LUN selection, write/readback, flush 또는 UNMAP observation, logout, cleanup, Community edition-boundary status, unsupported initiator exclusion이 포함되어야 합니다.
 

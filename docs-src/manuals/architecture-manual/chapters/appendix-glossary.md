@@ -84,7 +84,7 @@ Performance Policy, Cap Scope, Budget Lease, Restore Warmup State, Diff Index, G
 | Read View | Explicit identity used to resolve live, snapshot, clone, or materialized reads. |
 | Snapshot Root | Immutable allocation metadata captured at snapshot cut. |
 | Clone Delta | Clone-owned mapping that overrides base snapshot data. |
-| Backup Target | Enterprise Backup/DR destination abstraction for artifact manifests and backup object chunks. The initial product boundary is local/lab target support, not released remote object-store DR. |
+| Backup Target | Enterprise Backup/DR destination abstraction for artifact manifests and backup object chunks. The initial product boundary is local validation target support, not released remote object-store DR. |
 | Backup Policy | `sbs-service`-owned enterprise control record for scheduled snapshot/backup intent, retention rules, dry-run planning, and next-run observability. |
 | Backup Run | Service-owned operation record for one backup attempt. A run may create or update an artifact, but it is not itself proof that a recovery point is available. |
 | Backup Artifact | Manifest plus target objects copied from a source snapshot/read-view. It becomes `available` only after integrity recheck plus userspace and kernel restore readback evidence. |
@@ -106,14 +106,14 @@ Performance Policy, Cap Scope, Budget Lease, Restore Warmup State, Diff Index, G
 | Crypto Erase | Security/Compliance terminal key-authority action that destroys data-key access only after protected references, leases, rotations, backup artifacts, holds, and active attachments allow it. Post-erase gateway/SBS reads must fail closed. |
 | Performance Policy | Enterprise Performance policy record or fixture summary describing performance tier, IOPS/bandwidth caps, burst allowance, cap scope, throttle mode, and foreground priority. |
 | Volume Performance Binding | Association between a volume and a performance policy generation. It makes the effective policy explicit without moving read-view or metadata commit authority into the gateway. |
-| Cap Scope | Performance label for where an I/O cap is authoritative: `lab_only`, `per_gateway`, or `cluster_volume`. A cluster-volume cap requires a shared `sbs-service` budget authority. |
+| Cap Scope | Performance label for where an I/O cap is authoritative: fixture-only, per-gateway, or cluster-volume. A cluster-volume cap requires a shared `sbs-service` budget authority. |
 | Throttle Mode | Performance admission behavior for over-cap requests. `wait` delays before dispatch, while `reject` returns a throttle-specific error before dispatch. |
 | Shared Budget Lease | Short-lived `sbs-service` grant of foreground budget tokens and bytes for a volume, budget class, and window. Gateways consume it before dispatch when `cap_scope=cluster_volume`. |
 | Background Work Budget | Performance budget view for repair, rebuild, scrub, backup copy, restore warmup, and diff-index work. Live metadata mutation exists for maintenance-owned concurrency and selected background classes, but it must not imply every worker has live budget enforcement. |
 | Restore Warmup State | Access-cost readiness state for a Backup/DR-valid restored volume, such as `cold`, `warming`, `ready`, `failed`, or skipped/disabled. Worker-scaffold runs can advance metadata readiness, but the state does not make a backup artifact successful. |
 | Diff Index | Optional Performance changed-range metadata acceleration record keyed by read-view identity and coverage. Complete indexes may accelerate only after validation and a later product fast-path gate; partial, stale, or missing indexes fall back, under-copy is rejected, and scanner-scaffold records keep product acceleration disabled. |
 | Guarded EC Journal | Guarded Performance EC performance concept for same-stripe batching or service-owned write journaling. Live control-plane intent can be recorded, but it is not product-active or a product tier until correctness, replay, reachability, multi-gateway, backup, and diff-index gates pass. |
-| Closure Evidence | Harness result package that records ok/error counts, first and last error, deploy/restart state, skipped/cached/required lab gates, and observability fields. It is validation evidence, not product metadata. |
+| Closure Evidence | Validation result package that records ok/error counts, first and last error, deploy/restart state, skipped/cached/required validation gates, and observability fields. It is validation evidence, not product metadata. |
 | Reclaimable Object | PhysicalObjectRef absent from authoritative roots and eligible for backend delete. |
 | Zone | Operator-defined primary SBS failure domain. |
 | Node | SBS cluster member identity for one `sbs-data` endpoint. |

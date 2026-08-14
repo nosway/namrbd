@@ -103,7 +103,7 @@ The reading order keeps Linux/internal architecture ahead of Kubernetes integrat
 | Reader | Start With | Then Follow |
 |----|----|----|
 | New architecture reader | Chapters 2-7. | Backends, consistency, read views, GC, and Kubernetes after the storage model is clear. |
-| GitHub contributor | [Developer build path](../../installation-guide.md#2-developer-build-and-test), then Chapters 2-5. | Use the ownership boundaries and harness chapter before changing product behavior. |
+| GitHub contributor | [Developer build path](../../installation-guide.md#2-developer-build-and-test), then Chapters 2-5. | Use the ownership boundaries and validation chapter before changing product behavior. |
 | Kernel/runtime reviewer | Chapters 4 and 14. | Compare lane/path behavior with Chapter 10 ordering and Chapter 7 metadata visibility. |
 | Storage metadata reviewer | Chapters 5-7. | Continue into Chapters 8-13 for backend, read-view, GC, zero, and discard behavior. |
 | Operations/release reviewer | Chapters 15-18. | Use Chapter 16 to connect evidence, skipped gates, and release guardrails. |

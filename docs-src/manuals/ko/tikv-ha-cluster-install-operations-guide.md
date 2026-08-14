@@ -111,7 +111,7 @@ TiUP 기본 포트(커스텀 시 topology YAML에서 변경):
 - NAMRBD `sbs-service` / gateway가 있는 **모든 호스트** → **모든 PD client URL(`2379`)**: 허용
 - 외부 인터넷에서 TiKV 포트를 열 필요는 없다(내부망만)
 
-lab에서 비표준 포트(예: `44751`)를 쓰는 경우, topology와 `NAMRBD_TIKV_PD_ENDPOINTS`를 **같은 값**으로 맞춘다.
+validation 환경에서 비표준 포트(예: `44751`)를 쓰는 경우, topology와 `NAMRBD_TIKV_PD_ENDPOINTS`를 **같은 값**으로 맞춘다.
 
 ### 3.3 디렉터리
 
@@ -302,10 +302,10 @@ export NAMRBD_TIKV_KEYSPACE="namrbd-sbs-prod-001"
 
 ### 6.3 keyspace·데이터 분리
 
-- lab: `namrbd-sbs-lab-9n`
+- validation: `namrbd-sbs-validation`
 - prod: `namrbd-sbs-prod-001`
 
-같은 TiKV 클러스터를 공유하더라도 keyspace로 논리 분리한다. **prod keyspace를 lab smoke에 쓰지 않는다.**
+같은 TiKV 클러스터를 공유하더라도 keyspace로 논리 분리한다. **prod keyspace를 validation smoke에 쓰지 않는다.**
 
 ### 6.4 계획 유지보수 (rolling)
 
@@ -373,7 +373,7 @@ TiKV store 추가:
 
 대응:
 
-- TiKV store 용량 확장 또는 오래된 lab keyspace 정리
+- TiKV store 용량 확장 또는 오래된 validation keyspace 정리
 - compaction/background throttle 조정(TiKV `config`)
 - NAMRBD maintenance 우선순위: foreground I/O \> repair \> rebalance
 
@@ -404,9 +404,9 @@ tiup cluster upgrade "$CLUSTER_NAME" v8.5.1
 - staging cluster에서 먼저 rolling upgrade
 - upgrade 중 NAMRBD smoke: metadata read/write, attach fencing
 
-## 9. NAMRBD 검증 harness
+## 9. NAMRBD 검증 절차
 
-로컬·lab에서 TiKV 연결을 검증할 때는 현재 유지보수되는 검증 harness가 다음 시나리오를 모두 기록하는지 확인합니다:
+로컬 또는 validation 환경에서 TiKV 연결을 검증할 때는 현재 유지보수되는 검증 절차가 다음 시나리오를 모두 기록하는지 확인합니다:
 
 | 목적 | 검증 내용 |
 |----|----|
@@ -420,7 +420,7 @@ tiup cluster upgrade "$CLUSTER_NAME" v8.5.1
 ``` bash
 export TIKV_PD_ENDPOINTS="$NAMRBD_TIKV_PD_ENDPOINTS"
 export TIKV_API_VERSION=v1
-export TIKV_KEYSPACE=namrbd-sbs-lab-smoke
+export TIKV_KEYSPACE=namrbd-sbs-validation-smoke
 ```
 
 HA sign-off는 **다중 호스트 3 PD + 3 TiKV**에서 위 suite를 돌린 결과로 판단한다. single-host playground만으로는 부족하다.

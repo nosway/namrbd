@@ -73,7 +73,7 @@ nav:
           - Zero, Discard, And Reclaim: manuals/architecture-manual/chapters/12-zero-discard-and-reclaim.md
           - Kernel Gateway Dataplane: manuals/architecture-manual/chapters/13-kernel-gateway-dataplane.md
           - Topology Placement And Expansion: manuals/architecture-manual/chapters/14-topology-placement-and-expansion.md
-          - Observability And Harness: manuals/architecture-manual/chapters/15-observability-and-harness.md
+          - Observability And Validation: manuals/architecture-manual/chapters/15-observability-and-validation.md
           - Kubernetes CSI Integration: manuals/architecture-manual/chapters/16-kubernetes-csi-integration-case.md
           - Edition And Release Boundaries: manuals/architecture-manual/chapters/17-edition-and-release-boundaries.md
           - Extreme I/O Performance: manuals/architecture-manual/chapters/18-extreme-io-performance-engineering.md

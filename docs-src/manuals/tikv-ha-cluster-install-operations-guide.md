@@ -16,7 +16,7 @@ This operations guide outlines the procedures for deploying, managing, and maint
 
 - Local MacBook playground setups: See local development documents.
 - SBS metadata logical repair policies: See SBS Architecture guides.
-- Comprehensive 9-node SBS cluster bring-up: See multi-node integration runbooks.
+- Comprehensive multi-node SBS cluster bring-up: See multi-node integration runbooks.
 
 ## 1. Role of TiKV in NAMRBD
 

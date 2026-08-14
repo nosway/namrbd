@@ -6,7 +6,7 @@ Edition boundary: Community edition architecture overview and Enterprise edition
 
 <div class="summary" markdown="1">
 
-This HTML edition explains NAMRBD's public architecture for developers, operators, and reviewers. It starts from ordinary Linux block-device usage, then follows the request path through the kernel module, gateway, SBS cluster, metadata stores, logical storage substrate, backends, read views, Backup/DR control-plane state, security/compliance state, scoped Governance/WORM state, the optional iSCSI standard target gateway, and validation harnesses.
+This HTML edition explains NAMRBD's public architecture for developers, operators, and reviewers. It starts from ordinary Linux block-device usage, then follows the request path through the kernel module, gateway, SBS cluster, metadata stores, logical storage substrate, backends, read views, Backup/DR control-plane state, security/compliance state, scoped Governance/WORM state, the optional iSCSI standard target gateway, and validation evidence.
 
 NAMRBD expands to Network Attached Multipath Resilient Block Device and is pronounced \[nae-mur-bee-dee\]. The name is descriptive: network-attached access, multiple host/gateway paths, and resilient block-device behavior are first-order architecture concerns.
 
@@ -79,8 +79,8 @@ Standalone installation and operations guides for the HA metadata dependencies a
 | Which component owns a state transition? | [Components And Ownership](chapters/02-components-and-ownership.md) |
 | How does a logical range become a physical payload object? | [Logical-To-Physical Mapping](chapters/06-logical-to-physical-mapping.md) |
 | Why are snapshots and clones safe after overwrite or discard? | [Read Views](chapters/10-read-views-snapshots-and-clones.md) and [Reachability And GC](chapters/11-reachability-and-gc.md) |
-| Where does Backup/DR state live? | [Metadata Authority](chapters/04-metadata-authority.md), [Observability](chapters/15-observability-and-harness.md), and [Edition Boundaries](chapters/17-edition-and-release-boundaries.md) |
-| Where does security/compliance state live? | [Metadata Authority](chapters/04-metadata-authority.md), [Observability](chapters/15-observability-and-harness.md), and [Interface Specifications](chapters/appendix-interface-specifications.md) |
+| Where does Backup/DR state live? | [Metadata Authority](chapters/04-metadata-authority.md), [Observability](chapters/15-observability-and-validation.md), and [Edition Boundaries](chapters/17-edition-and-release-boundaries.md) |
+| Where does security/compliance state live? | [Metadata Authority](chapters/04-metadata-authority.md), [Observability](chapters/15-observability-and-validation.md), and [Interface Specifications](chapters/appendix-interface-specifications.md) |
 | Where does iSCSI fit without changing storage authority? | [Interface Specifications](chapters/appendix-interface-specifications.md) and [Edition Boundaries](chapters/17-edition-and-release-boundaries.md) |
 | How does Kubernetes use NAMRBD without owning storage semantics? | [Kubernetes/CSI Integration Case](chapters/16-kubernetes-csi-integration-case.md) |
 | Where are component interface surfaces summarized? | [Interface Specifications](chapters/appendix-interface-specifications.md) |

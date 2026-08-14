@@ -214,7 +214,7 @@ Add a replacement node using `etcdctl member add` before starting the new daemon
 
 Always enable peer-to-peer and client-to-server mTLS in production tiers.
 
-## 11. NAMRBD Verification Harness
+## 11. NAMRBD Verification
 
 Run simulated partition drills to guarantee system resilient failover behavior.
 

@@ -20,7 +20,7 @@ NAMRBD는 분산 스토리지 기판인 SBS 기술을 공유하는 초저지연 
 
 | 구성 | 목적 | 핵심 종속성 | 에디션 범위 |
 |----|----|----|----|
-| Local Small Lab | 개발자 로컬 가상 검증 및 스모크 테스트 | 단일 `namrbd-gateway`, 로컬 Pebble 메타 스토어 | <span class="badge">Community</span> |
+| Local Single-Node Validation | 개발자 로컬 가상 검증 및 스모크 테스트 | 단일 `namrbd-gateway`, 로컬 Pebble 메타 스토어 | <span class="badge">Community</span> |
 | Kubernetes CSI Cluster | 쿠버네티스 CSI 볼륨 다이나믹 프로비저닝 | TiKV 메타 데이터, sbsctl, `namrbd-csi-driver` | <span class="badge">Community</span> |
 | Basic iSCSI Target Access | 단일 타겟 경로를 통한 표준 Linux open-iscsi LUN export | `namrbd-iscsi-gateway`, `sbsctl iscsi`, TCP/3260 | <span class="badge">Community</span> 최대 3개 distinct exported volumes |
 | Enterprise iSCSI HA/Scale | 대규모 이중화 타겟 게이트웨이 연동 | etcd, `namrbd-iscsi-gateway`, host multipath tooling | <span class="badge enterprise">Enterprise</span> |

@@ -232,7 +232,7 @@ The following `namrbd_blk.ko` module parameters shape local device defaults, pat
 | `max_gateway_connections` | `NAMRBD_MAX_PATHS` (`16`) | Maximum active dispatch lanes and gateway path connections considered by the kernel. | Use this to bound host-side connection fanout. Gateway admission and SBS health are separate contracts. |
 | `per_path_outstanding` | `1` | Maximum outstanding requests on one persistent gateway path connection. | The product/default path is one outstanding request per path connection. `per_path_outstanding > 1` is a guarded performance experiment until ordering, FLUSH/FUA, and read-after-write validation cover the mode. |
 | `sched_policy` | `least_inflight` | Local scheduler policy for path choice: `rr`, `least_inflight`, or `ewma`. | The policy is kernel-local fallback/path selection behavior. It is not gateway target-view generation. |
-| `down_mask` | `0x0` | Initial bitmask marking path slots as `DOWN`. | Useful for harness and failure-shape tests. Runtime path-plan apply can supersede the initial state. |
+| `down_mask` | `0x0` | Initial bitmask marking path slots as `DOWN`. | Useful for validation and failure-shape tests. Runtime path-plan apply can supersede the initial state. |
 | `degraded_mask` | `0x0` | Initial bitmask marking path slots as `DEGRADED`. | Degraded paths can remain eligible, but fallback selection prefers an `UP` path when possible. |
 | `draining_mask` | `0x0` | Initial bitmask marking path slots as `DRAINING`. | Draining paths are excluded from active lane mapping and can have their sockets closed during path-plan apply. |
 | `fail_path_id` | `-1` | Optional injected path failure id for newly created devices. | `-1` disables injection. This is a test/debug hook for retry and failover behavior. |

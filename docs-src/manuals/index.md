@@ -20,7 +20,7 @@ NAMRBD is a low-latency distributed block storage system sharing the SBS storage
 
 | Shape | Purpose | Primary Dependencies | Edition Scope |
 |----|----|----|----|
-| Local Small Lab | Developer virtual testing and basic harness smoke | Single `namrbd-gateway`, local memory/Pebble metadata store | <span class="badge">Community</span> |
+| Local Single-Node Validation | Developer virtual testing and basic smoke validation | Single `namrbd-gateway`, local memory/Pebble metadata store | <span class="badge">Community</span> |
 | Kubernetes CSI Cluster | Dynamic persistent volume provisioning | TiKV distributed metadata, sbsctl, `namrbd-csi-driver` | <span class="badge">Community</span> |
 | Basic iSCSI Target Access | Standard Linux open-iscsi LUN export through a single target path | `namrbd-iscsi-gateway`, `sbsctl iscsi`, TCP/3260 | <span class="badge">Community</span> capped at 3 distinct exported volumes |
 | Enterprise iSCSI HA/Scale | High-scale redundant target gateway integrations | etcd, `namrbd-iscsi-gateway`, host multipath tooling | <span class="badge enterprise">Enterprise</span> |

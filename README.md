@@ -143,7 +143,7 @@ make docs-render-check
 mkdocs serve
 ```
 
-Internal planning notes, private harnesses, and generated working directories
+Internal planning notes, private validation tooling, and generated working directories
 are not part of the public documentation tree.
 
 ## License

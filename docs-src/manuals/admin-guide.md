@@ -42,7 +42,7 @@ Keep environment boundaries explicit:
 
 - Same gateway group: same `--etcd-endpoints` and `--etcd-root`.
 - Same SBS cluster: same TiKV/PD endpoint set and keyspace.
-- Different dev/stage/prod/lab: different roots/keyspaces.
+- Different dev/stage/prod/validation environments: different roots/keyspaces.
 
 ### 2.1 Membership Change Workflow
 
@@ -366,7 +366,7 @@ sbsctl backup purge plan \
   --output json
 ```
 
-The Backup/DR control plane does not add a destructive purge executor, background copy scheduler, or automated remote DR. Enterprise security/compliance controls wrap the already valid Backup/DR state; they do not make an artifact available without integrity and restore-drill rules. Any deployment that changes `sbs-service` must restart/redeploy `sbs-service` before interpreting these API results in a lab.
+The Backup/DR control plane does not add a destructive purge executor, background copy scheduler, or automated remote DR. Enterprise security/compliance controls wrap the already valid Backup/DR state; they do not make an artifact available without integrity and restore-drill rules. Any deployment that changes `sbs-service` must restart/redeploy `sbs-service` before interpreting these API results in a validation environment.
 
 ### 4.6 Enterprise Security Control Plane <span class="edition-boundary-inline">Enterprise edition only</span>
 
@@ -429,7 +429,7 @@ namrbd-iscsi-gateway \
   --json
 ```
 
-`--allow-gotgt-wildcard-listen` reflects the current gotgt listener limitation. Use it only in an isolated fixture or controlled lab/deployment network; it is not an initiator source-IP ACL.
+`--allow-gotgt-wildcard-listen` reflects the current gotgt listener limitation. Use it only in an isolated fixture or controlled validation/deployment network; it is not an initiator source-IP ACL.
 
 Production checklist before allowing initiators:
 
@@ -439,7 +439,7 @@ Production checklist before allowing initiators:
 - Restart the target gateway after any binary, portal, SBS endpoint, target, export, attachment, or command-mapping change before interpreting initiator evidence.
 - Keep Community deployments within the 3 distinct iSCSI-exported-volume cap. Use Enterprise planning for larger export scale, HA, MPIO/ALUA, advanced security/audit, or scale observability.
 
-For Linux initiator validation, use the maintained iSCSI smoke harness instead of hand-interpreting a partial login. The accepted evidence must include the gateway summary JSON, operation JSONL, initiator session details, readback success, `ok_count`, `error_count`, and the exact gateway restart state for the run.
+For Linux initiator validation, use the maintained iSCSI smoke check instead of hand-interpreting a partial login. The accepted evidence must include the gateway summary JSON, operation JSONL, initiator session details, readback success, `ok_count`, `error_count`, and the exact gateway restart state for the run.
 
 The live iSCSI gateway process must be restarted after changes to `cmd/namrbd-iscsi-gateway`, the `iscsi` package, gotgt fork patches, backend adapter semantics, or iSCSI command mapping before interpreting initiator evidence.
 
@@ -502,7 +502,7 @@ Generated public/community export artifact validation remains a separate release
 
 ## 8. Closure And Validation
 
-Closure means the deployed product path has fresh evidence for the exact source revision, binaries, images, service restarts, and kernel module state under review. Do not reuse private lab paths, historical hostnames, or cached artifacts as public support claims.
+Closure means the deployed product path has fresh evidence for the exact source revision, binaries, images, service restarts, and kernel module state under review. Do not reuse private validation paths, historical hostnames, or cached artifacts as public support claims.
 
 Basic iSCSI target access uses Linux open-iscsi as the required compatibility baseline. The validation package should include fixture startup, SBS-backed Linux initiator discovery/login, guarded LUN selection, write/readback, flush or UNMAP observation when applicable, logout, cleanup, Community edition-boundary status, and unsupported initiator exclusions.
 

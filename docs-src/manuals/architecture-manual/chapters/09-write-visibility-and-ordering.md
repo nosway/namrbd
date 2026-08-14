@@ -57,7 +57,7 @@ FLUSH/FUA review should ask which completion point is being acknowledged: payloa
 
 ## Guarded Performance Mode Warning
 
-Guarded performance modes are allowed to warn when they intentionally explore a weaker or less-proven completion boundary. The warning must say which baseline rule is being relaxed, but it must not silently redefine product correctness. A guarded mode completion is acceptable only when the harness records the active mode, the acknowledged boundary, and the read-after-write evidence used for that run.
+Guarded performance modes are allowed to warn when they intentionally explore a weaker or less-proven completion boundary. The warning must say which baseline rule is being relaxed, but it must not silently redefine product correctness. A guarded mode completion is acceptable only when the validation record captures the active mode, the acknowledged boundary, and the read-after-write evidence used for that run.
 
 | Mode Signal | Required Observable | Do Not Claim |
 |----|----|----|

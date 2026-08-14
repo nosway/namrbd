@@ -39,7 +39,7 @@ Edition boundary: Community edition 설치 경로와 Enterprise edition only 섹
 - 기본 다중 노드 런타임에서 `sbs-service` 공속 메타데이터 권한 수립용으로 구성된 `TiKV/PD` 연동 인프라.
 - Kubernetes 1.29+ style cluster and snapshot CRDs when CSI/Kubernetes paths are installed.
 
-권장 lab/operator 변수:
+권장 validation/operator 변수:
 
 ``` bash
 export NAMRBD_ETCD_ENDPOINTS="data-01.example.com:2379,data-02.example.com:2379,data-03.example.com:2379"
@@ -310,7 +310,7 @@ NAMRBD는 리눅스 커널 모듈 경로 외에 선택적으로 적용할 수 �
 
 Community edition은 `namrbd-iscsi-gateway`, `sbsctl iscsi`, 최대 3개 distinct iSCSI-exported volumes 대상 기본 LUN export를 포함합니다. 3개 초과 export, unlimited export scale, iSCSI HA, MPIO/ALUA, 고급 보안/감사, 대규모 관측/스케일 기능은 Enterprise-only입니다.
 
-SBS 백엔드 기반 LUN을 기동하는 controlled lab 예시는 다음과 같습니다:
+SBS 백엔드 기반 LUN을 기동하는 controlled validation 예시는 다음과 같습니다:
 
 ``` bash
 export NAMRBD_ISCSI_PORTAL="10.30.0.21:3260"
@@ -368,7 +368,7 @@ Community edition은 CSI Identity, Controller, Node 서비스와 네임스페이
 - 컨트롤러가 구성된 게이트웨이 및 SBS 관리 엔드포인트와 통신이 가능해야 합니다.
 - 각 노드에 최신 버전의 커널 모듈이 정상 적재(load)되어 있어야 합니다.
 
-Manifest를 render/lint한 뒤 준비된 lab에서 Kubernetes CSI e2e smoke를 실행합니다. Manifest rendering result, node readiness, object application result, smoke `ok_count`/`error_count`를 기록합니다.
+Manifest를 render/lint한 뒤 준비된 validation 환경에서 Kubernetes CSI e2e smoke를 실행합니다. Manifest rendering result, node readiness, object application result, smoke `ok_count`/`error_count`를 기록합니다.
 
 Discard exposure를 활성화한 경우에는 정확히 배포된 image와 kernel module에 대해 required-mode Kubernetes smoke 결과를 새로 기록합니다. 기록에는 `ok_count`, `error_count`, first error, last error, node readiness, manifest가 render/apply/lint 중 어디까지 수행되었는지가 포함되어야 합니다.
 
@@ -399,7 +399,7 @@ Enterprise Service은 현재 스냅샷, EC, CSI, discard/reclaim 제품 의미 �
 
 설치 경로에 맞는 가장 작은 validation gate를 실행합니다. 최소한 syntax/edition-boundary check, CSI sanity, Kubernetes manifest validation, replicated 및 EC discard/reclaim evidence, kernel discard evidence, 기능을 켠 경우 performance/security validation evidence, iSCSI gateway를 설치한 경우 basic iSCSI fixture evidence를 기록합니다.
 
-Public 또는 release-facing validation에서는 private lab fact가 아니라 제품 검증 사실을 기록합니다:
+Public 또는 release-facing validation에서는 private environment fact가 아니라 제품 검증 사실을 기록합니다:
 
 - 정확한 git revision, build artifact, image tag, kernel module version, 재시작한 process.
 - `ok_count`, `error_count`, first error, last error, skipped gate count.

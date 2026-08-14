@@ -9,7 +9,7 @@ and compatibility reports that stay within the Community feature boundary.
   basic CSI, basic iSCSI, MCP, quickstart, and public observability behavior
   unless maintainers explicitly expand the Community boundary.
 - Include focused tests or a short validation note with behavior changes.
-- Keep public documentation product-facing and avoid private lab topology,
+- Keep public documentation product-facing and avoid private validation topology,
   internal planning notes, local user paths, or release evidence.
 - Do not commit generated binaries, local build/cache output, `.DS_Store`, real
   `.env` files, bearer tokens, TLS private material, or rendered Secret

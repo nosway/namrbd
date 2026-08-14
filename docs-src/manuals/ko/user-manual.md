@@ -282,7 +282,7 @@ namrbd-iscsi-gateway \
   --json
 ```
 
-`--allow-gotgt-wildcard-listen` is required by the current gotgt listener behavior and should be used only in a controlled lab or deployment network.
+`--allow-gotgt-wildcard-listen` is required by the current gotgt listener behavior and should be used only in a controlled validation or deployment network.
 
 A Linux user with open-iscsi can discover and log in after the operator confirms the target IQN and portal:
 

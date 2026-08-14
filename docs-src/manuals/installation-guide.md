@@ -39,7 +39,7 @@ Host requirements:
 - `TiKV/PD` for `sbs-service` authoritative SBS metadata in primary multi-node runtime.
 - Kubernetes 1.29+ style cluster and snapshot CRDs when CSI/Kubernetes paths are installed.
 
-Recommended lab/operator variables:
+Recommended validation/operator variables:
 
 ``` bash
 export NAMRBD_ETCD_ENDPOINTS="data-01.example.com:2379,data-02.example.com:2379,data-03.example.com:2379"
@@ -308,7 +308,7 @@ NAMRBD includes an optional iSCSI target gateway beside the Linux kernel-module 
 
 Community edition includes `namrbd-iscsi-gateway`, `sbsctl iscsi`, and basic LUN export for up to 3 distinct iSCSI-exported volumes. More than 3 exported volumes, unlimited export scale, iSCSI HA, MPIO/ALUA, advanced security/audit operations, and scale-oriented observability are Enterprise-only.
 
-Controlled lab start example for an SBS-backed LUN:
+Controlled validation start example for an SBS-backed LUN:
 
 ``` bash
 export NAMRBD_ISCSI_PORTAL="10.30.0.21:3260"
@@ -333,7 +333,7 @@ export NAMRBD_ISCSI_TARGET_IQN="iqn.2026-06.io.namrbd:iscsi.00000065"
   --json
 ```
 
-`--allow-gotgt-wildcard-listen` is required by the current gotgt v0.2.2 listener behavior and should be limited to isolated fixtures or controlled lab networks. Do not treat it as a source-IP ACL.
+`--allow-gotgt-wildcard-listen` is required by the current gotgt v0.2.2 listener behavior and should be limited to isolated fixtures or controlled validation networks. Do not treat it as a source-IP ACL.
 
 Production bring-up checklist:
 
@@ -366,7 +366,7 @@ Prerequisites:
 - Controller can reach the configured gateway and SBS admin endpoints.
 - Nodes have current kernel modules loaded.
 
-Render and lint manifests, then apply and run the Kubernetes CSI e2e smoke in a prepared lab. Record the manifest rendering result, node readiness, object application result, and smoke `ok_count`/`error_count`.
+Render and lint manifests, then apply and run the Kubernetes CSI e2e smoke in a prepared validation environment. Record the manifest rendering result, node readiness, object application result, and smoke `ok_count`/`error_count`.
 
 When discard exposure is enabled, record a fresh required-mode Kubernetes smoke result for the exact deployed image and kernel module. The record should include `ok_count`, `error_count`, first error, last error, node readiness, and whether manifests were rendered, applied, or only linted.
 
@@ -397,7 +397,7 @@ Use the architecture manual for detailed snapshot, clone, restore, EC, rebuild, 
 
 Run the smallest validation gate for the path you installed. At minimum, record syntax/edition-boundary checks, CSI sanity, Kubernetes manifest validation, replicated and EC discard/reclaim evidence, kernel discard evidence, performance/security validation evidence when those features are enabled, and basic iSCSI fixture evidence when the iSCSI gateway is installed.
 
-For public or release-facing validation, record evidence as product facts rather than private lab facts:
+For public or release-facing validation, record evidence as product facts rather than private environment facts:
 
 - the exact git revision, build artifact, image tag, kernel module version, and restarted processes;
 - `ok_count`, `error_count`, first error, last error, and skipped gate count;

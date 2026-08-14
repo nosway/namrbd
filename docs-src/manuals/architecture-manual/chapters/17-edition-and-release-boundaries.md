@@ -36,7 +36,7 @@ Supported product surfaces are `namrbdctl`, `sbsctl`, `namrbd-debug`, admin APIs
 
 <div class="arrow">guarded by</div>
 
-<div class="box-soft">release scans + harness evidence</div>
+<div class="box-soft">release scans + validation evidence</div>
 
 </div>
 
@@ -100,7 +100,7 @@ Authoritative backend operations used by operators, tooling, and CSI translation
 
 Product-state APIs persist enterprise Backup/DR targets, policies, runs, restore-drilled artifact availability, retention holds, purge dry-run guardrails, and status in `sbs-service`. The remote DR control plane adds DR replication-link, recovery-point, shipping-manifest, and shipping-worker admission state plus `sbsctl dr link`, `sbsctl dr recovery-point`, `sbsctl dr shipping-manifest`, and `sbsctl dr shipping-worker` inspection. They do not add a community backup scheduler, destructive purge executor, encryption feature, or remote DR automation.
 
-Fixture summaries and lab closure artifacts are verification evidence, not product state. Product state is visible through enterprise `sbsctl backup`, `sbsctl dr link`, `sbsctl dr recovery-point`, and `sbsctl dr shipping-manifest` commands and the `sbs.admin.v1.AdminService` Backup/DR RPC group.
+Fixture summaries and validation closure artifacts are verification evidence, not product state. Product state is visible through enterprise `sbsctl backup`, `sbsctl dr link`, `sbsctl dr recovery-point`, and `sbsctl dr shipping-manifest` commands and the `sbs.admin.v1.AdminService` Backup/DR RPC group.
 
 ## Security/Compliance Boundary <span class="edition-boundary-inline">Enterprise edition only</span>
 
@@ -118,7 +118,7 @@ iSCSI HA is intentionally not part of the current support claim. NAMRBD's prefer
 
 Governance/WORM scoped support requires a signoff record with `governance_worm_closed=true`, `governance_worm_closure_type=scoped_support_signoff`, `support_claimed=true`, `compliance_claimed=false`, and `remote_dr_product_slices_require_remote_dr_evidence=true`.
 
-The admitted scope is narrow: block-native Governance/WORM controls for derived objects and userspace gateway sealed-target write rejection. The validation record should include `gateway_live_smoke_result=ok`, whether a remote lab was used, who executed it, `sealed_response_status=409`, and `rejection_code=worm_sealed_read_only`.
+The admitted scope is narrow: block-native Governance/WORM controls for derived objects and userspace gateway sealed-target write rejection. The validation record should include `gateway_live_smoke_result=ok`, whether a remote validation environment was used, who executed it, `sealed_response_status=409`, and `rejection_code=worm_sealed_read_only`.
 
 Scoped Governance/WORM support does not claim SEC/FINRA, MiFID/FCA, or HIPAA certification; S3 Object Lock or Azure Blob immutable storage API compatibility; ordinary writable live-volume WORM semantics; public governance API/CLI registration; kernel, iSCSI, or NVMe/TCP protected-state support; ransomware recovery support; or remote DR support.
 
@@ -133,6 +133,6 @@ Release checks should confirm that active build, smoke, docs, and export surface
 | Does this feature change shared metadata truth? | Shared truth must remain readable across editions, even when an enterprise-only backend descriptor is present. |
 | Does this command expose enterprise behavior? | The command must be gated, documented, and validated as enterprise rather than appearing as an accidental community surface. |
 | Does CSI advertise the capability? | CSI capability output must follow the selected edition/backend, not merely the driver's compiled code path. |
-| Does release evidence prove the boundary? | Release guardrails should show included commands, excluded surfaces, active docs, and skipped or executed lab gates. |
+| Does release evidence prove the boundary? | Release guardrails should show included commands, excluded surfaces, active docs, and skipped or executed validation gates. |
 
 [\<- Previous](16-kubernetes-csi-integration-case.md) [Next: Glossary -\>](appendix-glossary.md)

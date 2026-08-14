@@ -17,6 +17,6 @@ after a fix or mitigation is available.
 
 Community security reports are accepted for the public source tree, Community
 build targets, Community container images, Kubernetes CSI manifests, and the
-documented operator APIs. Enterprise-only features, private lab harnesses, and
+documented operator APIs. Enterprise-only features, private validation tooling, and
 unpublished release artifacts are handled through their separate support
 channels.

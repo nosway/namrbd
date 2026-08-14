@@ -81,4 +81,4 @@ CSI is easier to review after the core architecture is clear. `CreateVolumeFromS
 
 </div>
 
-[\<- Previous](15-observability-and-harness.md) [Next: Edition And Release Boundaries -\>](17-edition-and-release-boundaries.md)
+[\<- Previous](15-observability-and-validation.md) [Next: Edition And Release Boundaries -\>](17-edition-and-release-boundaries.md)

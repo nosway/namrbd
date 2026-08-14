@@ -53,7 +53,7 @@ Use this appendix as a compact reviewer aid: first find the chapter that owns th
 | 12 | [Zero, Discard, And Reclaim](12-zero-discard-and-reclaim.md). |
 | 13 | [Kernel-Gateway Dataplane](13-kernel-gateway-dataplane.md). |
 | 14 | [Topology, Placement, And Expansion](14-topology-placement-and-expansion.md). |
-| 15 | [Observability And Harness](15-observability-and-harness.md) plus release evidence summaries. |
+| 15 | [Observability And Validation](15-observability-and-validation.md) plus release evidence summaries. |
 | 16 | [Kubernetes/CSI Integration Case](16-kubernetes-csi-integration-case.md). |
 | 17 | [Edition And Release Boundaries](17-edition-and-release-boundaries.md) and current public support matrix wording. |
 | Appendix C | `kernel/uapi/namrbd_netlink.h`, `gateway/httpapi/server.go`, `cmd/namrbd-iscsi-gateway`, `cmd/sbsctl`, `iscsi`, `third_party/gotgt`, `proto/sbs/admin/v1/*.proto`, `proto/sbs/v1/volume.proto`, `cmd/sbs-service/main.go`, `cmd/sbs-data/main.go`, and component interface summaries. |

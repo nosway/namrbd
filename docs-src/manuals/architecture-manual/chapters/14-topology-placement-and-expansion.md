@@ -121,4 +121,4 @@ GUI and MCP membership integrations start as read-only proposal surfaces. They m
 
 Expansion is not a fencing event. It preserves attachment identity and generation, avoids geometry mutation, and does not materialize payload for the new range. Newly exposed ranges read as zero until written.
 
-[\<- Previous](13-kernel-gateway-dataplane.md) [Next: Observability And Harness -\>](15-observability-and-harness.md)
+[\<- Previous](13-kernel-gateway-dataplane.md) [Next: Observability And Validation -\>](15-observability-and-validation.md)
