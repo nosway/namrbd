@@ -1,9 +1,12 @@
 # syntax=docker/dockerfile:1.7
 
 ARG GO_VERSION=1.26.5
-ARG ALPINE_VERSION=3.22
+ARG GO_TOOLCHAIN_VERSION=1.26.6
+ARG ALPINE_VERSION=3.23
 
 FROM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS build-base
+ARG GO_TOOLCHAIN_VERSION
+ENV GOTOOLCHAIN=go${GO_TOOLCHAIN_VERSION}
 RUN apk add --no-cache ca-certificates git
 
 WORKDIR /src/namrbd
@@ -12,7 +15,9 @@ COPY go.mod go.sum ./
 COPY third_party/gotgt/go.mod third_party/gotgt/go.sum ./third_party/gotgt/
 RUN --mount=type=cache,target=/go/pkg/mod \
 	--mount=type=cache,target=/root/.cache/go-build \
-	go mod download
+	go version \
+	&& go env GOTOOLCHAIN \
+	&& go mod download
 
 COPY . .
 
