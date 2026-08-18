@@ -17,7 +17,7 @@ trap cleanup EXIT
 
 ready=false
 for _ in $(seq 1 30); do
-	if curl -fsS "http://127.0.0.1:$PORT/index.html" >/dev/null; then ready=true; break; fi
+	if curl -fsS "http://127.0.0.1:$PORT/index.html" >/dev/null 2>&1; then ready=true; break; fi
 done
 if [[ "$ready" != true ]]; then
 	printf '{"result":"fail","entrypoint":"phase-y-browser-qa","error_count":1,"first_error":"dashboard HTTP server did not become ready","last_error":"dashboard HTTP server did not become ready"}\n'
