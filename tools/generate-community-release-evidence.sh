@@ -52,7 +52,7 @@ run_syft() {
 	if command -v "$SYFT" >/dev/null 2>&1; then
 		"$SYFT" "$@"
 	else
-		docker run --rm -i -v /var/run/docker.sock:/var/run/docker.sock "$SYFT_IMAGE" "$@"
+		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$SYFT_IMAGE" "$@"
 	fi
 }
 
@@ -123,6 +123,14 @@ if [[ "$error_count" -eq 0 ]]; then
 	fi
 fi
 
+sbom_count="$(find "$SBOM_DIR" -name '*.spdx.json' -type f | wc -l | tr -d ' ')"
+provenance_count="$(find "$PROVENANCE_DIR" -name '*.intoto.json' -type f | wc -l | tr -d ' ')"
+if [[ "$sbom_count" -eq 6 && "$provenance_count" -eq 6 ]]; then
+	record evidence-count ok "six SBOMs and six provenance statements generated"
+else
+	record evidence-count fail "expected six SBOMs and six provenance statements, got sbom=$sbom_count provenance=$provenance_count"
+fi
+
 jq -n \
 	--arg schema_version "namrbd.community.release-manifest.v1" \
 	--arg source_repository "$SOURCE_REPOSITORY" --arg source_revision "$SOURCE_REVISION" \
@@ -136,8 +144,8 @@ result=ok
 [[ "$error_count" -eq 0 ]] || result=fail
 jq -n --arg result "$result" --arg manifest "${MANIFEST#"$ROOT_DIR/"}" --arg checksums "${CHECKSUMS#"$ROOT_DIR/"}" \
 	--arg first_error "$first_error" --arg last_error "$last_error" --argjson ok_count "$ok_count" --argjson error_count "$error_count" \
-	--argjson sbom_count "$(find "$SBOM_DIR" -name '*.spdx.json' -type f | wc -l | tr -d ' ')" \
-	--argjson provenance_count "$(find "$PROVENANCE_DIR" -name '*.intoto.json' -type f | wc -l | tr -d ' ')" \
+	--argjson sbom_count "$sbom_count" \
+	--argjson provenance_count "$provenance_count" \
 	'{result:$result,entrypoint:"phase-y-release-evidence",release_manifest_ready:($error_count==0),sbom_recorded:($error_count==0),provenance_recorded:($error_count==0),checksum_verified:($error_count==0),sbom_count:$sbom_count,provenance_count:$provenance_count,ok_count:$ok_count,error_count:$error_count,first_error:$first_error,last_error:$last_error,release_manifest_path:$manifest,checksums_path:$checksums}' | tee "$SUMMARY"
 
 [[ "$error_count" -eq 0 ]]
