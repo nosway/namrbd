@@ -162,6 +162,10 @@ kernel-module:
 web-operations-dashboard-test:
 	$(GO) test $(GOFLAGS_COMMUNITY) ./web/operations-dashboard -run TestOperationsDashboardHandler -count=1
 
+.PHONY: phase-y-browser-qa
+phase-y-browser-qa: $(CACHE_DIR)
+	@bash tools/operations-dashboard-browser-qa.sh
+
 .PHONY: container-build-community-images
 container-build-community-images: container-build-namrbd-gateway container-build-namrbd-iscsi-gateway container-build-namrbd-csi-driver container-build-sbs
 
