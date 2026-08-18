@@ -170,8 +170,16 @@ detect_kind_host_address() {
 		printf '%s' "$NAMRBD_KIND_HOST_ADDRESS"
 		return 0
 	fi
-	local gateway
-	gateway="$("$docker_bin" network inspect kind --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)"
+	local gateway network_json
+	network_json="$("$docker_bin" network inspect kind 2>/dev/null || true)"
+	gateway="$(printf '%s' "$network_json" | "$jq_bin" -r \
+		'.[0].IPAM.Config // [] | map(.Gateway // empty) | map(select(contains(":") | not)) | first // empty' \
+		2>/dev/null || true)"
+	if [[ -z "$gateway" ]]; then
+		gateway="$(printf '%s' "$network_json" | "$jq_bin" -r \
+			'.[0].IPAM.Config // [] | map(.Gateway // empty) | first // empty' \
+			2>/dev/null || true)"
+	fi
 	if [[ -n "$gateway" && "$gateway" != "<no value>" ]]; then
 		printf '%s' "$gateway"
 		return 0
@@ -199,11 +207,16 @@ format_http_url() {
 }
 
 run_address_fixture() {
+	local network_json gateway
 	[[ "$(format_host_port 192.0.2.10 19443)" == "192.0.2.10:19443" ]]
 	[[ "$(format_host_port host.docker.internal 19443)" == "host.docker.internal:19443" ]]
 	[[ "$(format_host_port 'fc00:f853:ccd:e793::1' 19443)" == "[fc00:f853:ccd:e793::1]:19443" ]]
 	[[ "$(format_http_url 'fc00:f853:ccd:e793::1' 19701)" == "http://[fc00:f853:ccd:e793::1]:19701" ]]
 	[[ "$(format_http_url '[fc00:f853:ccd:e793::1]' 19701)" == "http://[fc00:f853:ccd:e793::1]:19701" ]]
+	network_json='[{"IPAM":{"Config":[{"Gateway":"fc00:f853:ccd:e793::1"},{"Gateway":"172.18.0.1"}]}}]'
+	gateway="$(printf '%s' "$network_json" | "$jq_bin" -r \
+		'.[0].IPAM.Config // [] | map(.Gateway // empty) | map(select(contains(":") | not)) | first // empty')"
+	[[ "$gateway" == "172.18.0.1" ]]
 	log "address formatting fixture passed"
 }
 
