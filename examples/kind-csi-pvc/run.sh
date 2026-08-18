@@ -179,6 +179,34 @@ detect_kind_host_address() {
 	printf 'host.docker.internal'
 }
 
+format_uri_host() {
+	local host="$1"
+	case "$host" in
+		\[*\]) printf '%s' "$host" ;;
+		*:* ) printf '[%s]' "$host" ;;
+		*) printf '%s' "$host" ;;
+	esac
+}
+
+format_host_port() {
+	local host="$1" port="$2"
+	printf '%s:%s' "$(format_uri_host "$host")" "$port"
+}
+
+format_http_url() {
+	local host="$1" port="$2"
+	printf 'http://%s' "$(format_host_port "$host" "$port")"
+}
+
+run_address_fixture() {
+	[[ "$(format_host_port 192.0.2.10 19443)" == "192.0.2.10:19443" ]]
+	[[ "$(format_host_port host.docker.internal 19443)" == "host.docker.internal:19443" ]]
+	[[ "$(format_host_port 'fc00:f853:ccd:e793::1' 19443)" == "[fc00:f853:ccd:e793::1]:19443" ]]
+	[[ "$(format_http_url 'fc00:f853:ccd:e793::1' 19701)" == "http://[fc00:f853:ccd:e793::1]:19701" ]]
+	[[ "$(format_http_url '[fc00:f853:ccd:e793::1]' 19701)" == "http://[fc00:f853:ccd:e793::1]:19701" ]]
+	log "address formatting fixture passed"
+}
+
 run_check() {
 	require_cmd "$docker_bin"
 	require_cmd "$kind_bin"
@@ -232,8 +260,8 @@ build_and_load_csi_image() {
 install_csi_chart() {
 	local host_address
 	host_address="$(detect_kind_host_address)"
-	admin_endpoint="${NAMRBD_KIND_SBS_ADMIN_ENDPOINT:-${host_address}:${quickstart_admin_port}}"
-	gateway_url="${NAMRBD_KIND_GATEWAY_URL:-http://${host_address}:${quickstart_gateway_port}}"
+	admin_endpoint="${NAMRBD_KIND_SBS_ADMIN_ENDPOINT:-$(format_host_port "$host_address" "$quickstart_admin_port")}"
+	gateway_url="${NAMRBD_KIND_GATEWAY_URL:-$(format_http_url "$host_address" "$quickstart_gateway_port")}"
 	"$helm_bin" upgrade --install "$release_name" "$repo_root/deploy/kubernetes/csi/helm/namrbd-csi" \
 		--kube-context "$context_name" \
 		--namespace "$namespace" \
@@ -320,6 +348,9 @@ case "$command_name" in
 		;;
 	cleanup)
 		cleanup_demo
+		;;
+	address-fixture)
+		run_address_fixture
 		;;
 	-h|--help|help)
 		usage
