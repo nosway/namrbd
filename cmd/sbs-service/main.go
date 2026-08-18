@@ -67,7 +67,7 @@ const (
 	ecMaintenanceScanOperationKind    = "ec_maintenance_scan"
 )
 
-var buildVersion = namrbdversion.Current
+var buildVersion = namrbdversion.ProductVersion()
 
 type bootstrapRecord struct {
 	ClusterID     string `json:"cluster_id"`
@@ -3965,7 +3965,7 @@ func validateMetadataRuntimeConfig(cfg metadataRuntimeConfig) error {
 func main() {
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "version" {
-			fmt.Println(buildVersion)
+			fmt.Println(namrbdversion.BuildSummary())
 			return
 		}
 	}

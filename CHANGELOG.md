@@ -11,7 +11,13 @@ begin.
 
 ### Added
 
+- `v1.0.0-rc` release-candidate version identity is now embedded into Community
+  binaries together with the Git commit, build date, and dirty-state metadata.
+
 ### Changed
+
+- Gateway/SBS runtime version checks now compare the exact product SemVer
+  string instead of a separate Major.Minor compatibility value.
 
 ### Fixed
 
@@ -22,6 +28,9 @@ begin.
 ### Security
 
 ### Edition: Community
+
+- Community Makefile and container builds pass release metadata into built
+  binaries through Go linker flags.
 
 ### Support & Evidence
 

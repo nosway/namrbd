@@ -3,10 +3,19 @@
 ARG GO_VERSION=1.26.5
 ARG GO_TOOLCHAIN_VERSION=1.26.6
 ARG ALPINE_VERSION=3.23
+ARG VERSION=dev
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+ARG BUILD_DIRTY=false
 
 FROM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS build-base
 ARG GO_TOOLCHAIN_VERSION
+ARG VERSION
+ARG VCS_REF
+ARG BUILD_DATE
+ARG BUILD_DIRTY
 ENV GOTOOLCHAIN=go${GO_TOOLCHAIN_VERSION}
+ENV NAMRBD_GO_LDFLAGS="-s -w -X github.com/nosway/namrbd/version.Current=${VERSION} -X github.com/nosway/namrbd/version.Commit=${VCS_REF} -X github.com/nosway/namrbd/version.BuildDate=${BUILD_DATE} -X github.com/nosway/namrbd/version.Dirty=${BUILD_DIRTY}"
 RUN apk add --no-cache ca-certificates git
 
 WORKDIR /src/namrbd
@@ -23,28 +32,28 @@ COPY . .
 
 FROM build-base AS build-namrbd-gateway
 RUN --mount=type=cache,target=/root/.cache/go-build \
-	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/namrbd-gateway ./cmd/namrbd-gateway
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="${NAMRBD_GO_LDFLAGS}" -o /out/namrbd-gateway ./cmd/namrbd-gateway
 
 FROM build-base AS build-namrbd-iscsi-gateway
 RUN --mount=type=cache,target=/root/.cache/go-build \
-	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/namrbd-iscsi-gateway ./cmd/namrbd-iscsi-gateway
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="${NAMRBD_GO_LDFLAGS}" -o /out/namrbd-iscsi-gateway ./cmd/namrbd-iscsi-gateway
 
 FROM build-base AS build-namrbd-csi-driver
 RUN --mount=type=cache,target=/root/.cache/go-build \
-	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/namrbd-csi-driver ./cmd/namrbd-csi-driver \
-	&& CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/namrbdctl ./cmd/namrbdctl
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="${NAMRBD_GO_LDFLAGS}" -o /out/namrbd-csi-driver ./cmd/namrbd-csi-driver \
+	&& CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="${NAMRBD_GO_LDFLAGS}" -o /out/namrbdctl ./cmd/namrbdctl
 
 FROM build-base AS build-sbs-service
 RUN --mount=type=cache,target=/root/.cache/go-build \
-	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/sbs-service ./cmd/sbs-service
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="${NAMRBD_GO_LDFLAGS}" -o /out/sbs-service ./cmd/sbs-service
 
 FROM build-base AS build-sbs-data
 RUN --mount=type=cache,target=/root/.cache/go-build \
-	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/sbs-data ./cmd/sbs-data
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="${NAMRBD_GO_LDFLAGS}" -o /out/sbs-data ./cmd/sbs-data
 
 FROM build-base AS build-sbsctl
 RUN --mount=type=cache,target=/root/.cache/go-build \
-	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/sbsctl ./cmd/sbsctl
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="${NAMRBD_GO_LDFLAGS}" -o /out/sbsctl ./cmd/sbsctl
 
 FROM alpine:${ALPINE_VERSION} AS community-runtime-base
 ARG VERSION=dev

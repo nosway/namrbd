@@ -54,7 +54,7 @@ const (
 	defaultSBSChunkIDAllocationCacheSize    = 256
 )
 
-var buildVersion = namrbdversion.Current
+var buildVersion = namrbdversion.ProductVersion()
 
 var openClusterMetadataPebble = clustermeta.OpenPebbleKV
 var newSBSClusterClient = sbscluster.NewClient
@@ -63,7 +63,7 @@ var gatewayMaterializeHTTPDo = http.DefaultClient.Do
 func main() {
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "version" {
-			fmt.Println(buildVersion)
+			fmt.Println(namrbdversion.BuildSummary())
 			return
 		}
 	}

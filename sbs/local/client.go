@@ -100,7 +100,7 @@ func Open(cfg Config) (*Client, error) {
 		return nil, err
 	}
 	if cfg.BuildVersion == "" {
-		cfg.BuildVersion = namrbdversion.Current
+		cfg.BuildVersion = namrbdversion.ProductVersion()
 	}
 	db, err := pebble.Open(cfg.Path, &pebble.Options{})
 	if err != nil {
@@ -113,6 +113,10 @@ func Open(cfg Config) (*Client, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	version := strings.TrimSpace(cfg.BuildVersion)
+	if version == "" {
+		version = namrbdversion.ProductVersion()
+	}
 	storeStates := func() map[string]string {
 		out := make(map[string]string, len(stores))
 		for _, spec := range stores {
@@ -124,7 +128,7 @@ func Open(cfg Config) (*Client, error) {
 		db:                              db,
 		meta:                            meta,
 		objects:                         objects,
-		version:                         cfg.BuildVersion,
+		version:                         version,
 		stores:                          stores,
 		cacheOpenVolumeSpec:             cfg.CacheOpenVolumeSpec,
 		disablePhysicalWriteIdempotency: cfg.DisablePhysicalWriteIdempotency,

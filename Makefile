@@ -13,6 +13,15 @@ CACHE_DIR ?= $(CURDIR)/.cache
 GOCACHE ?= $(CACHE_DIR)/go-build
 GOMODCACHE ?= $(CACHE_DIR)/gomod
 CMD_DIR := ./cmd
+VERSION_FILE := version/version.go
+VERSION_PACKAGE := github.com/nosway/namrbd/version
+CURRENT_VERSION := $(shell awk -F'"' '/^[[:space:]]*Current[[:space:]]*=/ || /^var[[:space:]]+Current[[:space:]]*=/ { print $$2; exit }' $(VERSION_FILE))
+PRODUCT_VERSION ?= $(CURRENT_VERSION)
+VERSION_COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)
+VERSION_BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+VERSION_DIRTY ?= $(shell if test -n "$$(git status --short 2>/dev/null)"; then printf true; else printf false; fi)
+VERSION_LDFLAGS ?= -X $(VERSION_PACKAGE).Current=$(PRODUCT_VERSION) -X $(VERSION_PACKAGE).Commit=$(VERSION_COMMIT) -X $(VERSION_PACKAGE).BuildDate=$(VERSION_BUILD_DATE) -X $(VERSION_PACKAGE).Dirty=$(VERSION_DIRTY)
+GO_BUILD_FLAGS_COMMUNITY ?= $(GOFLAGS_BASE) -ldflags '$(VERSION_LDFLAGS)'
 
 COMMUNITY_CMDS := namrbd-gateway namrbdctl sbs-service sbs-data sbsctl namrbd-debug namrbd-iscsi-gateway namrbd-csi-driver namrbd-mcp
 COMMUNITY_TEST_PACKAGES := \
@@ -37,14 +46,16 @@ COMMUNITY_TEST_PACKAGES := \
 	./sbs/cluster/replication \
 	./sbs/internalapi/v1 \
 	./sbs/local \
+	./version \
 	./web/operations-dashboard
 
 CONTAINER_DOCKERFILE_SBS ?= packaging/docker/Dockerfile.sbs
 NAMRBD_IMAGE_REGISTRY ?= ghcr.io/nosway
 NAMRBD_IMAGE_TAG ?= local
-NAMRBD_IMAGE_VERSION ?= $(shell sed -n 's/^const Current = "\(.*\)"/\1/p' version/version.go 2>/dev/null || printf dev)
-NAMRBD_IMAGE_REVISION ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf unknown)
-NAMRBD_IMAGE_CREATED ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+NAMRBD_IMAGE_VERSION ?= $(PRODUCT_VERSION)
+NAMRBD_IMAGE_REVISION ?= $(VERSION_COMMIT)
+NAMRBD_IMAGE_CREATED ?= $(VERSION_BUILD_DATE)
+NAMRBD_IMAGE_DIRTY ?= $(VERSION_DIRTY)
 NAMRBD_GATEWAY_IMAGE ?= $(NAMRBD_IMAGE_REGISTRY)/namrbd-gateway
 NAMRBD_ISCSI_GATEWAY_IMAGE ?= $(NAMRBD_IMAGE_REGISTRY)/namrbd-iscsi-gateway
 NAMRBD_CSI_DRIVER_IMAGE ?= $(NAMRBD_IMAGE_REGISTRY)/namrbd-csi-driver
@@ -101,6 +112,7 @@ help:
 	@printf '  make docs-source-check\n'
 	@printf '  make docs-build\n'
 	@printf '  make docs-render-check\n'
+	@printf '  make version\n'
 	@printf '  make web-operations-dashboard-test\n'
 	@printf '  make clean\n'
 
@@ -112,7 +124,7 @@ $(COMMUNITY_BIN_DIR):
 
 $(COMMUNITY_BIN_DIR)/%: $(COMMUNITY_BIN_DIR)
 	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
-	GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) build $(GOFLAGS_COMMUNITY) -o "$@" "$(CMD_DIR)/$(@F)"
+	GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) build $(GO_BUILD_FLAGS_COMMUNITY) -o "$@" "$(CMD_DIR)/$(@F)"
 
 .PHONY: test-community
 test-community:
@@ -161,6 +173,7 @@ container-build-namrbd-gateway:
 		--build-arg VERSION="$(NAMRBD_IMAGE_VERSION)" \
 		--build-arg VCS_REF="$(NAMRBD_IMAGE_REVISION)" \
 		--build-arg BUILD_DATE="$(NAMRBD_IMAGE_CREATED)" \
+		--build-arg BUILD_DIRTY="$(NAMRBD_IMAGE_DIRTY)" \
 		--tag "$(NAMRBD_GATEWAY_IMAGE):$(NAMRBD_IMAGE_TAG)" \
 		.
 
@@ -172,6 +185,7 @@ container-build-namrbd-iscsi-gateway:
 		--build-arg VERSION="$(NAMRBD_IMAGE_VERSION)" \
 		--build-arg VCS_REF="$(NAMRBD_IMAGE_REVISION)" \
 		--build-arg BUILD_DATE="$(NAMRBD_IMAGE_CREATED)" \
+		--build-arg BUILD_DIRTY="$(NAMRBD_IMAGE_DIRTY)" \
 		--tag "$(NAMRBD_ISCSI_GATEWAY_IMAGE):$(NAMRBD_IMAGE_TAG)" \
 		.
 
@@ -183,6 +197,7 @@ container-build-namrbd-csi-driver:
 		--build-arg VERSION="$(NAMRBD_IMAGE_VERSION)" \
 		--build-arg VCS_REF="$(NAMRBD_IMAGE_REVISION)" \
 		--build-arg BUILD_DATE="$(NAMRBD_IMAGE_CREATED)" \
+		--build-arg BUILD_DIRTY="$(NAMRBD_IMAGE_DIRTY)" \
 		--tag "$(NAMRBD_CSI_DRIVER_IMAGE):$(NAMRBD_IMAGE_TAG)" \
 		.
 
@@ -197,6 +212,7 @@ container-build-sbs-service:
 		--build-arg VERSION="$(NAMRBD_IMAGE_VERSION)" \
 		--build-arg VCS_REF="$(NAMRBD_IMAGE_REVISION)" \
 		--build-arg BUILD_DATE="$(NAMRBD_IMAGE_CREATED)" \
+		--build-arg BUILD_DIRTY="$(NAMRBD_IMAGE_DIRTY)" \
 		--tag "$(NAMRBD_SBS_SERVICE_IMAGE):$(NAMRBD_IMAGE_TAG)" \
 		.
 
@@ -208,6 +224,7 @@ container-build-sbs-data:
 		--build-arg VERSION="$(NAMRBD_IMAGE_VERSION)" \
 		--build-arg VCS_REF="$(NAMRBD_IMAGE_REVISION)" \
 		--build-arg BUILD_DATE="$(NAMRBD_IMAGE_CREATED)" \
+		--build-arg BUILD_DIRTY="$(NAMRBD_IMAGE_DIRTY)" \
 		--tag "$(NAMRBD_SBS_DATA_IMAGE):$(NAMRBD_IMAGE_TAG)" \
 		.
 
@@ -219,6 +236,7 @@ container-build-sbsctl:
 		--build-arg VERSION="$(NAMRBD_IMAGE_VERSION)" \
 		--build-arg VCS_REF="$(NAMRBD_IMAGE_REVISION)" \
 		--build-arg BUILD_DATE="$(NAMRBD_IMAGE_CREATED)" \
+		--build-arg BUILD_DIRTY="$(NAMRBD_IMAGE_DIRTY)" \
 		--tag "$(NAMRBD_SBSCTL_IMAGE):$(NAMRBD_IMAGE_TAG)" \
 		.
 
@@ -234,7 +252,9 @@ container-print-namros-sbs-env:
 container-print-namrbd-image-env:
 	@printf 'NAMRBD_IMAGE_REGISTRY=%s\n' "$(NAMRBD_IMAGE_REGISTRY)"
 	@printf 'NAMRBD_IMAGE_TAG=%s\n' "$(NAMRBD_IMAGE_TAG)"
+	@printf 'NAMRBD_IMAGE_VERSION=%s\n' "$(NAMRBD_IMAGE_VERSION)"
 	@printf 'NAMRBD_IMAGE_REVISION=%s\n' "$(NAMRBD_IMAGE_REVISION)"
+	@printf 'NAMRBD_IMAGE_DIRTY=%s\n' "$(NAMRBD_IMAGE_DIRTY)"
 	@printf 'NAMRBD_GATEWAY_IMAGE=%s\n' "$(NAMRBD_GATEWAY_IMAGE)"
 	@printf 'NAMRBD_ISCSI_GATEWAY_IMAGE=%s\n' "$(NAMRBD_ISCSI_GATEWAY_IMAGE)"
 	@printf 'NAMRBD_CSI_DRIVER_IMAGE=%s\n' "$(NAMRBD_CSI_DRIVER_IMAGE)"
@@ -359,6 +379,10 @@ docs-render-check: docs-build
 	@# `mkdocs build --strict` validates links and nav but not rendered output.
 	@# Assert that no Markdown source markers survive into the published pages.
 	@python3 tools/check-docs-render.py "$(MKDOCS_SITE_DIR)"
+
+.PHONY: version
+version:
+	@printf '%s commit=%s build_date=%s dirty=%s\n' "$(PRODUCT_VERSION)" "$(VERSION_COMMIT)" "$(VERSION_BUILD_DATE)" "$(VERSION_DIRTY)"
 
 .PHONY: clean
 clean:

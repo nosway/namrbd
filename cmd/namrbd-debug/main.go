@@ -26,6 +26,7 @@ import (
 	"github.com/nosway/namrbd/gateway/metadata"
 	"github.com/nosway/namrbd/gateway/service"
 	"github.com/nosway/namrbd/gateway/store"
+	namrbdversion "github.com/nosway/namrbd/version"
 	"github.com/nosway/namrbd/volumeid"
 )
 
@@ -470,6 +471,10 @@ type gatewayCloneIOCheckReport struct {
 }
 
 func main() {
+	if len(os.Args) >= 2 && (os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Println(namrbdversion.BuildSummary())
+		return
+	}
 	if len(os.Args) < 3 {
 		usage()
 		os.Exit(2)

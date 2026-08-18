@@ -16,6 +16,7 @@ import (
 	"github.com/nosway/namrbd/sbs/cluster/metadata"
 	"github.com/nosway/namrbd/sbs/cluster/replication"
 	phasesecurity "github.com/nosway/namrbd/sbs/cluster/security"
+	namrbdversion "github.com/nosway/namrbd/version"
 	"github.com/nosway/namrbd/volumeid"
 )
 
@@ -710,6 +711,11 @@ func NewClient(cfg Config) (*Client, error) {
 		WithParallelBeginPlan(cfg.ParallelBeginPlan).
 		WithAppendOnlyMissingWriteIntent(cfg.UnsafeAppendOnlyIntentlessCommit)
 
+	clientVersion := strings.TrimSpace(cfg.ClientVersion)
+	if clientVersion == "" {
+		clientVersion = namrbdversion.ProductVersion()
+	}
+
 	return &Client{
 		stateStore:                        cfg.MetadataStateStore,
 		coordinator:                       coordinator,
@@ -723,7 +729,7 @@ func NewClient(cfg Config) (*Client, error) {
 		fallbackAvailability:              cfg.FallbackReplicaTargetAvailabilitySource,
 		gatewayID:                         cfg.GatewayID,
 		hostID:                            cfg.HostID,
-		clientVersion:                     cfg.ClientVersion,
+		clientVersion:                     clientVersion,
 		sessionPrefix:                     cfg.SessionPrefix,
 		preferPayloadOnlyWrites:           cfg.PreferPayloadOnlyWrites,
 		promoteZeroPayloadWrites:          cfg.PromoteZeroPayloadWrites,

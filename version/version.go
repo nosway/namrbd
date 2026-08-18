@@ -2,60 +2,91 @@ package version
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 )
 
-const (
-	Major = 1
-	Minor = 0
+var Current = "v1.0.0-rc"
+
+var (
+	Commit    = "unknown"
+	BuildDate = "unknown"
+	Dirty     = "unknown"
 )
 
-const Current = "1.0"
-
-func ParseMajorMinor(v string) (int, int, error) {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return 0, 0, fmt.Errorf("version is empty")
-	}
-	parts := strings.Split(v, ".")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return 0, 0, fmt.Errorf("version %q must use Major.Minor format", v)
-	}
-	major, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return 0, 0, fmt.Errorf("parse major version %q: %w", v, err)
-	}
-	minor, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return 0, 0, fmt.Errorf("parse minor version %q: %w", v, err)
-	}
-	if major < 0 || minor < 0 {
-		return 0, 0, fmt.Errorf("version %q must be non-negative", v)
-	}
-	return major, minor, nil
+type BuildIdentity struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	BuildDate string `json:"build_date,omitempty"`
+	Dirty     string `json:"dirty,omitempty"`
 }
 
-func CompareMajorMinor(a, b string) (int, error) {
-	aMajor, aMinor, err := ParseMajorMinor(a)
-	if err != nil {
-		return 0, err
+func Info() BuildIdentity {
+	return BuildIdentity{
+		Version:   ProductVersion(),
+		Commit:    CommitID(),
+		BuildDate: strings.TrimSpace(BuildDate),
+		Dirty:     strings.TrimSpace(Dirty),
 	}
-	bMajor, bMinor, err := ParseMajorMinor(b)
-	if err != nil {
-		return 0, err
+}
+
+func ProductVersion() string {
+	if v := strings.TrimSpace(Current); v != "" {
+		return v
 	}
-	if aMajor < bMajor {
-		return -1, nil
+	return "dev"
+}
+
+func CommitID() string {
+	if v := strings.TrimSpace(Commit); v != "" {
+		return v
 	}
-	if aMajor > bMajor {
-		return 1, nil
+	return "unknown"
+}
+
+func BuildSummary() string {
+	info := Info()
+	parts := []string{
+		info.Version,
+		"commit=" + info.Commit,
 	}
-	if aMinor < bMinor {
-		return -1, nil
+	if info.BuildDate != "" && info.BuildDate != "unknown" {
+		parts = append(parts, "build_date="+info.BuildDate)
 	}
-	if aMinor > bMinor {
-		return 1, nil
+	if info.Dirty != "" && info.Dirty != "unknown" {
+		parts = append(parts, "dirty="+info.Dirty)
 	}
-	return 0, nil
+	return strings.Join(parts, " ")
+}
+
+func NormalizeProductVersion(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", fmt.Errorf("version is empty")
+	}
+	core := strings.TrimPrefix(v, "v")
+	if i := strings.IndexAny(core, "+-"); i >= 0 {
+		core = core[:i]
+	}
+	if err := validateSemVerCore(core); err != nil {
+		return "", err
+	}
+	return v, nil
+}
+
+func validateSemVerCore(v string) error {
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return fmt.Errorf("version %q must use SemVer format", v)
+	}
+	for _, part := range parts {
+		if part == "" {
+			return fmt.Errorf("version %q contains an empty SemVer component", v)
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return fmt.Errorf("version %q contains a non-numeric SemVer core component", v)
+			}
+		}
+	}
+	return nil
 }

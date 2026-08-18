@@ -15,6 +15,7 @@ import (
 	"github.com/nosway/namrbd/internal/adminclient"
 	csidriver "github.com/nosway/namrbd/internal/csi/driver"
 	adminv1 "github.com/nosway/namrbd/sbs/admin/v1"
+	namrbdversion "github.com/nosway/namrbd/version"
 )
 
 func main() {
@@ -25,6 +26,10 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) >= 1 && (args[0] == "--version" || args[0] == "version") {
+		fmt.Println(namrbdversion.BuildSummary())
+		return nil
+	}
 	fs := flag.NewFlagSet("namrbd-csi-driver", flag.ExitOnError)
 	endpoint := fs.String("endpoint", "unix:///tmp/namrbd-csi.sock", "CSI listening endpoint, unix://path or tcp://host:port")
 	adminEndpoint := fs.String("admin-endpoint", getenv("NAMRBD_ADMIN_ENDPOINT", "127.0.0.1:9897"), "NAMRBD sbs-service admin gRPC endpoint")

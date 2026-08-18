@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/nosway/namrbd/internal/structuredlog"
 	clustermeta "github.com/nosway/namrbd/sbs/cluster/metadata"
+	namrbdversion "github.com/nosway/namrbd/version"
 )
 
 type InitialZeroMapAllocationResolver interface {
@@ -74,6 +76,9 @@ func newSBSDataRepository(meta MetadataRepository, client SBSClient, gatewayID s
 	version := ""
 	if len(clientVersion) > 0 {
 		version = clientVersion[0]
+	}
+	if strings.TrimSpace(version) == "" {
+		version = namrbdversion.ProductVersion()
 	}
 	return &sbsDataRepository{
 		meta:          meta,
@@ -942,7 +947,7 @@ func (r *sbsDataRepository) ensureOpen(ctx context.Context, volume VolumeSpec) (
 		)
 		return openVolumeState{}, SBSRequestContext{}, err
 	}
-	if err := CheckSBSMajorVersionCompatibility(r.version, resp.ServerVersion); err != nil {
+	if err := CheckSBSVersionCompatibility(r.version, resp.ServerVersion); err != nil {
 		structuredlog.Error("gateway.sbs", "sbs_version_incompatible", err,
 			structuredlog.F("volume_id", CanonicalVolumeID(uint64(volume.ID))),
 			structuredlog.F("gateway_version", r.version),

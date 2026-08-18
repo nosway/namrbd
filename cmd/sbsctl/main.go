@@ -38,6 +38,10 @@ const (
 )
 
 func main() {
+	if len(os.Args) >= 2 && (os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Println(namrbdversion.BuildSummary())
+		return
+	}
 	// Parse global flags before the command so scripts can call:
 	//   sbsctl --context-file ... cluster init
 	global := flag.NewFlagSet("sbsctl", flag.ContinueOnError)
@@ -47,8 +51,8 @@ func main() {
 	_ = global.Parse(os.Args[1:])
 	args := global.Args()
 
-	if len(args) >= 1 && (args[0] == "--version" || args[0] == "version") {
-		fmt.Println(namrbdversion.Current)
+	if len(args) >= 1 && args[0] == "version" {
+		fmt.Println(namrbdversion.BuildSummary())
 		return
 	}
 	if len(args) < 1 {

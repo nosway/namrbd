@@ -17,12 +17,12 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	adminv1 "github.com/nosway/namrbd/sbs/admin/v1"
+	namrbdversion "github.com/nosway/namrbd/version"
 )
 
-const (
-	DefaultDriverName    = "block.namrbd.io"
-	DefaultVendorVersion = "dev"
-)
+const DefaultDriverName = "block.namrbd.io"
+
+var DefaultVendorVersion = namrbdversion.ProductVersion()
 
 type Backend interface {
 	CreateVolume(context.Context, *adminv1.CreateVolumeRequest) (*adminv1.CreateVolumeResponse, error)

@@ -67,7 +67,7 @@ func (c *InMemorySBSClient) OpenVolume(_ context.Context, req *OpenVolumeRequest
 		VolumeID:       req.VolumeID,
 		VolumeRevision: vol.revision,
 		Profile:        profileFromSpec(vol.spec),
-		ServerVersion:  namrbdversion.Current,
+		ServerVersion:  namrbdversion.ProductVersion(),
 	}, nil
 }
 

@@ -29,7 +29,7 @@ import (
 
 func main() {
 	if len(os.Args) >= 2 && (os.Args[1] == "--version" || os.Args[1] == "version") {
-		fmt.Println(namrbdversion.Current)
+		fmt.Println(namrbdversion.BuildSummary())
 		return
 	}
 	if len(os.Args) < 2 {

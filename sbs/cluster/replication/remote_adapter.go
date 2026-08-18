@@ -12,6 +12,7 @@ import (
 	"github.com/nosway/namrbd/gateway/service"
 	"github.com/nosway/namrbd/internal/structuredlog"
 	"github.com/nosway/namrbd/sbs/cluster/metadata"
+	namrbdversion "github.com/nosway/namrbd/version"
 )
 
 type RemoteReplica struct {
@@ -57,6 +58,9 @@ func OpenReplicaSessions(ctx context.Context, clients map[string]service.SBSClie
 	if req.SessionPrefix == "" {
 		req.SessionPrefix = "cluster"
 	}
+	if strings.TrimSpace(req.ClientVersion) == "" {
+		req.ClientVersion = namrbdversion.ProductVersion()
+	}
 
 	replicaIDs := make([]string, 0, len(clients))
 	for replicaID := range clients {
@@ -88,7 +92,7 @@ func OpenReplicaSessions(ctx context.Context, clients map[string]service.SBSClie
 			}
 			return nil, fmt.Errorf("open replica %q: %w", replicaID, err)
 		}
-		if err := service.CheckSBSMajorVersionCompatibility(req.ClientVersion, openResp.ServerVersion); err != nil {
+		if err := service.CheckSBSVersionCompatibility(req.ClientVersion, openResp.ServerVersion); err != nil {
 			return nil, fmt.Errorf("open replica %q: %w", replicaID, err)
 		}
 		out[replicaID] = RemoteReplica{

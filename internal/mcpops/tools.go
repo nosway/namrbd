@@ -195,7 +195,7 @@ func CallTool(ctx context.Context, cfg Config, name string, args map[string]any)
 }
 
 func ProductVersion() string {
-	return namrbdversion.Current
+	return namrbdversion.ProductVersion()
 }
 
 func FetchEndpoint(ctx context.Context, cfg Config, path string) EndpointSnapshot {
@@ -301,11 +301,15 @@ func stringSchema(description string) map[string]any {
 }
 
 func productEditionEvidence(cfg Config) ToolResult {
+	buildInfo := namrbdversion.Info()
 	return toolResultFromData("namrbd.product.edition", map[string]any{
 		"schema_version":           "namrbd.mcp.edition.v1",
 		"product":                  "NAMRBD",
 		"edition":                  "community",
 		"version":                  ProductVersion(),
+		"commit":                   buildInfo.Commit,
+		"build_date":               buildInfo.BuildDate,
+		"dirty":                    buildInfo.Dirty,
 		"mcp_server_ready":         true,
 		"mcp_provider_ready":       true,
 		"mcp_tool_registered":      true,

@@ -9,9 +9,14 @@ import (
 	"syscall"
 
 	"github.com/nosway/namrbd/internal/mcpops"
+	namrbdversion "github.com/nosway/namrbd/version"
 )
 
 func main() {
+	if len(os.Args) >= 2 && (os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Println(namrbdversion.BuildSummary())
+		return
+	}
 	cfg := mcpops.DefaultConfig()
 	fs := flag.NewFlagSet("namrbd-mcp", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)

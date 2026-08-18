@@ -7,27 +7,20 @@ import (
 	namrbdversion "github.com/nosway/namrbd/version"
 )
 
-func CheckSBSMajorVersionCompatibility(clientVersion, serverVersion string) error {
-	clientVersion = strings.TrimSpace(clientVersion)
-	serverVersion = strings.TrimSpace(serverVersion)
-	if clientVersion == "" || serverVersion == "" {
-		return nil
+func CheckSBSVersionCompatibility(clientVersion, serverVersion string) error {
+	rawClientVersion := strings.TrimSpace(clientVersion)
+	rawServerVersion := strings.TrimSpace(serverVersion)
+
+	clientVersion, clientErr := namrbdversion.NormalizeProductVersion(rawClientVersion)
+	if clientErr != nil {
+		return fmt.Errorf("invalid client version %q: %w", rawClientVersion, clientErr)
 	}
-	if clientVersion == serverVersion {
-		return nil
+	serverVersion, serverErr := namrbdversion.NormalizeProductVersion(rawServerVersion)
+	if serverErr != nil {
+		return fmt.Errorf("invalid server version %q: %w", rawServerVersion, serverErr)
 	}
-	order, err := namrbdversion.CompareMajorMinor(serverVersion, clientVersion)
-	if err != nil {
-		if _, _, clientErr := namrbdversion.ParseMajorMinor(clientVersion); clientErr != nil {
-			return fmt.Errorf("invalid client version %q: %w", clientVersion, clientErr)
-		}
-		if _, _, serverErr := namrbdversion.ParseMajorMinor(serverVersion); serverErr != nil {
-			return fmt.Errorf("invalid server version %q: %w", serverVersion, serverErr)
-		}
-		return fmt.Errorf("compare sbs versions client=%q server=%q: %w", clientVersion, serverVersion, err)
+	if clientVersion != serverVersion {
+		return fmt.Errorf("sbs version mismatch: client=%q server=%q", clientVersion, serverVersion)
 	}
-	if order >= 0 {
-		return nil
-	}
-	return fmt.Errorf("sbs version incompatibility: client=%q server=%q", clientVersion, serverVersion)
+	return nil
 }

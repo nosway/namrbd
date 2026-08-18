@@ -21,6 +21,7 @@ import (
 	"github.com/nosway/namrbd/iscsi"
 	adminv1 "github.com/nosway/namrbd/sbs/admin/v1"
 	sbsv1 "github.com/nosway/namrbd/sbs/v1"
+	namrbdversion "github.com/nosway/namrbd/version"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -32,6 +33,10 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) >= 1 && (args[0] == "--version" || args[0] == "version") {
+		fmt.Fprintln(stdout, namrbdversion.BuildSummary())
+		return 0
+	}
 	fs := flag.NewFlagSet("namrbd-iscsi-gateway", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	backend := fs.String("backend", "memory", "backend mode: memory or sbs")
