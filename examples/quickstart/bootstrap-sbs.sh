@@ -226,25 +226,13 @@ if ! is_true "$skip_build"; then
 	record_ok "quickstart images built"
 fi
 
-up_services=(sbs-data sbs-service)
-if is_true "$include_gateway"; then
-	up_services+=(namrbd-gateway)
+if ! compose up -d sbs-data sbs-service >&2; then
+	fatal "quickstart SBS services failed to start"
 fi
-if ! compose up -d "${up_services[@]}" >&2; then
-	fatal "quickstart services failed to start"
-fi
-record_ok "quickstart services started"
+record_ok "quickstart SBS services started"
 
 wait_ready "sbs-data" "http://127.0.0.1:${data_http_port}/readyz"
 wait_ready "sbs-service" "http://127.0.0.1:${admin_http_port}/readyz"
-if is_true "$include_gateway"; then
-	wait_ready "namrbd-gateway" "http://127.0.0.1:${gateway_http_port}/readyz"
-	if curl -fsS "http://127.0.0.1:${gateway_http_port}/metrics" | grep -q '^namrbd_gateway_ready 1$'; then
-		record_ok "namrbd-gateway metrics exported"
-	else
-		fatal "namrbd-gateway metrics did not report readiness"
-	fi
-fi
 
 if ! run_sbsctl cluster init \
 	--cluster-id "$cluster_id" \
@@ -277,6 +265,19 @@ if jq -e '.active_nodes == 1 and .quorum_health == 1' "$cluster_status_json" >/d
 	record_ok "cluster status reports one active node and quorum"
 else
 	fatal "cluster status did not report one active node and quorum"
+fi
+
+if is_true "$include_gateway"; then
+	if ! compose up -d namrbd-gateway >&2; then
+		fatal "quickstart gateway failed to start"
+	fi
+	record_ok "quickstart gateway started"
+	wait_ready "namrbd-gateway" "http://127.0.0.1:${gateway_http_port}/readyz"
+	if curl -fsS "http://127.0.0.1:${gateway_http_port}/metrics" | grep -q '^namrbd_gateway_ready 1$'; then
+		record_ok "namrbd-gateway metrics exported"
+	else
+		fatal "namrbd-gateway metrics did not report readiness"
+	fi
 fi
 
 if run_sbsctl volume status \
