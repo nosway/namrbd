@@ -9,11 +9,20 @@ const fs = require('fs');
     for (const fixture of ['ok', 'degraded', 'stale']) {
       const page = await browser.newPage({viewport: {width: 1440, height: 1100}, deviceScaleFactor: 1});
       const consoleErrors = [], pageErrors = [];
+      await page.addInitScript(() => {
+        const fixedTime = Date.parse('2026-08-18T00:00:00Z');
+        const NativeDate = Date;
+        globalThis.Date = class extends NativeDate {
+          constructor(...args) { super(...(args.length ? args : [fixedTime])); }
+          static now() { return fixedTime; }
+        };
+      });
       page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
       page.on('pageerror', err => pageErrors.push(String(err)));
       const response = await page.goto(`${baseURL}/index.html?fixture=${fixture}`, {waitUntil: 'networkidle'});
       if (!response || !response.ok()) throw new Error(`${fixture}: navigation failed`);
       await page.locator('[data-dashboard-root] .topbar').waitFor();
+      await page.addStyleTag({content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}'});
       const text = await page.locator('[data-dashboard-root]').innerText();
       if (!text.includes(`fixture ${fixture}`)) throw new Error(`${fixture}: fixture identity not rendered`);
       if (!text.toLowerCase().includes('read-only')) throw new Error(`${fixture}: read-only badge not rendered`);
