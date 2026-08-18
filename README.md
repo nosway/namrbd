@@ -1,4 +1,4 @@
-# NAMRBD Community Edition
+# ![NAMRBD logo](web/operations-dashboard/static/assets/namrbd-logo.svg) NAMRBD
 
 NAMRBD (Network Attached Multipath Resilient Block Device) is a
 network-attached Linux block storage project. The Community Edition focuses on
