@@ -45,9 +45,50 @@ jobs:
       - name: Build and render-check the site
         run: make docs-render-check
 
-  deploy-pages:
+  pages-preflight:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_pages }}
     needs: render-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    outputs:
+      can_deploy: ${{ steps.pages.outputs.can_deploy }}
+    steps:
+      - name: Check Pages deployment readiness
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_API_URL: ${{ github.api_url }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          status="$(curl -sS -o "$body" -w "%{http_code}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GH_API_URL}/repos/${GH_REPOSITORY}/pages" || true)"
+
+          if [ "$status" = "200" ]; then
+            build_type="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("build_type") or "")' "$body")"
+            if [ "$build_type" = "workflow" ]; then
+              echo "can_deploy=true" >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::warning::GitHub Pages is enabled but is not configured with build_type=workflow. Set Pages source to GitHub Actions in repository settings, then rerun this workflow."
+          else
+            summary="$(tr '\n' ' ' <"$body" | cut -c 1-300)"
+            echo "::warning::GitHub Pages deployment was requested, but Pages is not ready for workflow deployment (GET /pages HTTP ${status}). Enable Pages with source 'GitHub Actions' in repository settings, then rerun this workflow. Response: ${summary}"
+          fi
+
+          echo "can_deploy=false" >>"$GITHUB_OUTPUT"
+
+  deploy-pages:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_pages && needs.pages-preflight.outputs.can_deploy == 'true' }}
+    needs:
+      - render-check
+      - pages-preflight
     runs-on: ubuntu-latest
     permissions:
       contents: read
