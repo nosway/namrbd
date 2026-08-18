@@ -6,6 +6,7 @@ HANDOFF_DIR="${PHASE_Y_PUBLIC_HANDOFF_OUT_DIR:-$ROOT_DIR/.cache/phase-y-public-h
 OUT_DIR="${PHASE_Y_RELEASE_EVIDENCE_OUT_DIR:-$ROOT_DIR/.cache/phase-y-release-evidence}"
 IMAGES_JSONL="${PHASE_Y_RELEASE_IMAGES_JSONL:-$HANDOFF_DIR/images.jsonl}"
 SYFT="${SYFT:-syft}"
+SYFT_IMAGE="${SYFT_IMAGE:-anchore/syft:v1.33.0}"
 SOURCE_REPOSITORY="${NAMRBD_SOURCE_REPOSITORY:-https://github.com/nosway/namrbd}"
 SOURCE_REVISION="${NAMRBD_SOURCE_REVISION:-$(git -C "$ROOT_DIR" rev-parse HEAD)}"
 BUILDER_ID="${NAMRBD_RELEASE_BUILDER_ID:-https://github.com/nosway/namrbd/actions/workflows/release.yml}"
@@ -39,13 +40,33 @@ record() {
 	fi
 }
 
-for command_name in jq sha256sum "$SYFT"; do
+for command_name in jq sha256sum docker; do
 	if command -v "$command_name" >/dev/null 2>&1; then
 		record "command-$command_name" ok "required command available: $command_name"
 	else
 		record "command-$command_name" fail "required command not found: $command_name"
 	fi
 done
+
+run_syft() {
+	if command -v "$SYFT" >/dev/null 2>&1; then
+		"$SYFT" "$@"
+	else
+		docker run --rm -i -v /var/run/docker.sock:/var/run/docker.sock "$SYFT_IMAGE" "$@"
+	fi
+}
+
+if [[ ! -s "$IMAGES_JSONL" ]] && command -v docker >/dev/null 2>&1; then
+	mkdir -p "$(dirname "$IMAGES_JSONL")"
+	: >"$IMAGES_JSONL"
+	for name in namrbd-gateway namrbd-iscsi-gateway namrbd-csi-driver namrbd-sbs-service namrbd-sbs-data namrbd-sbsctl; do
+		ref="${NAMRBD_IMAGE_REGISTRY:-ghcr.io/nosway}/$name:${NAMRBD_IMAGE_TAG:-local}"
+		if inspect="$(docker image inspect "$ref" 2>/dev/null)"; then
+			jq -cn --arg name "$name" --arg ref "$ref" --argjson inspect "$inspect" \
+				'{name:$name,ref:$ref,inspected:true,digest_recorded:true,image_id:$inspect[0].Id,repo_digests:($inspect[0].RepoDigests // [])}' >>"$IMAGES_JSONL"
+		fi
+	done
+fi
 
 if [[ -s "$IMAGES_JSONL" ]] && jq -s -e 'length == 6 and all(.[]; .inspected == true and .digest_recorded == true and (.image_id | startswith("sha256:")))' "$IMAGES_JSONL" >/dev/null; then
 	record images-input ok "six inspected Community images have immutable IDs" "$IMAGES_JSONL"
@@ -61,7 +82,7 @@ if [[ "$error_count" -eq 0 ]]; then
 		sbom="$SBOM_DIR/$name.spdx.json"
 		provenance="$PROVENANCE_DIR/$name.intoto.json"
 
-		if "$SYFT" "$ref" -o spdx-json >"$sbom" 2>"$SBOM_DIR/$name.stderr.log" \
+		if run_syft "$ref" -o spdx-json >"$sbom" 2>"$SBOM_DIR/$name.stderr.log" \
 			&& jq -e --arg name "$name" '.spdxVersion == "SPDX-2.3" and (.packages | type == "array") and (.packages | length > 0)' "$sbom" >/dev/null; then
 			record "sbom-$name" ok "SPDX 2.3 SBOM generated for $ref" "${sbom#"$ROOT_DIR/"}"
 		else
