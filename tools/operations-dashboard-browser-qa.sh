@@ -5,7 +5,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${PHASE_Y_BROWSER_QA_OUT_DIR:-$ROOT_DIR/.cache/phase-y-browser-qa}"
 PORT="${PHASE_Y_BROWSER_QA_PORT:-18080}"
 PLAYWRIGHT_IMAGE="${PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.55.0-noble}"
-BASELINE="$ROOT_DIR/web/operations-dashboard/browser/screenshots.sha256"
+RUNTIME_PROFILE="${PHASE_Y_BROWSER_QA_RUNTIME_PROFILE:-}"
+if [[ -z "$RUNTIME_PROFILE" ]]; then
+	if docker --version 2>&1 | grep -qi podman; then RUNTIME_PROFILE=podman; else RUNTIME_PROFILE=docker; fi
+fi
+BASELINE="$ROOT_DIR/web/operations-dashboard/browser/screenshots.$RUNTIME_PROFILE.sha256"
 UPDATE_BASELINE="${PHASE_Y_BROWSER_QA_UPDATE_BASELINE:-0}"
 
 mkdir -p "$OUT_DIR/screenshots"
@@ -38,4 +42,4 @@ fi
 if ! diff -u "$BASELINE" "$OUT_DIR/actual.sha256" >"$OUT_DIR/screenshot-diff.txt"; then
 	printf '{"result":"fail","entrypoint":"phase-y-browser-qa","browser_render_executed":true,"screenshot_count":3,"screenshot_checksum_verified":false,"error_count":1,"first_error":"screenshot checksum baseline mismatch","last_error":"screenshot checksum baseline mismatch"}\n'; exit 1
 fi
-jq '. + {result:"ok",entrypoint:"phase-y-browser-qa",browser_render_executed:true,screenshot_count:3,screenshot_checksum_verified:true,baseline_path:"web/operations-dashboard/browser/screenshots.sha256",error_count:0,first_error:"",last_error:""}' "$OUT_DIR/browser-evidence.json" | tee "$OUT_DIR/summary.json"
+jq --arg runtime_profile "$RUNTIME_PROFILE" --arg baseline_path "web/operations-dashboard/browser/screenshots.$RUNTIME_PROFILE.sha256" '. + {result:"ok",entrypoint:"phase-y-browser-qa",browser_render_executed:true,screenshot_count:3,screenshot_checksum_verified:true,runtime_profile:$runtime_profile,baseline_path:$baseline_path,error_count:0,first_error:"",last_error:""}' "$OUT_DIR/browser-evidence.json" | tee "$OUT_DIR/summary.json"
