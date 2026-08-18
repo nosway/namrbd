@@ -1,6 +1,6 @@
 # NAMRBD Community Quickstart
 
-This quickstart starts a local SBS authority/data pair and `namrbd-gateway`
+This quickstart starts local `etcd`, an SBS authority/data pair, and `namrbd-gateway`
 with Docker Compose, creates one replicated volume, materializes it on the
 local data service, checks a write/readback path through `sbsctl testio`, and
 verifies gateway readiness and Prometheus metrics.

@@ -58,8 +58,8 @@ Build the local Community container image set:
 make container-build-community-images
 ```
 
-Run the local container quickstart. This starts `sbs-service`, `sbs-data`, and
-`namrbd-gateway`, creates a small replicated volume, verifies `sbsctl`
+Run the local container quickstart. This starts `etcd`, `sbs-service`,
+`sbs-data`, and `namrbd-gateway`, creates a small replicated volume, verifies `sbsctl`
 write/read I/O, and checks gateway readiness plus Prometheus metrics:
 
 ```bash

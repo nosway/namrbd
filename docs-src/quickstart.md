@@ -33,7 +33,7 @@ make quickstart-local-down
 make quickstart-local-reset
 ```
 
-The quickstart starts `sbs-service`, `sbs-data`, and `namrbd-gateway`, creates
+The quickstart starts `etcd`, `sbs-service`, `sbs-data`, and `namrbd-gateway`, creates
 a small replicated volume, writes through `sbsctl testio`, verifies readback,
 and checks gateway readiness plus Prometheus metrics.
 

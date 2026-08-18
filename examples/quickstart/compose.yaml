@@ -1,4 +1,21 @@
 services:
+  etcd:
+    image: ${NAMRBD_ETCD_IMAGE:-gcr.io/etcd-development/etcd}:${NAMRBD_ETCD_TAG:-v3.6.8}
+    command:
+      - /usr/local/bin/etcd
+      - --name=namrbd-quickstart-etcd
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd:2379
+    volumes:
+      - etcd-data:/etcd-data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
+
   sbs-data:
     image: ${NAMRBD_SBS_DATA_IMAGE:-ghcr.io/nosway/namrbd-sbs-data}:${NAMRBD_IMAGE_TAG:-local}
     build:
@@ -83,11 +100,15 @@ services:
       - --data-listen=0.0.0.0:9700
       - --advertise-control-address=${NAMRBD_QUICKSTART_GATEWAY_ADVERTISE_ADDRESS:-namrbd-gateway}
       - --advertise-data-address=${NAMRBD_QUICKSTART_GATEWAY_ADVERTISE_ADDRESS:-namrbd-gateway}
-      - --metadata-backend=memory
+      - --metadata-backend=etcd
+      - --etcd-endpoints=etcd:2379
+      - --etcd-root=/namrbd/quickstart
       - --data-backend-mode=sbs-cluster
       - --sbs-admin-endpoint=sbs-service:9443
       - --gateway-id=${NAMRBD_QUICKSTART_GATEWAY_ID:-quickstart-gateway}
     depends_on:
+      etcd:
+        condition: service_healthy
       sbs-service:
         condition: service_healthy
     ports:
@@ -101,6 +122,7 @@ services:
       start_period: 2s
 
 volumes:
+  etcd-data:
   sbs-data:
   sbs-service-meta:
   sbs-service-payload:
