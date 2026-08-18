@@ -16,6 +16,7 @@ const fs = require('fs');
           constructor(...args) { super(...(args.length ? args : [fixedTime])); }
           static now() { return fixedTime; }
         };
+        Object.defineProperty(globalThis.performance, 'now', {value: () => 1000});
       });
       page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
       page.on('pageerror', err => pageErrors.push(String(err)));
