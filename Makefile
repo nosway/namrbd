@@ -289,6 +289,7 @@ kind-csi-pvc-demo-check:
 	test -f "$(KIND_CSI_DEMO_CLUSTER_CONFIG)"
 	test -f "$(KIND_CSI_DEMO_PVC)"
 	bash -n "$(KIND_CSI_DEMO_SCRIPT)"
+	bash "$(KIND_CSI_DEMO_SCRIPT)" address-fixture
 	$(GREP) -F 'load docker-image' "$(KIND_CSI_DEMO_SCRIPT)" >/dev/null
 	$(GREP) -F 'upgrade --install' "$(KIND_CSI_DEMO_SCRIPT)" >/dev/null
 	$(GREP) -F 'storageClasses.replicated.volumeBindingMode=Immediate' "$(KIND_CSI_DEMO_SCRIPT)" >/dev/null
