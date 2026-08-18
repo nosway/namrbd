@@ -59,6 +59,7 @@ include web
 
 include packaging/docker/Dockerfile.sbs
 include build/edition/community.manifest
+include tools/generate-community-release-evidence.sh
 
 exclude stale-codes
 exclude enterprise

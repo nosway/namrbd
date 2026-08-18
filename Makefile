@@ -165,6 +165,10 @@ web-operations-dashboard-test:
 .PHONY: container-build-community-images
 container-build-community-images: container-build-namrbd-gateway container-build-namrbd-iscsi-gateway container-build-namrbd-csi-driver container-build-sbs
 
+.PHONY: phase-y-release-evidence
+phase-y-release-evidence: $(CACHE_DIR)
+	@bash tools/generate-community-release-evidence.sh
+
 .PHONY: container-build-namrbd-gateway
 container-build-namrbd-gateway:
 	$(DOCKER) build \
