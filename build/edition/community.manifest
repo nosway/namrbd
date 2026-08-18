@@ -61,6 +61,7 @@ include packaging/docker/Dockerfile.sbs
 include build/edition/community.manifest
 include tools/generate-community-release-evidence.sh
 include tools/operations-dashboard-browser-qa.sh
+include tools/mcp-client-provider-integration.py
 
 exclude stale-codes
 exclude enterprise

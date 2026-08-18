@@ -166,6 +166,12 @@ web-operations-dashboard-test:
 phase-y-browser-qa: $(CACHE_DIR)
 	@bash tools/operations-dashboard-browser-qa.sh
 
+.PHONY: phase-y-mcp-client-provider-integration
+phase-y-mcp-client-provider-integration: $(CACHE_DIR)
+	@mkdir -p "$(CACHE_DIR)/phase-y-mcp-client-provider-integration" "$(GOCACHE)" "$(GOMODCACHE)"
+	@GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) build $(GOFLAGS_COMMUNITY) -o "$(CACHE_DIR)/phase-y-mcp-client-provider-integration/namrbd-mcp" ./cmd/namrbd-mcp
+	@python3 tools/mcp-client-provider-integration.py --provider "$(CACHE_DIR)/phase-y-mcp-client-provider-integration/namrbd-mcp" --evidence "$(CACHE_DIR)/phase-y-mcp-client-provider-integration/evidence.json"
+
 .PHONY: container-build-community-images
 container-build-community-images: container-build-namrbd-gateway container-build-namrbd-iscsi-gateway container-build-namrbd-csi-driver container-build-sbs
 
