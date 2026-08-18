@@ -7,7 +7,8 @@ PORT="${PHASE_Y_BROWSER_QA_PORT:-18080}"
 PLAYWRIGHT_IMAGE="${PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.55.0-noble}"
 RUNTIME_PROFILE="${PHASE_Y_BROWSER_QA_RUNTIME_PROFILE:-}"
 if [[ -z "$RUNTIME_PROFILE" ]]; then
-	if docker --version 2>&1 | grep -qi podman; then RUNTIME_PROFILE=podman; else RUNTIME_PROFILE=docker; fi
+	runtime_version="$(docker --version 2>&1)"
+	if grep -qi podman <<<"$runtime_version"; then RUNTIME_PROFILE=podman; else RUNTIME_PROFILE=docker; fi
 fi
 BASELINE="$ROOT_DIR/web/operations-dashboard/browser/screenshots.$RUNTIME_PROFILE.sha256"
 UPDATE_BASELINE="${PHASE_Y_BROWSER_QA_UPDATE_BASELINE:-0}"
