@@ -69,7 +69,13 @@ LABEL org.opencontainers.image.title="NAMRBD Community runtime" \
 RUN apk add --no-cache ca-certificates wget \
 	&& addgroup -g 65532 namrbd \
 	&& adduser -D -G namrbd -u 65532 namrbd \
-	&& mkdir -p /var/lib/namrbd /var/lib/namrbd/gateway /var/lib/namrbd/iscsi /tmp \
+	&& mkdir -p \
+		/var/lib/namrbd/gateway \
+		/var/lib/namrbd/iscsi \
+		/var/lib/namrbd/sbs-data \
+		/var/lib/namrbd/sbs-meta \
+		/var/lib/namrbd/sbs-payload \
+		/tmp \
 	&& chown -R 65532:65532 /var/lib/namrbd /tmp
 USER 65532:65532
 
