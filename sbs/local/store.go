@@ -42,6 +42,11 @@ type storeRuntimeSnapshot struct {
 	CompactionInProgressBytes uint64
 }
 
+type volumePurgeResult struct {
+	KeyCount uint64
+	Bytes    uint64
+}
+
 func newObjectStore(metadataPath string, legacyDB *pebble.DB, stores []StoreSpec) (*objectStore, error) {
 	out := &objectStore{
 		metadataPath: filepath.Clean(metadataPath),
@@ -116,6 +121,46 @@ func (s *objectStore) Delete(_ context.Context, key string) error {
 		return err
 	}
 	return target.Delete([]byte(internalKey), pebble.Sync)
+}
+
+func (s *objectStore) PurgeVolume(prefix string) (volumePurgeResult, error) {
+	lower := []byte("volumes/" + prefix + "/")
+	upper := []byte("volumes/" + prefix + "/\xff")
+	seen := make(map[*pebble.DB]struct{}, len(s.shards)+1)
+	dbs := []*pebble.DB{s.legacyDB}
+	for _, db := range s.shards {
+		if _, ok := seen[db]; !ok {
+			dbs = append(dbs, db)
+		}
+	}
+	result := volumePurgeResult{}
+	for _, db := range dbs {
+		if db == nil {
+			continue
+		}
+		if _, ok := seen[db]; ok {
+			continue
+		}
+		seen[db] = struct{}{}
+		iter, err := db.NewIter(&pebble.IterOptions{LowerBound: lower, UpperBound: upper})
+		if err != nil {
+			return result, err
+		}
+		for iter.First(); iter.Valid(); iter.Next() {
+			result.KeyCount++
+			result.Bytes += uint64(len(iter.Value()))
+		}
+		if err := iter.Close(); err != nil {
+			return result, err
+		}
+		if err := db.DeleteRange(lower, upper, pebble.Sync); err != nil {
+			return result, err
+		}
+		if err := db.Compact(lower, upper, true); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
 }
 
 func (s *objectStore) List(_ context.Context, prefix, cursor string, limit int) ([]string, string, error) {

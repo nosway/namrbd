@@ -1468,6 +1468,12 @@ func (r *Repository) ListPlacementTransitions(ctx context.Context, volumeID stri
 	for _, key := range keys {
 		var rec PlacementTransitionRecord
 		if err := r.getJSON(ctx, key, &rec); err != nil {
+			// Completed transitions may be removed after the prefix scan. Treat
+			// that concurrent cleanup as an absent row, while preserving every
+			// storage or decoding error.
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
 			return nil, err
 		}
 		out = append(out, rec)

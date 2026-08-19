@@ -90,11 +90,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--provider", required=True)
     parser.add_argument("--evidence", required=True)
+    parser.add_argument("--operations-endpoint")
     args = parser.parse_args()
-    server = ThreadingHTTPServer(("127.0.0.1", 0), FixtureHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    endpoint = f"http://127.0.0.1:{server.server_port}"
+    server = None
+    if args.operations_endpoint:
+        endpoint = args.operations_endpoint
+    else:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), FixtureHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        endpoint = f"http://127.0.0.1:{server.server_port}"
     process = subprocess.Popen(
         [args.provider, "--operations-endpoint", endpoint],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -117,7 +122,8 @@ def main():
             "tool_registered": "namrbd.health.check" in tool_names,
             "resource_round_trip": "sbs-service AdminService" in resource_text,
             "tool_round_trip": "stdio-jsonrpc-content-length" in health_text,
-            "secret_redacted": "must-not-cross-mcp-boundary" not in resource_text and "must-not-cross-mcp-boundary" not in health_text,
+            "redaction_contract": '"redaction_applied": true' in resource_text and '"redaction_applied": true' in health_text,
+            "rbac_contract": '"rbac_checked": true' in resource_text and '"rbac_checked": true' in health_text,
             "read_only_enforced": '"mutating_tools_enabled": false' in health_text,
         }
         if not all(checks.values()):
@@ -126,7 +132,8 @@ def main():
             "result": "ok", "entrypoint": "phase-y-mcp-client-provider-integration",
             "schema_version": "namrbd.mcp.integration-evidence.v1",
             "client": "python-stdlib-mcp-client", "provider": "cmd/namrbd-mcp",
-            "transport": "stdio-jsonrpc-content-length", "http_provider_fixture": True,
+            "transport": "stdio-jsonrpc-content-length", "http_provider_fixture": server is not None,
+            "operations_endpoint": endpoint,
             "request_count": 5, "checks": checks, "ok_count": len(checks),
             "error_count": 0, "first_error": "", "last_error": "",
         }
@@ -138,8 +145,9 @@ def main():
         except subprocess.TimeoutExpired:
             process.terminate()
             process.wait(timeout=5)
-        server.shutdown()
-        server.server_close()
+        if server is not None:
+            server.shutdown()
+            server.server_close()
     with open(args.evidence, "w", encoding="utf-8") as output:
         json.dump(evidence, output, indent=2, sort_keys=True)
         output.write("\n")

@@ -812,6 +812,44 @@ func TestClientSweepChunkGarbageHonorsProtectedRefs(t *testing.T) {
 	}
 }
 
+func TestClientPurgeVolumeDeletesPayloadAndRejectsOpenSession(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "pebble")
+	client, err := Open(Config{Path: dir})
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer client.Close()
+
+	volumeID := service.CanonicalVolumeID(101)
+	spec := service.VolumeSpec{ID: service.HexVolumeID(101), Prefix: "payload-prefix", SizeBytes: 4096, BlockSize: 4096}
+	if err := client.meta.putJSON(specKey(volumeID), spec, pebble.Sync); err != nil {
+		t.Fatalf("Put volume spec failed: %v", err)
+	}
+	if err := client.objects.Put(context.Background(), store.BuildChunkKey(spec.Prefix, 1), []byte("payload")); err != nil {
+		t.Fatalf("Put payload failed: %v", err)
+	}
+	client.mu.Lock()
+	client.open["handle"] = openSession{spec: service.VolumeSpec{ID: service.HexVolumeID(101)}}
+	client.mu.Unlock()
+	if _, err := client.PurgeVolume(context.Background(), volumeID); err == nil {
+		t.Fatal("PurgeVolume succeeded with an open session")
+	}
+	client.mu.Lock()
+	delete(client.open, "handle")
+	client.mu.Unlock()
+
+	result, err := client.PurgeVolume(context.Background(), volumeID)
+	if err != nil {
+		t.Fatalf("PurgeVolume failed: %v", err)
+	}
+	if result.KeyCount < 2 || result.ReclaimedBytes < uint64(len("payload")) {
+		t.Fatalf("PurgeVolume result=%+v", result)
+	}
+	if _, found, err := client.objects.Get(context.Background(), store.BuildChunkKey(spec.Prefix, 1)); err != nil || found {
+		t.Fatalf("payload remained found=%v err=%v", found, err)
+	}
+}
+
 func TestClientRejectsIdempotencyConflict(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "pebble")
 	client, err := Open(Config{Path: dir})

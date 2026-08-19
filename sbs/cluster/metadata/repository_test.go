@@ -16,8 +16,37 @@ type fakeKV struct {
 	values map[string][]byte
 }
 
+type stalePlacementTransitionListKV struct {
+	*fakeKV
+	staleKey string
+}
+
+func (f *stalePlacementTransitionListKV) List(_ context.Context, prefix, _ string, _ int) ([]string, string, error) {
+	if f.staleKey != "" && len(f.staleKey) >= len(prefix) && f.staleKey[:len(prefix)] == prefix {
+		return []string{f.staleKey}, "", nil
+	}
+	return nil, "", nil
+}
+
 func newFakeKV() *fakeKV {
 	return &fakeKV{values: make(map[string][]byte)}
+}
+
+func TestListPlacementTransitionsSkipsConcurrentlyDeletedRecord(t *testing.T) {
+	volumeID := "00a1b2c3"
+	kv := &stalePlacementTransitionListKV{
+		fakeKV:   newFakeKV(),
+		staleKey: placementTransitionKey("sbs/cluster", volumeID, "pl-deleted"),
+	}
+	repo := NewRepository(kv, "sbs/cluster")
+
+	got, err := repo.ListPlacementTransitions(context.Background(), volumeID)
+	if err != nil {
+		t.Fatalf("ListPlacementTransitions: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("ListPlacementTransitions=%+v want empty", got)
+	}
 }
 
 func (f *fakeKV) Get(_ context.Context, key string) ([]byte, bool, error) {

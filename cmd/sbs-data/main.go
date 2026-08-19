@@ -297,6 +297,23 @@ func observabilityMux(path, storeConfigPath string, client *local.Client, enable
 		})
 	})
 	if enableLabStoreDebug {
+		mux.HandleFunc("/debug/purge-volume", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			volumeID := strings.TrimSpace(r.URL.Query().Get("volume_id"))
+			if volumeID == "" {
+				http.Error(w, "volume_id is required", http.StatusBadRequest)
+				return
+			}
+			result, err := client.PurgeVolume(r.Context(), volumeID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": result})
+		})
 		mux.HandleFunc("/debug/chunk-gc", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

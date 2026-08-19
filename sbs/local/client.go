@@ -73,6 +73,12 @@ type StoreHealthTimings struct {
 	TotalMs        int64 `json:"total_ms"`
 }
 
+type VolumePurgeResult struct {
+	VolumeID       string `json:"volume_id"`
+	KeyCount       uint64 `json:"key_count"`
+	ReclaimedBytes uint64 `json:"reclaimed_bytes"`
+}
+
 type openSession struct {
 	handle       string
 	attachmentID string
@@ -269,6 +275,39 @@ func (c *Client) SweepChunkGarbage(ctx context.Context, volumeID string, limit i
 	}
 	collector := service.NewChunkGarbageCollector(c.meta, c.objects)
 	return collector.SweepVolumeWithProtectedRefs(ctx, parsedVolumeID, limit, protectedRefs)
+}
+
+func (c *Client) PurgeVolume(ctx context.Context, volumeID string) (VolumePurgeResult, error) {
+	parsedVolumeID, err := service.ParseVolumeID(volumeID)
+	if err != nil {
+		return VolumePurgeResult{}, fmt.Errorf("parse volume_id: %w", err)
+	}
+	canonical := service.CanonicalVolumeID(parsedVolumeID)
+	spec, err := c.meta.GetVolume(ctx, parsedVolumeID)
+	if err != nil {
+		return VolumePurgeResult{}, fmt.Errorf("get local volume spec: %w", err)
+	}
+	c.mu.Lock()
+	for _, session := range c.open {
+		if service.CanonicalVolumeID(uint64(session.spec.ID)) == canonical {
+			c.mu.Unlock()
+			return VolumePurgeResult{}, fmt.Errorf("volume %s still has an open session", canonical)
+		}
+	}
+	c.mu.Unlock()
+	result, err := c.objects.PurgeVolume(spec.Prefix)
+	if err != nil {
+		return VolumePurgeResult{}, err
+	}
+	if spec.Prefix != canonical {
+		metadataResult, err := c.objects.PurgeVolume(canonical)
+		if err != nil {
+			return VolumePurgeResult{}, err
+		}
+		result.KeyCount += metadataResult.KeyCount
+		result.Bytes += metadataResult.Bytes
+	}
+	return VolumePurgeResult{VolumeID: canonical, KeyCount: result.KeyCount, ReclaimedBytes: result.Bytes}, nil
 }
 
 func (c *Client) currentStoreSpecs() []StoreSpec {
