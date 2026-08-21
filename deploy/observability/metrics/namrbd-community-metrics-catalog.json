@@ -385,6 +385,16 @@
       "description": "Total internal placement resolver RPC handling duration."
     },
     {
+      "name": "sbs_service_tikv_operations_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "operation"
+      ],
+      "description": "SBS metadata requests to TiKV by operation class."
+    },
+    {
       "name": "sbs_data_ready",
       "component": "sbs-data",
       "type": "gauge",
@@ -511,6 +521,22 @@
         "store_id"
       ],
       "description": "Bytes in in-progress compactions."
+    },
+    {
+      "name": "sbs_data_iscsi_writer_fences",
+      "component": "sbs-data",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [],
+      "description": "Number of cached receiver-side iSCSI writer fences."
+    },
+    {
+      "name": "sbs_data_stale_writer_rejected_total",
+      "component": "sbs-data",
+      "type": "counter",
+      "unit": "count",
+      "labels": [],
+      "description": "Number of iSCSI requests rejected by receiver-side fencing."
     },
     {
       "name": "namrbd_gateway_ready",
