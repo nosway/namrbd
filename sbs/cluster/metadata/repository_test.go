@@ -3,10 +3,12 @@ package metadata
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/nosway/namrbd/internal/structuredlog"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -93,6 +95,240 @@ func (f *fakeKV) List(_ context.Context, prefix, cursor string, limit int) ([]st
 	return out, out[len(out)-1], nil
 }
 
+func TestMembershipProjectionCASPagingAndTombstone(t *testing.T) {
+	ctx := context.Background()
+	repo := NewRepository(newFakeTransactionalKV(), "sbs/cluster")
+	repo.now = func() time.Time { return time.Unix(100, 0) }
+
+	created, status, err := repo.CompareAndSetNodeMembership(ctx, NodeMembershipRecord{
+		ClusterID:      "cluster-a",
+		SBSClusterID:   "sbs-a",
+		NodeID:         "node-a",
+		LifecycleState: NodeLifecycleActive,
+		HealthState:    NodeHealthHealthy,
+		UpdatedBy:      "operator-a",
+		UpdateReason:   "join",
+	}, 0)
+	if err != nil {
+		t.Fatalf("CompareAndSetNodeMembership(create): %v", err)
+	}
+	if created.Generation != 1 || created.MembershipRevision != 1 {
+		t.Fatalf("created generation/revision=%d/%d want 1/1", created.Generation, created.MembershipRevision)
+	}
+	if status.MembershipRevision != 1 || status.MembershipProjectionRevision != 1 || status.Stale {
+		t.Fatalf("create projection status=%+v", status)
+	}
+	if _, _, err := repo.CompareAndSetNodeMembership(ctx, created, 0); !errors.Is(err, ErrCASConflict) {
+		t.Fatalf("stale create error=%v want ErrCASConflict", err)
+	}
+
+	created.Zone = "zone-b"
+	updated, status, err := repo.CompareAndSetNodeMembership(ctx, created, created.Generation)
+	if err != nil {
+		t.Fatalf("CompareAndSetNodeMembership(update): %v", err)
+	}
+	if updated.Generation != 2 || updated.MembershipRevision != 2 || status.MembershipProjectionRevision != 2 {
+		t.Fatalf("updated=%+v status=%+v", updated, status)
+	}
+
+	for _, nodeID := range []string{"node-b", "node-c"} {
+		if err := repo.PutNodeMembership(ctx, NodeMembershipRecord{
+			NodeID: nodeID, LifecycleState: NodeLifecycleActive, HealthState: NodeHealthHealthy,
+		}); err != nil {
+			t.Fatalf("PutNodeMembership(%s): %v", nodeID, err)
+		}
+	}
+	page, err := repo.ListMembershipProjectionPage(ctx, "", 2, false)
+	if err != nil {
+		t.Fatalf("ListMembershipProjectionPage(first): %v", err)
+	}
+	if len(page.Records) != 2 || page.NextCursor == "" {
+		t.Fatalf("first page=%+v", page)
+	}
+	page2, err := repo.ListMembershipProjectionPage(ctx, page.NextCursor, 2, false)
+	if err != nil {
+		t.Fatalf("ListMembershipProjectionPage(second): %v", err)
+	}
+	if len(page2.Records) != 1 || page2.NextCursor != "" {
+		t.Fatalf("second page=%+v", page2)
+	}
+
+	if err := repo.DeleteNodeMembership(ctx, "node-a"); err != nil {
+		t.Fatalf("DeleteNodeMembership: %v", err)
+	}
+	visible, err := repo.ListNodeMemberships(ctx)
+	if err != nil {
+		t.Fatalf("ListNodeMemberships: %v", err)
+	}
+	if len(visible) != 2 {
+		t.Fatalf("visible nodes=%+v want two non-tombstones", visible)
+	}
+	all, err := repo.ListMembershipProjectionPage(ctx, "", 16, true)
+	if err != nil {
+		t.Fatalf("ListMembershipProjectionPage(tombstones): %v", err)
+	}
+	if len(all.Records) != 3 || !all.Records[0].Tombstone || all.Records[0].MembershipRevision != 5 {
+		t.Fatalf("all records=%+v", all.Records)
+	}
+}
+
+func TestMembershipMutationRetriesTransactionConflictButNotGenerationConflict(t *testing.T) {
+	ResetTiKVPressureForTest()
+	defer ResetTiKVPressureForTest()
+	ctx := context.Background()
+	kv := &conflictInjectingMembershipKV{
+		fakeTransactionalKV: newFakeTransactionalKV(),
+		conflictsRemaining:  2,
+	}
+	repo := NewRepository(kv, "sbs/cluster")
+	repo.now = func() time.Time { return time.Unix(100, 0) }
+
+	created, status, err := repo.CompareAndSetNodeMembership(ctx, NodeMembershipRecord{
+		NodeID: "node-a", LifecycleState: NodeLifecycleActive, HealthState: NodeHealthHealthy,
+	}, 0)
+	if err != nil {
+		t.Fatalf("CompareAndSetNodeMembership: %v", err)
+	}
+	if created.Generation != 1 || status.MembershipProjectionRevision != 1 {
+		t.Fatalf("created=%+v status=%+v", created, status)
+	}
+	if kv.runTxCalls != 3 {
+		t.Fatalf("transaction attempts=%d want 3", kv.runTxCalls)
+	}
+	if retries := TiKVPressureSnapshotNow().TxnRetryCount; retries != 2 {
+		t.Fatalf("transaction retries=%d want 2", retries)
+	}
+
+	before := kv.runTxCalls
+	if _, _, err := repo.CompareAndSetNodeMembership(ctx, created, 0); !errors.Is(err, ErrCASConflict) {
+		t.Fatalf("stale generation error=%v want ErrCASConflict", err)
+	}
+	if kv.runTxCalls != before+1 {
+		t.Fatalf("stale generation transaction attempts=%d want 1", kv.runTxCalls-before)
+	}
+	if retries := TiKVPressureSnapshotNow().TxnRetryCount; retries != 2 {
+		t.Fatalf("stale generation changed retry count to %d", retries)
+	}
+}
+
+func TestListNodeMembershipsBatchReadsProjectionDuringHealthChurn(t *testing.T) {
+	ctx := context.Background()
+	const root = "sbs/cluster"
+	kv := &churningMembershipProjectionKV{
+		fakeTransactionalKV: newFakeTransactionalKV(),
+		root:                root,
+	}
+	repo := NewRepository(kv, root)
+	for _, nodeID := range []string{"node-a", "node-b"} {
+		if err := repo.PutNodeMembership(ctx, NodeMembershipRecord{
+			NodeID: nodeID, LifecycleState: NodeLifecycleActive, HealthState: NodeHealthHealthy,
+		}); err != nil {
+			t.Fatalf("PutNodeMembership(%s): %v", nodeID, err)
+		}
+	}
+
+	nodes, err := repo.ListNodeMemberships(ctx)
+	if err != nil {
+		t.Fatalf("ListNodeMemberships: %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("ListNodeMemberships nodes=%+v want two", nodes)
+	}
+	if kv.projectionPointGetCalls != 0 {
+		t.Fatalf("projection point reads=%d want 0", kv.projectionPointGetCalls)
+	}
+	if kv.readSnapshotCalls != 1 {
+		t.Fatalf("projection read snapshots=%d want 1", kv.readSnapshotCalls)
+	}
+	if kv.snapshotBatchGetCalls != 1 || kv.batchGetCalls != 0 {
+		t.Fatalf("snapshot batch reads=%d standalone batch reads=%d want 1/0", kv.snapshotBatchGetCalls, kv.batchGetCalls)
+	}
+}
+
+func TestListNodeMembershipsKeepsAllPagesInOneSnapshot(t *testing.T) {
+	ctx := context.Background()
+	const root = "sbs/cluster"
+	kv := &churningMembershipProjectionKV{
+		fakeTransactionalKV: newFakeTransactionalKV(),
+		root:                root,
+	}
+	repo := NewRepository(kv, root)
+	for i := 0; i < MembershipProjectionPageMaximum+1; i++ {
+		if err := repo.PutNodeMembership(ctx, NodeMembershipRecord{
+			NodeID: fmt.Sprintf("node-%04d", i), LifecycleState: NodeLifecycleActive, HealthState: NodeHealthHealthy,
+		}); err != nil {
+			t.Fatalf("PutNodeMembership(%d): %v", i, err)
+		}
+	}
+
+	nodes, err := repo.ListNodeMemberships(ctx)
+	if err != nil {
+		t.Fatalf("ListNodeMemberships: %v", err)
+	}
+	if len(nodes) != MembershipProjectionPageMaximum+1 {
+		t.Fatalf("ListNodeMemberships count=%d want %d", len(nodes), MembershipProjectionPageMaximum+1)
+	}
+	if kv.readSnapshotCalls != 1 || kv.snapshotBatchGetCalls != 2 {
+		t.Fatalf("read snapshots=%d batch pages=%d want 1/2", kv.readSnapshotCalls, kv.snapshotBatchGetCalls)
+	}
+}
+
+func TestMembershipProjectionStaleBlocksAndRebuilds(t *testing.T) {
+	ctx := context.Background()
+	kv := newFakeTransactionalKV()
+	repo := NewRepository(kv, "sbs/cluster")
+	now := time.Unix(200, 0)
+	repo.now = func() time.Time { return now }
+	if err := repo.PutNodeMembership(ctx, NodeMembershipRecord{
+		NodeID: "node-a", LifecycleState: NodeLifecycleActive, HealthState: NodeHealthHealthy,
+	}); err != nil {
+		t.Fatalf("PutNodeMembership: %v", err)
+	}
+
+	err := kv.RunInTransaction(ctx, func(tx kvReadWriter) error {
+		var state MembershipProjectionState
+		if err := getJSONStore(ctx, tx, membershipProjectionStateKey(repo.root), &state); err != nil {
+			return err
+		}
+		state.MembershipRevision++
+		state.MembershipUpdatedAtUnixNano = now.Add(-6 * time.Second).UnixNano()
+		return putJSONStore(ctx, tx, membershipProjectionStateKey(repo.root), state)
+	})
+	if err != nil {
+		t.Fatalf("inject projection lag: %v", err)
+	}
+	repo.invalidateMembershipCache()
+	status, err := repo.GetMembershipProjectionStatus(ctx)
+	if err != nil {
+		t.Fatalf("GetMembershipProjectionStatus: %v", err)
+	}
+	if !status.Stale || status.ProjectionHealth != "degraded" || status.ProjectionLagMS != 6000 {
+		t.Fatalf("degraded status=%+v", status)
+	}
+	if _, err := repo.ListNodeMemberships(ctx); !errors.Is(err, ErrMembershipProjectionStale) {
+		t.Fatalf("ListNodeMemberships error=%v want ErrMembershipProjectionStale", err)
+	}
+
+	now = now.Add(10 * time.Second)
+	status, err = repo.GetMembershipProjectionStatus(ctx)
+	if err != nil {
+		t.Fatalf("GetMembershipProjectionStatus(blocked): %v", err)
+	}
+	if status.ProjectionHealth != "blocked" {
+		t.Fatalf("blocked status=%+v", status)
+	}
+	status, err = repo.RebuildMembershipProjection(ctx)
+	if err != nil {
+		t.Fatalf("RebuildMembershipProjection: %v", err)
+	}
+	if status.Stale || status.MembershipRevision != status.MembershipProjectionRevision || status.ProjectionResyncCount != 1 {
+		t.Fatalf("rebuilt status=%+v", status)
+	}
+	if _, err := repo.ListNodeMemberships(ctx); err != nil {
+		t.Fatalf("ListNodeMemberships after rebuild: %v", err)
+	}
+}
+
 type countingCompatibleAllocationStore struct {
 	pages     []AllocationPageRecord
 	getCalls  int
@@ -135,6 +371,24 @@ type fakeTransactionalKV struct {
 	runTxCalls    int
 }
 
+type churningMembershipProjectionKV struct {
+	*fakeTransactionalKV
+	root                    string
+	projectionPointGetCalls int
+	readSnapshotCalls       int
+	snapshotBatchGetCalls   int
+}
+
+type conflictInjectingMembershipKV struct {
+	*fakeTransactionalKV
+	conflictsRemaining int
+}
+
+type mapMembershipReadSnapshot struct {
+	values        map[string][]byte
+	batchGetCalls *int
+}
+
 func newFakeTransactionalKV() *fakeTransactionalKV {
 	return &fakeTransactionalKV{
 		values:   make(map[string][]byte),
@@ -152,6 +406,91 @@ func (f *fakeTransactionalKV) Get(_ context.Context, key string) ([]byte, bool, 
 		return nil, false, nil
 	}
 	return append([]byte(nil), value...), true, nil
+}
+
+func (f *churningMembershipProjectionKV) Get(ctx context.Context, key string) ([]byte, bool, error) {
+	if strings.HasPrefix(key, membershipProjectionNodesPrefix(f.root)) {
+		f.mu.Lock()
+		f.projectionPointGetCalls++
+		stateKey := membershipProjectionStateKey(f.root)
+		var state MembershipProjectionState
+		if err := json.Unmarshal(f.values[stateKey], &state); err != nil {
+			f.mu.Unlock()
+			return nil, false, err
+		}
+		state.MembershipRevision++
+		state.MembershipProjectionRevision++
+		raw, err := json.Marshal(state)
+		if err != nil {
+			f.mu.Unlock()
+			return nil, false, err
+		}
+		f.values[stateKey] = raw
+		f.mu.Unlock()
+	}
+	return f.fakeTransactionalKV.Get(ctx, key)
+}
+
+func (f *churningMembershipProjectionKV) BatchGet(_ context.Context, keys []string) (map[string][]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.batchGetCalls++
+	f.batchGetKeys = append(f.batchGetKeys, slices.Clone(keys))
+	out := make(map[string][]byte, len(keys))
+	for _, key := range keys {
+		if value, ok := f.values[key]; ok {
+			out[key] = append([]byte(nil), value...)
+		}
+	}
+	return out, nil
+}
+
+func (f *churningMembershipProjectionKV) RunInReadSnapshot(ctx context.Context, fn func(snapshot kvReadSnapshot) error) error {
+	f.mu.Lock()
+	f.readSnapshotCalls++
+	values := make(map[string][]byte, len(f.values))
+	for key, value := range f.values {
+		values[key] = append([]byte(nil), value...)
+	}
+	stateKey := membershipProjectionStateKey(f.root)
+	var state MembershipProjectionState
+	if err := json.Unmarshal(f.values[stateKey], &state); err != nil {
+		f.mu.Unlock()
+		return err
+	}
+	state.MembershipRevision++
+	state.MembershipProjectionRevision++
+	raw, err := json.Marshal(state)
+	if err != nil {
+		f.mu.Unlock()
+		return err
+	}
+	f.values[stateKey] = raw
+	f.mu.Unlock()
+	return fn(&mapMembershipReadSnapshot{values: values, batchGetCalls: &f.snapshotBatchGetCalls})
+}
+
+func (s *mapMembershipReadSnapshot) Get(_ context.Context, key string) ([]byte, bool, error) {
+	value, ok := s.values[key]
+	if !ok {
+		return nil, false, nil
+	}
+	return append([]byte(nil), value...), true, nil
+}
+
+func (s *mapMembershipReadSnapshot) BatchGet(_ context.Context, keys []string) (map[string][]byte, error) {
+	*s.batchGetCalls++
+	out := make(map[string][]byte, len(keys))
+	for _, key := range keys {
+		if value, ok := s.values[key]; ok {
+			out[key] = append([]byte(nil), value...)
+		}
+	}
+	return out, nil
+}
+
+func (s *mapMembershipReadSnapshot) List(ctx context.Context, prefix, cursor string, limit int) ([]string, string, error) {
+	return (&fakeKV{values: s.values}).List(ctx, prefix, cursor, limit)
 }
 
 func (f *fakeTransactionalKV) Set(_ context.Context, key string, value []byte) error {
@@ -207,6 +546,31 @@ func (f *fakeTransactionalKV) RunInTransaction(ctx context.Context, fn func(tx k
 		batchGetCalls: &f.batchGetCalls,
 		batchGetKeys:  &f.batchGetKeys,
 	})
+}
+
+func (f *conflictInjectingMembershipKV) RunInTransaction(ctx context.Context, fn func(tx kvReadWriter) error) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.runTxCalls++
+	working := make(map[string][]byte, len(f.values))
+	for key, value := range f.values {
+		working[key] = append([]byte(nil), value...)
+	}
+	if err := fn(ctxLockedStore{
+		values:        working,
+		getCalls:      f.getCalls,
+		setCalls:      f.setCalls,
+		batchGetCalls: &f.batchGetCalls,
+		batchGetKeys:  &f.batchGetKeys,
+	}); err != nil {
+		return err
+	}
+	if f.conflictsRemaining > 0 {
+		f.conflictsRemaining--
+		return ErrCASConflict
+	}
+	f.values = working
+	return nil
 }
 
 func (f *fakeTransactionalKV) resetGetCalls() {

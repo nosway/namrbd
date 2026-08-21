@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/nosway/namrbd/internal/adminclient"
 	csidriver "github.com/nosway/namrbd/internal/csi/driver"
+	"github.com/nosway/namrbd/internal/envcompat"
 	adminv1 "github.com/nosway/namrbd/sbs/admin/v1"
 	namrbdversion "github.com/nosway/namrbd/version"
 )
@@ -31,11 +33,31 @@ func run(args []string) error {
 		return nil
 	}
 	fs := flag.NewFlagSet("namrbd-csi-driver", flag.ExitOnError)
+	configPath := fs.String("config", "", "service config file path (AA-IMPL-001H)")
 	endpoint := fs.String("endpoint", "unix:///tmp/namrbd-csi.sock", "CSI listening endpoint, unix://path or tcp://host:port")
-	adminEndpoint := fs.String("admin-endpoint", getenv("NAMRBD_ADMIN_ENDPOINT", "127.0.0.1:9897"), "NAMRBD sbs-service admin gRPC endpoint")
-	adminEndpoints := fs.String("admin-endpoints", getenv("NAMRBD_ADMIN_ENDPOINTS", ""), "optional comma/space-separated SBS admin gRPC endpoints; entries may be node_id=endpoint")
+	adminEndpointDefault, adminEndpointSet, err := getenvCompatOrDefault(envcompat.CSISBSServiceEndpoint, "127.0.0.1:9897")
+	if err != nil {
+		return err
+	}
+	adminEndpointsDefault, adminEndpointsSet, err := getenvCompatOrDefault(envcompat.CSISBSServiceEndpoints, "")
+	if err != nil {
+		return err
+	}
+	adminEndpointDefault = defaultPrimarySBSServiceEndpoint(
+		adminEndpointDefault, adminEndpointSet, adminEndpointsDefault, adminEndpointsSet)
+	adminEndpoint := fs.String("admin-endpoint", adminEndpointDefault, "primary sbs-service gRPC endpoint")
+	adminEndpoints := fs.String("admin-endpoints", adminEndpointsDefault, "optional comma/space-separated sbs-service gRPC endpoints; entries may be node_id=endpoint")
 	clusterID := fs.String("cluster-id", getenv("NAMRBD_CLUSTER_ID", "namrbd-lab"), "NAMRBD cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", getenv("SBS_CLUSTER_ID", getenv("NAMRBD_SBS_CLUSTER_ID", "sbs-lab")), "SBS cluster id")
+	resolvedSBSClusterID, err := envcompat.ResolveCurrent(envcompat.SBSClusterID, os.LookupEnv)
+	if err != nil {
+		return fmt.Errorf("environment configuration: %w", err)
+	}
+	envcompat.WriteWarnings(os.Stderr, resolvedSBSClusterID.Warnings)
+	sbsClusterIDDefault := "sbs-lab"
+	if resolvedSBSClusterID.Present {
+		sbsClusterIDDefault = resolvedSBSClusterID.Value
+	}
+	sbsClusterID := fs.String("sbs-cluster-id", sbsClusterIDDefault, "SBS cluster id")
 	driverName := fs.String("driver-name", csidriver.DefaultDriverName, "CSI driver name")
 	vendorVersion := fs.String("vendor-version", csidriver.DefaultVendorVersion, "CSI vendor version")
 	nodeID := fs.String("node-id", getenv("NAMRBD_CSI_NODE_ID", getenv("HOSTNAME", "")), "CSI node id")
@@ -43,6 +65,26 @@ func run(args []string) error {
 	namrbdctlPath := fs.String("namrbdctl", getenv("NAMRBDCTL", "namrbdctl"), "namrbdctl path used by CSI Node helper")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+
+	// Without --config the driver behaves exactly as before.
+	if strings.TrimSpace(*configPath) != "" {
+		summary, err := applyCSIConfig(*configPath, csiConfigBinding{
+			DriverName:     driverName,
+			NodeID:         nodeID,
+			Endpoint:       endpoint,
+			AdminEndpoint:  adminEndpoint,
+			AdminEndpoints: adminEndpoints,
+			ClusterID:      clusterID,
+			SBSClusterID:   sbsClusterID,
+			GatewayURL:     gatewayURL,
+		}, explicitlySetFlags(fs), osEnvLookup)
+		if blob, mErr := json.Marshal(summary); mErr == nil {
+			fmt.Fprintf(os.Stderr, "service config summary: %s\n", blob)
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	client, err := adminclient.NewLeaderAwareAdminClient(context.Background(), adminclient.LeaderAwareAdminConfig{
@@ -107,6 +149,28 @@ func getenv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func getenvCompatOrDefault(spec envcompat.Spec, fallback string) (string, bool, error) {
+	resolved, err := envcompat.ResolveCurrent(spec, os.LookupEnv)
+	if err != nil {
+		return "", false, fmt.Errorf("environment configuration: %w", err)
+	}
+	envcompat.WriteWarnings(os.Stderr, resolved.Warnings)
+	if resolved.Present {
+		return resolved.Value, true, nil
+	}
+	return fallback, false, nil
+}
+
+func defaultPrimarySBSServiceEndpoint(primary string, primarySet bool, endpoints string, endpointsSet bool) string {
+	if primarySet || !endpointsSet {
+		return primary
+	}
+	if specs := adminclient.ParseEndpointSpecs("", endpoints); len(specs) > 0 {
+		return specs[0].Endpoint
+	}
+	return primary
 }
 
 type adminBackend struct {

@@ -2,10 +2,11 @@ package version
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
-var Current = "v1.0.0-rc"
+var Current = "v1.0.0"
 
 var (
 	Commit    = "unknown"
@@ -71,6 +72,45 @@ func NormalizeProductVersion(v string) (string, error) {
 		return "", err
 	}
 	return v, nil
+}
+
+// AtLeast reports whether current is at or beyond minimum by SemVer core.
+// Prerelease and build suffixes do not postpone compatibility removals: a
+// v1.1.0-rc binary must already enforce the v1.1.0 surface.
+func AtLeast(current, minimum string) (bool, error) {
+	currentCore, err := semVerCore(current)
+	if err != nil {
+		return false, fmt.Errorf("current version: %w", err)
+	}
+	minimumCore, err := semVerCore(minimum)
+	if err != nil {
+		return false, fmt.Errorf("minimum version: %w", err)
+	}
+	for i := range currentCore {
+		if currentCore[i] != minimumCore[i] {
+			return currentCore[i] > minimumCore[i], nil
+		}
+	}
+	return true, nil
+}
+
+func semVerCore(v string) ([3]int, error) {
+	var out [3]int
+	v = strings.TrimSpace(strings.TrimPrefix(v, "v"))
+	if i := strings.IndexAny(v, "+-"); i >= 0 {
+		v = v[:i]
+	}
+	if err := validateSemVerCore(v); err != nil {
+		return out, err
+	}
+	for i, part := range strings.Split(v, ".") {
+		n, err := strconv.Atoi(part)
+		if err != nil {
+			return out, fmt.Errorf("version %q contains an invalid SemVer component: %w", v, err)
+		}
+		out[i] = n
+	}
+	return out, nil
 }
 
 func validateSemVerCore(v string) error {

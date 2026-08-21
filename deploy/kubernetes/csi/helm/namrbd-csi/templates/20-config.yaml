@@ -21,8 +21,8 @@ metadata:
 data:
   NAMRBD_CLUSTER_ID: {{ .Values.config.clusterID | quote }}
   NAMRBD_SBS_CLUSTER_ID: {{ .Values.config.sbsClusterID | quote }}
-  NAMRBD_ADMIN_ENDPOINT: {{ .Values.config.adminEndpoint | quote }}
-  NAMRBD_ADMIN_ENDPOINTS: {{ include "namrbd-csi.adminEndpoints" . | quote }}
+  NAMRBD_SBS_SERVICE_ENDPOINT: {{ .Values.config.adminEndpoint | quote }}
+  NAMRBD_SBS_SERVICE_ENDPOINTS: {{ include "namrbd-csi.adminEndpoints" . | quote }}
   NAMRBD_GATEWAY_URL: {{ .Values.config.gatewayURL | quote }}
   NAMRBD_CSI_DRIVER_NAME: {{ .Values.driverName | quote }}
   NAMRBD_CSI_SOCKET_DIR: {{ .Values.config.socketDir | quote }}

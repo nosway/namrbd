@@ -11,8 +11,35 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nosway/namrbd/internal/depavail"
 	"github.com/nosway/namrbd/sbs/local"
 )
+
+func TestReadyzReportsDependencySurface(t *testing.T) {
+	handler := observabilityMux("", "", nil, false)
+
+	ready := httptest.NewRecorder()
+	handler.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if ready.Code != http.StatusOK {
+		t.Fatalf("/readyz answered %d", ready.Code)
+	}
+	var report depavail.Report
+	if err := json.Unmarshal(ready.Body.Bytes(), &report); err != nil {
+		t.Fatalf("/readyz body is not dependency JSON: %v\n%s", err, ready.Body.String())
+	}
+	if report.Status.Readiness != depavail.ReadinessHealthy {
+		t.Errorf("/readyz readiness=%s, want %s", report.Status.Readiness, depavail.ReadinessHealthy)
+	}
+
+	live := httptest.NewRecorder()
+	handler.ServeHTTP(live, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if live.Code != http.StatusOK {
+		t.Fatalf("/healthz answered %d", live.Code)
+	}
+	if strings.Contains(live.Body.String(), "dependency_readiness") {
+		t.Fatalf("/healthz contains dependency state: %s", live.Body.String())
+	}
+}
 
 func TestObservabilityMuxMultiStoreSmoke(t *testing.T) {
 	dir := t.TempDir()
@@ -241,6 +268,10 @@ func TestObservabilityMuxDisablesLabStoreDebugEndpointsByDefault(t *testing.T) {
 	handler := observabilityMux(filepath.Join(dir, "meta"), "", client, false)
 
 	for _, path := range []string{
+		"/debug/materialize-volume?volume_id=0000007b&size_bytes=1048576&block_size=4096",
+		"/debug/write-pattern?volume_id=0000007b&offset_bytes=0&length_bytes=4096&fill_byte=41",
+		"/debug/allocation-pages?volume_id=0000007b",
+		"/debug/store-shards",
 		"/debug/store-state?store_id=fast&state=failed",
 		"/debug/store-config-reload",
 		"/debug/chunk-gc?volume_id=0000007b&limit=16",
@@ -591,7 +622,7 @@ func TestObservabilityMuxWritePatternAndExtentPages(t *testing.T) {
 	}
 	defer client.Close()
 
-	handler := observabilityMux(filepath.Join(dir, "meta"), "", client, false)
+	handler := observabilityMux(filepath.Join(dir, "meta"), "", client, true)
 
 	req := httptest.NewRequest(http.MethodPost, "/debug/materialize-volume?volume_id=0000007b&size_bytes=1048576&block_size=4096&prefix=smoke-7b&allocation_chunk_size_bytes=65536&allocation_page_bytes=262144", nil)
 	rec := httptest.NewRecorder()
@@ -729,7 +760,7 @@ func TestObservabilityMuxMaterializeRejectsGeometryChange(t *testing.T) {
 	}
 	defer client.Close()
 
-	handler := observabilityMux(filepath.Join(dir, "meta"), "", client, false)
+	handler := observabilityMux(filepath.Join(dir, "meta"), "", client, true)
 
 	req := httptest.NewRequest(http.MethodPost, "/debug/materialize-volume?volume_id=0000007c&size_bytes=1048576&block_size=4096&prefix=smoke-7c&allocation_chunk_size_bytes=65536&allocation_page_bytes=262144", nil)
 	rec := httptest.NewRecorder()

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cockroachdb/pebble"
@@ -40,20 +41,26 @@ type Client struct {
 	disablePhysicalWriteIdempotency bool
 	traceDataOperations             bool
 
-	mu          sync.Mutex
-	open        map[string]openSession
-	storeStates map[string]string
+	mu                   sync.Mutex
+	open                 map[string]openSession
+	storeStates          map[string]string
+	fences               map[string]service.ISCSIWriterFence
+	fenceLoaded          map[string]bool
+	fenceTransitionLocks sync.Map
+	staleWriterRejected  atomic.Uint64
 }
 
 type ObservabilitySnapshot struct {
-	BuildVersion       string               `json:"build_version"`
-	Volumes            int                  `json:"volumes"`
-	OpenSessions       int                  `json:"open_sessions"`
-	ExtentPages        int                  `json:"extent_pages"`
-	GarbageChunks      int                  `json:"garbage_chunks"`
-	IdempotencyRecords int                  `json:"idempotency_records"`
-	Stores             []StoreSnapshot      `json:"stores"`
-	Timings            ObservabilityTimings `json:"timings"`
+	BuildVersion             string               `json:"build_version"`
+	Volumes                  int                  `json:"volumes"`
+	OpenSessions             int                  `json:"open_sessions"`
+	ExtentPages              int                  `json:"extent_pages"`
+	GarbageChunks            int                  `json:"garbage_chunks"`
+	IdempotencyRecords       int                  `json:"idempotency_records"`
+	ISCSIWriterFences        int                  `json:"iscsi_writer_fences"`
+	StaleWriterRejectedCount uint64               `json:"stale_writer_rejected_count"`
+	Stores                   []StoreSnapshot      `json:"stores"`
+	Timings                  ObservabilityTimings `json:"timings"`
 }
 
 type ObservabilityTimings struct {
@@ -80,10 +87,14 @@ type VolumePurgeResult struct {
 }
 
 type openSession struct {
-	handle       string
-	attachmentID string
-	generation   uint64
-	spec         service.VolumeSpec
+	handle             string
+	attachmentID       string
+	generation         uint64
+	gatewayID          string
+	iscsiExportID      string
+	iscsiExportLeaseID string
+	iscsiExportEpoch   uint64
+	spec               service.VolumeSpec
 }
 
 type idempotencyRecord struct {
@@ -141,6 +152,8 @@ func Open(cfg Config) (*Client, error) {
 		traceDataOperations:             cfg.TraceDataOperations,
 		open:                            make(map[string]openSession),
 		storeStates:                     storeStates,
+		fences:                          make(map[string]service.ISCSIWriterFence),
+		fenceLoaded:                     make(map[string]bool),
 	}
 	planner := newStorePlanner(client.currentStoreSpecs, client.currentStoreStates)
 	client.data = service.NewChunkExtentDataRepositoryWithPlanner(meta, objects, planner)
@@ -173,6 +186,9 @@ func (c *Client) ObservabilitySnapshot() (ObservabilitySnapshot, error) {
 	}
 	metadataScanDuration := time.Since(metadataScanStartedAt)
 	openSessions, stores, storeStates := c.snapshotStoreView()
+	c.mu.Lock()
+	fenceCount := len(c.fences)
+	c.mu.Unlock()
 	storeSnapshots := make([]StoreSnapshot, 0, len(stores))
 	storeRuntimeSnapshots := map[string]storeRuntimeSnapshot{}
 	storeRuntimeStartedAt := time.Now()
@@ -205,13 +221,15 @@ func (c *Client) ObservabilitySnapshot() (ObservabilitySnapshot, error) {
 		})
 	}
 	return ObservabilitySnapshot{
-		BuildVersion:       c.version,
-		Volumes:            counts.Volumes,
-		OpenSessions:       openSessions,
-		ExtentPages:        counts.ExtentPages,
-		GarbageChunks:      counts.GarbageChunks,
-		IdempotencyRecords: counts.IdempotencyRecords,
-		Stores:             storeSnapshots,
+		BuildVersion:             c.version,
+		Volumes:                  counts.Volumes,
+		OpenSessions:             openSessions,
+		ExtentPages:              counts.ExtentPages,
+		GarbageChunks:            counts.GarbageChunks,
+		IdempotencyRecords:       counts.IdempotencyRecords,
+		ISCSIWriterFences:        fenceCount,
+		StaleWriterRejectedCount: c.staleWriterRejected.Load(),
+		Stores:                   storeSnapshots,
 		Timings: ObservabilityTimings{
 			MetadataScanMs: metadataScanDuration.Milliseconds(),
 			StoreRuntimeMs: storeRuntimeDuration.Milliseconds(),
@@ -455,6 +473,12 @@ func (c *Client) OpenVolume(ctx context.Context, req *service.OpenVolumeRequest)
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
+	fenceLock := c.writerFenceTransitionLock(req.VolumeID)
+	fenceLock.RLock()
+	defer fenceLock.RUnlock()
+	if err := c.validateISCSIWriterFence(ctx, req.VolumeID, req.Context); err != nil {
+		return nil, err
+	}
 	spec, err := c.lookupVolume(ctx, req.VolumeID)
 	if err != nil {
 		return nil, err
@@ -468,14 +492,22 @@ func (c *Client) OpenVolume(ctx context.Context, req *service.OpenVolumeRequest)
 			return nil, attachmentMismatch("volume already opened by different writer context")
 		}
 		handle = current.handle
+		current.gatewayID = req.Context.GatewayID
+		current.iscsiExportID = req.Context.ISCSIExportID
+		current.iscsiExportLeaseID = req.Context.ISCSIExportLeaseID
+		current.iscsiExportEpoch = req.Context.ISCSIExportEpoch
 		current.spec = spec
 		c.open[req.VolumeID] = current
 	} else {
 		c.open[req.VolumeID] = openSession{
-			handle:       handle,
-			attachmentID: req.Context.AttachmentID,
-			generation:   req.Context.Generation,
-			spec:         spec,
+			handle:             handle,
+			attachmentID:       req.Context.AttachmentID,
+			generation:         req.Context.Generation,
+			gatewayID:          req.Context.GatewayID,
+			iscsiExportID:      req.Context.ISCSIExportID,
+			iscsiExportLeaseID: req.Context.ISCSIExportLeaseID,
+			iscsiExportEpoch:   req.Context.ISCSIExportEpoch,
+			spec:               spec,
 		}
 	}
 
@@ -604,6 +636,9 @@ func (c *Client) Write(ctx context.Context, req *service.WriteRequest) (*service
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
+	fenceLock := c.writerFenceTransitionLock(req.VolumeID)
+	fenceLock.RLock()
+	defer fenceLock.RUnlock()
 	spec, _, err := c.requireOpen(ctx, req.VolumeID, req.VolumeHandle, req.Context)
 	if err != nil {
 		return nil, err
@@ -769,6 +804,9 @@ func (c *Client) WritePhysicalChunk(ctx context.Context, req *service.WritePhysi
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
+	fenceLock := c.writerFenceTransitionLock(req.VolumeID)
+	fenceLock.RLock()
+	defer fenceLock.RUnlock()
 	spec, _, err := c.requireOpen(ctx, req.VolumeID, req.VolumeHandle, req.Context)
 	if err != nil {
 		return nil, err
@@ -898,6 +936,9 @@ func (c *Client) WriteECShard(ctx context.Context, req *service.WriteECShardRequ
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
+	fenceLock := c.writerFenceTransitionLock(req.VolumeID)
+	fenceLock.RLock()
+	defer fenceLock.RUnlock()
 	requireOpenStart := time.Now()
 	if _, _, err := c.requireOpen(ctx, req.VolumeID, req.VolumeHandle, req.Context); err != nil {
 		return nil, err
@@ -999,6 +1040,9 @@ func (c *Client) DeleteECShard(ctx context.Context, req *service.DeleteECShardRe
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
+	fenceLock := c.writerFenceTransitionLock(req.VolumeID)
+	fenceLock.RLock()
+	defer fenceLock.RUnlock()
 	if _, _, err := c.requireOpen(ctx, req.VolumeID, req.VolumeHandle, req.Context); err != nil {
 		return nil, err
 	}
@@ -1038,6 +1082,9 @@ func (c *Client) Flush(ctx context.Context, req *service.FlushRequest) (*service
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
+	fenceLock := c.writerFenceTransitionLock(req.VolumeID)
+	fenceLock.RLock()
+	defer fenceLock.RUnlock()
 	if _, _, err := c.requireOpen(ctx, req.VolumeID, req.VolumeHandle, req.Context); err != nil {
 		return nil, err
 	}
@@ -1093,6 +1140,9 @@ func (c *Client) Zero(ctx context.Context, req *service.ZeroRequest) (*service.Z
 }
 
 func (c *Client) zeroLike(ctx context.Context, volumeID string, offsetBytes, lengthBytes uint64, reqCtx service.SBSRequestContext, op string) (*service.WriteResponse, error) {
+	fenceLock := c.writerFenceTransitionLock(volumeID)
+	fenceLock.RLock()
+	defer fenceLock.RUnlock()
 	spec, _, err := c.requireOpen(ctx, volumeID, "", reqCtx)
 	if err != nil {
 		return nil, err
@@ -1137,6 +1187,9 @@ func (c *Client) lookupVolume(ctx context.Context, volumeID string) (service.Vol
 }
 
 func (c *Client) requireOpen(ctx context.Context, volumeID, handle string, reqCtx service.SBSRequestContext) (service.VolumeSpec, openSession, error) {
+	if err := c.validateISCSIWriterFence(ctx, volumeID, reqCtx); err != nil {
+		return service.VolumeSpec{}, openSession{}, err
+	}
 	if c.cacheOpenVolumeSpec {
 		c.mu.Lock()
 		current, ok := c.open[volumeID]
@@ -1151,12 +1204,106 @@ func (c *Client) requireOpen(ctx context.Context, volumeID, handle string, reqCt
 		return service.VolumeSpec{}, openSession{}, err
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	current, ok := c.open[volumeID]
 	if err := validateOpenSession(current, ok, handle, reqCtx); err != nil {
+		c.mu.Unlock()
 		return service.VolumeSpec{}, openSession{}, err
 	}
+	c.mu.Unlock()
 	return spec, current, nil
+}
+
+func (c *Client) ApplyISCSIWriterFence(ctx context.Context, req *service.ApplyISCSIWriterFenceRequest) (*service.ApplyISCSIWriterFenceResponse, error) {
+	if req == nil {
+		return nil, badRequest("nil request")
+	}
+	fence := req.Fence
+	if err := fence.Validate(); err != nil {
+		return nil, badRequest(err.Error())
+	}
+	fenceLock := c.writerFenceTransitionLock(fence.VolumeID)
+	fenceLock.Lock()
+	defer fenceLock.Unlock()
+	current, found, err := c.meta.getISCSIWriterFence(ctx, fence.VolumeID)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		if fence.ExportEpoch < current.ExportEpoch {
+			return nil, fencedError(fmt.Sprintf("export epoch %d is stale; receiver has %d", fence.ExportEpoch, current.ExportEpoch))
+		}
+		if fence.ExportEpoch == current.ExportEpoch {
+			if current != fence {
+				return nil, fencedError("conflicting writer fence at the current export epoch")
+			}
+			return &service.ApplyISCSIWriterFenceResponse{
+				Status: "ok", Applied: false, Fence: current,
+				StaleWriterRejectedCount: c.staleWriterRejected.Load(),
+			}, nil
+		}
+	}
+	if err := c.meta.putISCSIWriterFence(ctx, fence); err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	c.fences[fence.VolumeID] = fence
+	c.fenceLoaded[fence.VolumeID] = true
+	if session, ok := c.open[fence.VolumeID]; ok && !sessionMatchesISCSIWriterFence(session, fence) {
+		delete(c.open, fence.VolumeID)
+	}
+	c.mu.Unlock()
+	return &service.ApplyISCSIWriterFenceResponse{
+		Status: "ok", Applied: true, Fence: fence,
+		StaleWriterRejectedCount: c.staleWriterRejected.Load(),
+	}, nil
+}
+
+func (c *Client) validateISCSIWriterFence(ctx context.Context, volumeID string, reqCtx service.SBSRequestContext) error {
+	fence, found, err := c.currentISCSIWriterFence(ctx, volumeID)
+	if err != nil || !found {
+		return err
+	}
+	if reqCtx.ISCSIExportID == fence.ExportID &&
+		reqCtx.ISCSIExportLeaseID == fence.ExportLeaseID &&
+		reqCtx.ISCSIExportEpoch == fence.ExportEpoch &&
+		reqCtx.GatewayID == fence.ActiveGatewayID {
+		return nil
+	}
+	c.staleWriterRejected.Add(1)
+	return fencedError(fmt.Sprintf("writer token rejected for export %s at epoch %d", fence.ExportID, fence.ExportEpoch))
+}
+
+func (c *Client) currentISCSIWriterFence(ctx context.Context, volumeID string) (service.ISCSIWriterFence, bool, error) {
+	c.mu.Lock()
+	if c.fenceLoaded[volumeID] {
+		fence, found := c.fences[volumeID]
+		c.mu.Unlock()
+		return fence, found, nil
+	}
+	c.mu.Unlock()
+	fence, found, err := c.meta.getISCSIWriterFence(ctx, volumeID)
+	if err != nil {
+		return service.ISCSIWriterFence{}, false, err
+	}
+	c.mu.Lock()
+	c.fenceLoaded[volumeID] = true
+	if found {
+		c.fences[volumeID] = fence
+	}
+	c.mu.Unlock()
+	return fence, found, nil
+}
+
+func sessionMatchesISCSIWriterFence(session openSession, fence service.ISCSIWriterFence) bool {
+	return session.gatewayID == fence.ActiveGatewayID &&
+		session.iscsiExportID == fence.ExportID &&
+		session.iscsiExportLeaseID == fence.ExportLeaseID &&
+		session.iscsiExportEpoch == fence.ExportEpoch
+}
+
+func (c *Client) writerFenceTransitionLock(volumeID string) *sync.RWMutex {
+	lock, _ := c.fenceTransitionLocks.LoadOrStore(volumeID, &sync.RWMutex{})
+	return lock.(*sync.RWMutex)
 }
 
 func validateOpenSession(current openSession, ok bool, handle string, reqCtx service.SBSRequestContext) error {
@@ -1280,6 +1427,10 @@ func attachmentMismatch(msg string) error {
 
 func staleGeneration(msg string) error {
 	return &service.SBSError{Code: service.SBSErrorCodeStaleGeneration, Message: msg}
+}
+
+func fencedError(msg string) error {
+	return &service.SBSError{Code: service.SBSErrorCodeFenced, Message: msg}
 }
 
 func notFound(msg string) error {

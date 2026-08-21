@@ -47,14 +47,14 @@ export NAMRBD_ETCD_ROOT="/namrbd/prod"
 export NAMRBD_TIKV_PD_ENDPOINTS="pd01:2379"
 export NAMRBD_TIKV_API_VERSION="v1"
 export NAMRBD_TIKV_KEYSPACE="namrbd-prod-001"
-export NAMRBD_SBS_ADMIN_ENDPOINT="service-01.example.com:9443"
+export NAMRBD_SBS_SERVICE_ENDPOINT="service-01.example.com:9443"
 ```
 
 Ownership rules:
 
 - Gateway uses `--metadata-backend=etcd` for gateway/control-plane state.
 - `sbs-service` owns SBS authoritative metadata through TiKV/PD.
-- Gateway talks to SBS authority through `--sbs-admin-endpoint`; it does not open raw SBS TiKV metadata in primary runtime.
+- Gateway talks to SBS authority through `--sbs-service-endpoint`; it does not open raw SBS TiKV metadata in primary runtime.
 - Local Pebble SBS metadata and `--sbs-cluster-bootstrap-metadata` are legacy/dev bootstrap paths only.
 
 ## 2. Developer Build And Test
@@ -156,16 +156,16 @@ Start `sbs-data` on each storage node:
 ``` bash
 ./sbs-data \
   --node-id data-01 \
-  --data-path /var/lib/namrbd/sbs-data \
-  --grpc-listen 0.0.0.0:9460 \
-  --http-listen 0.0.0.0:9082
+  --path /var/lib/namrbd/sbs-data \
+  --sbs-data-listen 0.0.0.0:9444 \
+  --sbs-data-http-listen 0.0.0.0:9082
 ```
 
 Health and store checks:
 
 ``` bash
 curl -fsS http://data-01.example.com:9082/healthz
-sbsctl store status --admin-http-endpoint http://data-01.example.com:9082
+sbsctl store status --sbs-service-http-endpoint http://data-01.example.com:9082
 ```
 
 For multi-store nodes, pass explicit store/shard definitions and keep store IDs stable across restarts.
@@ -183,14 +183,14 @@ Start `sbs-service` on service nodes. Example for `service-01`:
   --tikv-pd-endpoints "$NAMRBD_TIKV_PD_ENDPOINTS" \
   --tikv-api-version "$NAMRBD_TIKV_API_VERSION" \
   --tikv-keyspace "$NAMRBD_TIKV_KEYSPACE" \
-  --grpc-listen 0.0.0.0:9443 \
-  --http-listen 0.0.0.0:9081
+  --sbs-service-listen 0.0.0.0:9443 \
+  --sbs-service-http-listen 0.0.0.0:9081
 ```
 
 Set an admin endpoint for operator commands:
 
 ``` bash
-export SBS_ADMIN_ENDPOINTS="service-01.example.com:9443"
+export NAMRBD_SBS_SERVICE_ENDPOINTS="service-01.example.com:9443"
 curl -fsS http://service-01.example.com:9081/healthz
 ```
 
@@ -207,15 +207,15 @@ sbsctl cluster status --output json
 Join storage nodes:
 
 ``` bash
-sbsctl node join --node-id data-01 --grpc-endpoint data-01.example.com:9460 --admin-http-endpoint http://data-01.example.com:9082 --zone zone-a
-sbsctl node join --node-id data-02 --grpc-endpoint data-02.example.com:9460 --admin-http-endpoint http://data-02.example.com:9082 --zone zone-a
-sbsctl node join --node-id data-03 --grpc-endpoint data-03.example.com:9460 --admin-http-endpoint http://data-03.example.com:9082 --zone zone-a
-sbsctl node join --node-id data-04 --grpc-endpoint data-04.example.com:9460 --admin-http-endpoint http://data-04.example.com:9082 --zone zone-b
-sbsctl node join --node-id data-05 --grpc-endpoint data-05.example.com:9460 --admin-http-endpoint http://data-05.example.com:9082 --zone zone-b
-sbsctl node join --node-id data-06 --grpc-endpoint data-06.example.com:9460 --admin-http-endpoint http://data-06.example.com:9082 --zone zone-b
-sbsctl node join --node-id data-07 --grpc-endpoint data-07.example.com:9460 --admin-http-endpoint http://data-07.example.com:9082 --zone zone-c
-sbsctl node join --node-id data-08 --grpc-endpoint data-08.example.com:9460 --admin-http-endpoint http://data-08.example.com:9082 --zone zone-c
-sbsctl node join --node-id data-09 --grpc-endpoint data-09.example.com:9460 --admin-http-endpoint http://data-09.example.com:9082 --zone zone-c
+sbsctl node join --node-id data-01 --grpc-endpoint data-01.example.com:9444 --sbs-service-http-endpoint http://data-01.example.com:9082 --zone zone-a
+sbsctl node join --node-id data-02 --grpc-endpoint data-02.example.com:9444 --sbs-service-http-endpoint http://data-02.example.com:9082 --zone zone-a
+sbsctl node join --node-id data-03 --grpc-endpoint data-03.example.com:9444 --sbs-service-http-endpoint http://data-03.example.com:9082 --zone zone-a
+sbsctl node join --node-id data-04 --grpc-endpoint data-04.example.com:9444 --sbs-service-http-endpoint http://data-04.example.com:9082 --zone zone-b
+sbsctl node join --node-id data-05 --grpc-endpoint data-05.example.com:9444 --sbs-service-http-endpoint http://data-05.example.com:9082 --zone zone-b
+sbsctl node join --node-id data-06 --grpc-endpoint data-06.example.com:9444 --sbs-service-http-endpoint http://data-06.example.com:9082 --zone zone-b
+sbsctl node join --node-id data-07 --grpc-endpoint data-07.example.com:9444 --sbs-service-http-endpoint http://data-07.example.com:9082 --zone zone-c
+sbsctl node join --node-id data-08 --grpc-endpoint data-08.example.com:9444 --sbs-service-http-endpoint http://data-08.example.com:9082 --zone zone-c
+sbsctl node join --node-id data-09 --grpc-endpoint data-09.example.com:9444 --sbs-service-http-endpoint http://data-09.example.com:9082 --zone zone-c
 ```
 
 Confirm:
@@ -232,7 +232,7 @@ Start each gateway with `etcd` plus the `sbs-service` admin endpoint:
 ``` bash
 ./namrbd-gateway \
   --gateway-id gw-gw01 \
-  --listen 0.0.0.0:9899 \
+  --control-http-listen 0.0.0.0:9899 \
   --data-listen 0.0.0.0:9898 \
   --advertise-control-address 10.30.0.11 \
   --advertise-data-address 10.30.0.11 \
@@ -240,8 +240,8 @@ Start each gateway with `etcd` plus the `sbs-service` admin endpoint:
   --etcd-endpoints "$NAMRBD_ETCD_ENDPOINTS" \
   --etcd-root "$NAMRBD_ETCD_ROOT" \
   --volume-cache-ttl 30s \
-  --data-backend-mode sbs-cluster \
-  --sbs-admin-endpoint "$NAMRBD_SBS_ADMIN_ENDPOINT"
+  --data-backend-mode sbs \
+  --sbs-service-endpoint "$NAMRBD_SBS_SERVICE_ENDPOINT"
 ```
 
 Additional gateways use unique `--gateway-id` and advertised addresses while sharing the same `etcd` root and SBS admin authority.
@@ -318,7 +318,7 @@ export NAMRBD_ISCSI_TARGET_IQN="iqn.2026-06.io.namrbd:iscsi.00000065"
   --backend=sbs \
   --portal "$NAMRBD_ISCSI_PORTAL" \
   --serve \
-  --sbs-endpoint data-01.example.com:9460 \
+  --sbs-endpoint data-01.example.com:9444 \
   --volume-id 00000065 \
   --export-id iscsi-00000065 \
   --target-iqn "$NAMRBD_ISCSI_TARGET_IQN" \

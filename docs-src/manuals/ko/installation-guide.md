@@ -47,14 +47,14 @@ export NAMRBD_ETCD_ROOT="/namrbd/prod"
 export NAMRBD_TIKV_PD_ENDPOINTS="pd01:2379"
 export NAMRBD_TIKV_API_VERSION="v1"
 export NAMRBD_TIKV_KEYSPACE="namrbd-prod-001"
-export NAMRBD_SBS_ADMIN_ENDPOINT="service-01.example.com:9443"
+export NAMRBD_SBS_SERVICE_ENDPOINT="service-01.example.com:9443"
 ```
 
 소유권 규칙:
 
 - 게이트웨이는 게이트웨이/컨트롤 플레인 상태 관리를 위해 `--metadata-backend=etcd`를 사용합니다.
 - `sbs-service`는 TiKV/PD를 통해 SBS 공속 메타데이터 권한을 소유합니다.
-- 게이트웨이는 `--sbs-admin-endpoint`를 통해 SBS 권한 레이어와 통신하며, 기본 런타임에서 raw SBS TiKV 메타데이터를 직접 열지 않습니다.
+- 게이트웨이는 `--sbs-service-endpoint`를 통해 SBS 권한 레이어와 통신하며, 기본 런타임에서 raw SBS TiKV 메타데이터를 직접 열지 않습니다.
 - 로컬 Pebble SBS 메타데이터와 `--sbs-cluster-bootstrap-metadata`는 레거시/개발용 부트스트랩 경로 전용입니다.
 
 ## 2. 개발자 빌드와 테스트
@@ -158,16 +158,16 @@ export NAMRBD_TIKV_KEYSPACE="namrbd-prod-001"
 ``` bash
 ./sbs-data \
   --node-id data-01 \
-  --data-path /var/lib/namrbd/sbs-data \
-  --grpc-listen 0.0.0.0:9460 \
-  --http-listen 0.0.0.0:9082
+  --path /var/lib/namrbd/sbs-data \
+  --sbs-data-listen 0.0.0.0:9444 \
+  --sbs-data-http-listen 0.0.0.0:9082
 ```
 
 헬스체크 및 스토어 상태 점검:
 
 ``` bash
 curl -fsS http://data-01.example.com:9082/healthz
-sbsctl store status --admin-http-endpoint http://data-01.example.com:9082
+sbsctl store status --sbs-service-http-endpoint http://data-01.example.com:9082
 ```
 
 다중 스토어 노드의 경우 명시적인 스토어/샤드 정의를 전달하고 재시작 시에도 스토어 ID가 안정적으로 유지되도록 하십시오.
@@ -185,14 +185,14 @@ sbsctl store status --admin-http-endpoint http://data-01.example.com:9082
   --tikv-pd-endpoints "$NAMRBD_TIKV_PD_ENDPOINTS" \
   --tikv-api-version "$NAMRBD_TIKV_API_VERSION" \
   --tikv-keyspace "$NAMRBD_TIKV_KEYSPACE" \
-  --grpc-listen 0.0.0.0:9443 \
-  --http-listen 0.0.0.0:9081
+  --sbs-service-listen 0.0.0.0:9443 \
+  --sbs-service-http-listen 0.0.0.0:9081
 ```
 
 운영자 명령을 위한 관리 엔드포인트를 지정합니다:
 
 ``` bash
-export SBS_ADMIN_ENDPOINTS="service-01.example.com:9443"
+export NAMRBD_SBS_SERVICE_ENDPOINTS="service-01.example.com:9443"
 curl -fsS http://service-01.example.com:9081/healthz
 ```
 
@@ -209,15 +209,15 @@ sbsctl cluster status --output json
 스토리지 노드들을 가입시킵니다:
 
 ``` bash
-sbsctl node join --node-id data-01 --grpc-endpoint data-01.example.com:9460 --admin-http-endpoint http://data-01.example.com:9082 --zone zone-a
-sbsctl node join --node-id data-02 --grpc-endpoint data-02.example.com:9460 --admin-http-endpoint http://data-02.example.com:9082 --zone zone-a
-sbsctl node join --node-id data-03 --grpc-endpoint data-03.example.com:9460 --admin-http-endpoint http://data-03.example.com:9082 --zone zone-a
-sbsctl node join --node-id data-04 --grpc-endpoint data-04.example.com:9460 --admin-http-endpoint http://data-04.example.com:9082 --zone zone-b
-sbsctl node join --node-id data-05 --grpc-endpoint data-05.example.com:9460 --admin-http-endpoint http://data-05.example.com:9082 --zone zone-b
-sbsctl node join --node-id data-06 --grpc-endpoint data-06.example.com:9460 --admin-http-endpoint http://data-06.example.com:9082 --zone zone-b
-sbsctl node join --node-id data-07 --grpc-endpoint data-07.example.com:9460 --admin-http-endpoint http://data-07.example.com:9082 --zone zone-c
-sbsctl node join --node-id data-08 --grpc-endpoint data-08.example.com:9460 --admin-http-endpoint http://data-08.example.com:9082 --zone zone-c
-sbsctl node join --node-id data-09 --grpc-endpoint data-09.example.com:9460 --admin-http-endpoint http://data-09.example.com:9082 --zone zone-c
+sbsctl node join --node-id data-01 --grpc-endpoint data-01.example.com:9444 --sbs-service-http-endpoint http://data-01.example.com:9082 --zone zone-a
+sbsctl node join --node-id data-02 --grpc-endpoint data-02.example.com:9444 --sbs-service-http-endpoint http://data-02.example.com:9082 --zone zone-a
+sbsctl node join --node-id data-03 --grpc-endpoint data-03.example.com:9444 --sbs-service-http-endpoint http://data-03.example.com:9082 --zone zone-a
+sbsctl node join --node-id data-04 --grpc-endpoint data-04.example.com:9444 --sbs-service-http-endpoint http://data-04.example.com:9082 --zone zone-b
+sbsctl node join --node-id data-05 --grpc-endpoint data-05.example.com:9444 --sbs-service-http-endpoint http://data-05.example.com:9082 --zone zone-b
+sbsctl node join --node-id data-06 --grpc-endpoint data-06.example.com:9444 --sbs-service-http-endpoint http://data-06.example.com:9082 --zone zone-b
+sbsctl node join --node-id data-07 --grpc-endpoint data-07.example.com:9444 --sbs-service-http-endpoint http://data-07.example.com:9082 --zone zone-c
+sbsctl node join --node-id data-08 --grpc-endpoint data-08.example.com:9444 --sbs-service-http-endpoint http://data-08.example.com:9082 --zone zone-c
+sbsctl node join --node-id data-09 --grpc-endpoint data-09.example.com:9444 --sbs-service-http-endpoint http://data-09.example.com:9082 --zone zone-c
 ```
 
 연동 상태 확인:
@@ -234,7 +234,7 @@ sbsctl node status --node-id data-01 --output json
 ``` bash
 ./namrbd-gateway \
   --gateway-id gw-gw01 \
-  --listen 0.0.0.0:9899 \
+  --control-http-listen 0.0.0.0:9899 \
   --data-listen 0.0.0.0:9898 \
   --advertise-control-address 10.30.0.11 \
   --advertise-data-address 10.30.0.11 \
@@ -242,8 +242,8 @@ sbsctl node status --node-id data-01 --output json
   --etcd-endpoints "$NAMRBD_ETCD_ENDPOINTS" \
   --etcd-root "$NAMRBD_ETCD_ROOT" \
   --volume-cache-ttl 30s \
-  --data-backend-mode sbs-cluster \
-  --sbs-admin-endpoint "$NAMRBD_SBS_ADMIN_ENDPOINT"
+  --data-backend-mode sbs \
+  --sbs-service-endpoint "$NAMRBD_SBS_SERVICE_ENDPOINT"
 ```
 
 추가 게이트웨이들은 동일한 `etcd` 루트 및 SBS 관리 권한을 공유하면서, 고유한 `--gateway-id` 및 광고용 주소(advertised address)를 사용합니다.
@@ -320,7 +320,7 @@ export NAMRBD_ISCSI_TARGET_IQN="iqn.2026-06.io.namrbd:iscsi.00000065"
   --backend=sbs \
   --portal "$NAMRBD_ISCSI_PORTAL" \
   --serve \
-  --sbs-endpoint data-01.example.com:9460 \
+  --sbs-endpoint data-01.example.com:9444 \
   --volume-id 00000065 \
   --export-id iscsi-00000065 \
   --target-iqn "$NAMRBD_ISCSI_TARGET_IQN" \

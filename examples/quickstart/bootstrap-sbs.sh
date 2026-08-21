@@ -237,7 +237,7 @@ wait_ready "sbs-service" "http://127.0.0.1:${admin_http_port}/readyz"
 if ! run_sbsctl cluster init \
 	--cluster-id "$cluster_id" \
 	--sbs-cluster-id "$sbs_cluster_id" \
-	--admin-endpoint sbs-service:9443 >/dev/null; then
+	--sbs-service-endpoint sbs-service:9443 >/dev/null; then
 	fatal "SBS cluster init failed"
 fi
 record_ok "SBS cluster initialized"
@@ -245,10 +245,10 @@ record_ok "SBS cluster initialized"
 if ! run_sbsctl node join \
 	--cluster-id "$cluster_id" \
 	--sbs-cluster-id "$sbs_cluster_id" \
-	--admin-endpoint sbs-service:9443 \
+	--sbs-service-endpoint sbs-service:9443 \
 	--node-id "$data_node_id" \
 	--grpc-endpoint sbs-data:9444 \
-	--admin-http-endpoint http://sbs-data:9082 \
+	--sbs-service-http-endpoint http://sbs-data:9082 \
 	--zone zone-a \
 	--auto-create-zone >/dev/null; then
 	fatal "SBS data node join failed"
@@ -256,7 +256,7 @@ fi
 record_ok "SBS data node joined"
 
 if ! run_sbsctl cluster status \
-	--admin-endpoint sbs-service:9443 \
+	--sbs-service-endpoint sbs-service:9443 \
 	--output json >"$cluster_status_json"; then
 	fatal "cluster status failed"
 fi
@@ -281,13 +281,13 @@ if is_true "$include_gateway"; then
 fi
 
 if run_sbsctl volume status \
-	--admin-endpoint sbs-service:9443 \
+	--sbs-service-endpoint sbs-service:9443 \
 	--volume-id "$volume_id" \
 	--output json >"$volume_status_json" 2>/dev/null; then
 	record_ok "volume already exists"
 else
 	if ! run_sbsctl volume create \
-		--admin-endpoint sbs-service:9443 \
+		--sbs-service-endpoint sbs-service:9443 \
 		--volume-id "$volume_id" \
 		--size "$volume_size" \
 		--block-size 4K \
@@ -296,7 +296,7 @@ else
 		fatal "volume create failed"
 	fi
 	if ! run_sbsctl volume status \
-		--admin-endpoint sbs-service:9443 \
+		--sbs-service-endpoint sbs-service:9443 \
 		--volume-id "$volume_id" \
 		--output json >"$volume_status_json"; then
 		fatal "volume status failed after create"

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nosway/namrbd/internal/depavail"
 	"io"
 	"net/http"
 	"sort"
@@ -26,6 +27,7 @@ import (
 type Server struct {
 	svc                             *service.Service
 	cfg                             Config
+	dependency                      *depavail.Tracker
 	performanceAdmission            *gatewayPerformanceAdmission
 	performanceAdmissionConfigError error
 }
@@ -64,6 +66,7 @@ type Config struct {
 	OnDetachSuccess  func(volumeID uint64)
 	ClusterNodeDebug *clustercontrol.Controller
 	MetadataRepo     service.MetadataRepository
+	EtcdPressure     func() EtcdPressureSnapshot
 	AttachAdmission  AttachAdmissionFunc
 
 	PerformanceAdmission         PerformanceAdmissionConfig
@@ -73,6 +76,18 @@ type Config struct {
 	HTTPZeroBase64ReadFastPath  bool
 	InitialZeroMapEvidence      bool
 	ReadPathAttribution         bool
+}
+
+// EtcdPressureSnapshot is the gateway-facing projection of metadata pressure.
+// Keeping the callback in Config avoids coupling the HTTP package to one
+// repository implementation while still making the live scale budget
+// observable from every process.
+type EtcdPressureSnapshot struct {
+	PrefixScanCount        int64
+	StatusWriteCount       int64
+	PointReadCount         int64
+	ResyncCount            int64
+	SkippedValidationCount int64
 }
 
 func New(svc *service.Service, cfg Config) *Server {
@@ -89,7 +104,11 @@ func New(svc *service.Service, cfg Config) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealthz)
-	mux.HandleFunc("/readyz", s.handleHealthz)
+	// Liveness and readiness are no longer the same answer. /healthz says the
+	// process is alive; /readyz says what it will and will not do given its
+	// dependencies. Collapsing them, as this did, meant an operator could not
+	// tell a healthy gateway from one serving entirely on cache.
+	mux.HandleFunc("/readyz", s.handleReadyz)
 	mux.HandleFunc("/metrics", s.handlePrometheusMetrics)
 	mux.HandleFunc("/api/v1/volumes/", s.handleVolumeRoutes)
 	mux.HandleFunc("/api/v1/discovery/gateways", s.handleDiscoveryGateways)
@@ -100,6 +119,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/debug/sbs-cluster/volumes/", s.handleClusterVolumeRoutes)
 	mux.HandleFunc("/api/v1/debug/sbs-cluster/metrics", s.handleClusterMetrics)
 	return mux
+}
+
+// SetDependencyTracker installs the tracker /readyz reports from.
+func (s *Server) SetDependencyTracker(t *depavail.Tracker) { s.dependency = t }
+
+// handleReadyz resolves the tracker per request rather than at route
+// registration, so a tracker installed after the mux is built is still the one
+// reported from.
+//
+// A server with no tracker reports the healthy defaults of a fresh one, which
+// is the right answer for a process that has no dependencies to lose: silence
+// is not evidence of an outage.
+func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	t := s.dependency
+	if t == nil {
+		t = depavail.NewTracker(depavail.DefaultThresholds())
+	}
+	depavail.ReadinessHandler(t).ServeHTTP(w, r)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +165,17 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 		prometheusLabelValue(s.cfg.RuntimeMode),
 		strconv.FormatBool(s.cfg.AdminEndpointConfigured),
 	)
+	pressure := EtcdPressureSnapshot{}
+	if s.cfg.EtcdPressure != nil {
+		pressure = s.cfg.EtcdPressure()
+	}
+	_, _ = fmt.Fprintln(w, "# HELP namrbd_gateway_etcd_operations_total Gateway metadata requests to etcd by operation class.")
+	_, _ = fmt.Fprintln(w, "# TYPE namrbd_gateway_etcd_operations_total counter")
+	_, _ = fmt.Fprintf(w, "namrbd_gateway_etcd_operations_total{operation=\"prefix_scan\"} %d\n", pressure.PrefixScanCount)
+	_, _ = fmt.Fprintf(w, "namrbd_gateway_etcd_operations_total{operation=\"status_write\"} %d\n", pressure.StatusWriteCount)
+	_, _ = fmt.Fprintf(w, "namrbd_gateway_etcd_operations_total{operation=\"point_read\"} %d\n", pressure.PointReadCount)
+	_, _ = fmt.Fprintf(w, "namrbd_gateway_etcd_operations_total{operation=\"resync\"} %d\n", pressure.ResyncCount)
+	_, _ = fmt.Fprintf(w, "namrbd_gateway_etcd_operations_total{operation=\"skipped_registry_validation\"} %d\n", pressure.SkippedValidationCount)
 	_, _ = fmt.Fprintln(w, "# HELP namrbd_gateway_io_requests_total Gateway I/O requests by operation and result class.")
 	_, _ = fmt.Fprintln(w, "# TYPE namrbd_gateway_io_requests_total counter")
 	_, _ = fmt.Fprintln(w, "# HELP namrbd_gateway_io_bytes_total Gateway I/O bytes by operation.")

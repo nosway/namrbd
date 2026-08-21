@@ -1,0 +1,21 @@
+# namrbd-mcp configuration.
+#
+# Phase Y closed MCP as read-only, so the large_scale profile refuses the
+# operate posture. Recording mode and approval policy here means an operator can
+# read the posture without opening the unit file.
+schema_version: 1
+revision: 1
+profile: large_scale
+process: namrbd-mcp
+
+mcp:
+  operations_endpoint: https://sbs-service.namrbd.internal:9092
+  mode: observe
+  approval_policy: dry-run
+  operation_output_dir: /var/lib/namrbd/mcp-operations
+  http_timeout_seconds: 10
+
+  observability:
+    listen: 127.0.0.1:9105
+    trace: false
+    debug_endpoints: false

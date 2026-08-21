@@ -24,8 +24,8 @@ services:
       target: sbs-data
     command:
       - --path=/var/lib/namrbd/sbs-data
-      - --grpc-listen=0.0.0.0:9444
-      - --http-listen=0.0.0.0:9082
+      - --sbs-data-listen=0.0.0.0:9444
+      - --sbs-data-http-listen=0.0.0.0:9082
     ports:
       - ${NAMRBD_QUICKSTART_BIND_ADDRESS:-127.0.0.1}:${NAMRBD_QUICKSTART_SBS_DATA_GRPC_PORT:-19551}:9444
       - ${NAMRBD_QUICKSTART_BIND_ADDRESS:-127.0.0.1}:${NAMRBD_QUICKSTART_SBS_DATA_HTTP_PORT:-19082}:9082
@@ -53,8 +53,8 @@ services:
       - --payload-root=/var/lib/namrbd/sbs-payload
       - --leader-lease-duration=5s
       - --leader-renew-interval=1s
-      - --grpc-listen=0.0.0.0:9443
-      - --http-listen=0.0.0.0:9081
+      - --sbs-service-listen=0.0.0.0:9443
+      - --sbs-service-http-listen=0.0.0.0:9081
     depends_on:
       sbs-data:
         condition: service_healthy
@@ -82,9 +82,8 @@ services:
     environment:
       NAMRBD_CLUSTER_ID: ${NAMRBD_QUICKSTART_CLUSTER_ID:-namrbd-quickstart}
       NAMRBD_SBS_CLUSTER_ID: ${NAMRBD_QUICKSTART_SBS_CLUSTER_ID:-sbs-quickstart}
-      NAMRBD_SBS_ADMIN_ENDPOINTS: sbs-service:9443
-      SBS_ADMIN_ENDPOINTS: sbs-service:9443
-      SBS_DATA_ENDPOINTS: sbs-data:9444
+      NAMRBD_SBS_SERVICE_ENDPOINTS: sbs-service:9443
+      NAMRBD_SBS_DATA_ENDPOINTS: sbs-data:9444
     depends_on:
       sbs-service:
         condition: service_healthy
@@ -96,15 +95,15 @@ services:
       dockerfile: packaging/docker/Dockerfile.sbs
       target: namrbd-gateway
     command:
-      - --listen=0.0.0.0:9701
+      - --control-http-listen=0.0.0.0:9701
       - --data-listen=0.0.0.0:9700
       - --advertise-control-address=${NAMRBD_QUICKSTART_GATEWAY_ADVERTISE_ADDRESS:-namrbd-gateway}
       - --advertise-data-address=${NAMRBD_QUICKSTART_GATEWAY_ADVERTISE_ADDRESS:-namrbd-gateway}
       - --metadata-backend=etcd
       - --etcd-endpoints=etcd:2379
       - --etcd-root=/namrbd/quickstart
-      - --data-backend-mode=sbs-cluster
-      - --sbs-admin-endpoint=sbs-service:9443
+      - --data-backend-mode=sbs
+      - --sbs-service-endpoint=sbs-service:9443
       - --gateway-id=${NAMRBD_QUICKSTART_GATEWAY_ID:-quickstart-gateway}
     depends_on:
       etcd:

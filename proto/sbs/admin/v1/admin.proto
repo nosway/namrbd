@@ -12,9 +12,13 @@ service AdminService {
   rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
 
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc GetMembershipProjectionStatus(GetMembershipProjectionStatusRequest) returns (GetMembershipProjectionStatusResponse);
+  rpc RebuildMembershipProjection(RebuildMembershipProjectionRequest) returns (RebuildMembershipProjectionResponse);
   rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
   rpc JoinNode(JoinNodeRequest) returns (JoinNodeResponse);
   rpc UpdateNodeTopology(UpdateNodeTopologyRequest) returns (UpdateNodeTopologyResponse);
+  rpc UpdateNodeRegistration(UpdateNodeRegistrationRequest) returns (UpdateNodeRegistrationResponse);
+  rpc LeaveNode(LeaveNodeRequest) returns (LeaveNodeResponse);
   rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse);
   rpc RemoveNode(RemoveNodeRequest) returns (RemoveNodeResponse);
   rpc ForceRemoveNode(ForceRemoveNodeRequest) returns (ForceRemoveNodeResponse);
@@ -37,6 +41,9 @@ service AdminService {
   rpc GetISCSITarget(GetISCSITargetRequest) returns (GetISCSITargetResponse);
   rpc ListISCSILUNs(ListISCSILUNsRequest) returns (ListISCSILUNsResponse);
   rpc GetISCSILUN(GetISCSILUNRequest) returns (GetISCSILUNResponse);
+  rpc ListISCSIExports(ListISCSIExportsRequest) returns (ListISCSIExportsResponse);
+  rpc GetISCSIExport(GetISCSIExportRequest) returns (GetISCSIExportResponse);
+  rpc GetISCSIRegistryChanges(GetISCSIRegistryChangesRequest) returns (GetISCSIRegistryChangesResponse);
   rpc ListISCSIInitiatorACLs(ListISCSIInitiatorACLsRequest) returns (ListISCSIInitiatorACLsResponse);
   rpc GetISCSIInitiatorACL(GetISCSIInitiatorACLRequest) returns (GetISCSIInitiatorACLResponse);
   rpc ListISCSISessions(ListISCSISessionsRequest) returns (ListISCSISessionsResponse);
@@ -330,6 +337,20 @@ message NodeSummary {
   string health_reason = 14;
   string health_updated_by = 15;
   google.protobuf.Timestamp recovery_eligible_time = 16;
+  string cluster_id = 17;
+  string sbs_cluster_id = 18;
+  repeated string store_ids = 19;
+  repeated string roles = 20;
+  string desired_state = 21;
+  string observed_state = 22;
+  uint64 generation = 23;
+  uint64 membership_revision = 24;
+  bool tombstone = 25;
+  google.protobuf.Timestamp created_time = 26;
+  google.protobuf.Timestamp updated_time = 27;
+  string updated_by = 28;
+  string update_reason = 29;
+  string replica_id = 30;
 }
 
 message TopologyZoneSummary {
@@ -523,6 +544,21 @@ message GetClusterStatusResponse {
   uint64 transition_retry_window_chunks = 28;
   uint64 maintenance_cooldown_volumes = 29;
   uint64 maintenance_cooldown_max_remaining_seconds = 30;
+  bool health_probe_sharded = 31;
+  uint32 health_probe_shard_count = 32;
+  uint32 health_probe_queue_depth = 33;
+  uint32 health_probe_peak_queue_depth = 34;
+  uint32 health_probe_max_concurrency = 35;
+  uint32 health_probe_interval_seconds = 36;
+  uint32 health_probe_timeout_seconds = 37;
+  uint32 health_probe_suspect_after = 38;
+  uint32 health_probe_down_after = 39;
+  uint32 health_probe_recovery_cooldown_seconds = 40;
+  string health_probe_first_error = 41;
+  string health_probe_last_error = 42;
+  uint64 health_probe_count = 43;
+  uint64 health_transition_count = 44;
+  uint64 health_volume_reconcile_count = 45;
 }
 
 message GetLeaderRequest {
@@ -537,11 +573,53 @@ message GetLeaderResponse {
 
 message ListNodesRequest {
   ClusterRef cluster = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+  bool include_tombstones = 4;
 }
 
 message ListNodesResponse {
   ClusterRef cluster = 1;
   repeated NodeSummary nodes = 2;
+  uint64 membership_revision = 3;
+  uint64 membership_projection_revision = 4;
+  int64 projection_lag_ms = 5;
+  string projection_health = 6;
+  bool projection_stale = 7;
+  string next_page_token = 8;
+  uint64 projection_rebuild_count = 9;
+  uint64 projection_resync_count = 10;
+}
+
+message MembershipProjectionStatus {
+  uint64 membership_revision = 1;
+  uint64 membership_projection_revision = 2;
+  int64 projection_lag_ms = 3;
+  string projection_health = 4;
+  bool projection_stale = 5;
+  uint64 projection_rebuild_count = 6;
+  uint64 projection_resync_count = 7;
+  string first_error = 8;
+  string last_error = 9;
+}
+
+message GetMembershipProjectionStatusRequest {
+  ClusterRef cluster = 1;
+}
+
+message GetMembershipProjectionStatusResponse {
+  ClusterRef cluster = 1;
+  MembershipProjectionStatus status = 2;
+}
+
+message RebuildMembershipProjectionRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+}
+
+message RebuildMembershipProjectionResponse {
+  ClusterRef cluster = 1;
+  MembershipProjectionStatus status = 2;
 }
 
 message GetNodeRequest {
@@ -585,6 +663,33 @@ message UpdateNodeTopologyResponse {
   ClusterRef cluster = 1;
   OperationHandle operation = 2;
   NodeSummary node = 3;
+}
+
+message UpdateNodeRegistrationRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string node_id = 3;
+  optional string grpc_endpoint = 4;
+  optional string admin_http_endpoint = 5;
+  repeated string store_ids = 6;
+  repeated string roles = 7;
+}
+
+message UpdateNodeRegistrationResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  NodeSummary node = 3;
+}
+
+message LeaveNodeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string node_id = 3;
+}
+
+message LeaveNodeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
 }
 
 message CreateTopologyZoneRequest {
@@ -672,6 +777,8 @@ message ForceRemoveNodeRequest {
   ClusterRef cluster = 1;
   RequestMeta meta = 2;
   string node_id = 3;
+  string approval_id = 4;
+  bool acknowledge_data_loss_risk = 5;
 }
 
 message ForceRemoveNodeResponse {
@@ -769,6 +876,28 @@ message ISCSILUNSummary {
   bool enabled = 8;
 }
 
+message ISCSIExportSummary {
+  string export_id = 1;
+  string target_iqn = 2;
+  uint64 lun_id = 3;
+  string lun_wwn = 4;
+  string volume_id = 5;
+  string export_mode = 6;
+  uint64 logical_block_size_bytes = 7;
+  bool enabled = 8;
+  repeated string portal_ids = 9;
+  string active_iscsi_gateway_id = 10;
+  repeated string standby_iscsi_gateway_ids = 11;
+  string export_lease_id = 12;
+  uint64 export_epoch = 13;
+  string failover_state = 14;
+  string writer_policy = 15;
+  string ha_failover_mode = 16;
+  bool read_write_allowed = 17;
+  string last_write_rejection_reason = 18;
+  string last_rejected_iscsi_gateway_id = 19;
+}
+
 message ISCSIInitiatorACLSummary {
   string initiator_iqn = 1;
   string target_iqn = 2;
@@ -857,6 +986,7 @@ message ISCSIObservabilityCounters {
 
 message GetISCSIRegistryRequest {
   ClusterRef cluster = 1;
+  bool summary_only = 2;
 }
 
 message GetISCSIRegistryResponse {
@@ -870,6 +1000,16 @@ message GetISCSIRegistryResponse {
   repeated ISCSISessionSummary sessions = 8;
   repeated ISCSIFailoverRuntimeSummary failovers = 9;
   ISCSIObservabilityCounters observability_counters = 10;
+  string serving_registry_authority = 11;
+  string storage_layout = 12;
+  bool registry_empty = 13;
+  uint64 portal_count = 14;
+  uint64 target_count = 15;
+  uint64 lun_count = 16;
+  uint64 export_count = 17;
+  uint64 initiator_acl_count = 18;
+  uint64 session_count = 19;
+  uint64 failover_count = 20;
 }
 
 message ListISCSIPortalsRequest {
@@ -944,6 +1084,67 @@ message GetISCSILUNResponse {
   uint64 registry_revision = 2;
   uint64 config_generation = 3;
   ISCSILUNSummary lun = 4;
+}
+
+message ListISCSIExportsRequest {
+  ClusterRef cluster = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+  uint64 registry_revision = 4;
+}
+
+message ListISCSIExportsResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  repeated ISCSIExportSummary exports = 4;
+  string next_page_token = 5;
+  string serving_registry_authority = 6;
+  string storage_layout = 7;
+}
+
+message GetISCSIExportRequest {
+  ClusterRef cluster = 1;
+  string export_id = 2;
+}
+
+message GetISCSIExportResponse {
+  ClusterRef cluster = 1;
+  uint64 registry_revision = 2;
+  uint64 config_generation = 3;
+  ISCSIExportSummary export = 4;
+  string serving_registry_authority = 5;
+  string storage_layout = 6;
+}
+
+message ISCSIRegistryExportChange {
+  uint64 registry_revision = 1;
+  uint64 config_generation = 2;
+  string operation = 3;
+  string export_id = 4;
+  ISCSIExportSummary export = 5;
+}
+
+message GetISCSIRegistryChangesRequest {
+  ClusterRef cluster = 1;
+  uint64 after_revision = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+
+message GetISCSIRegistryChangesResponse {
+  ClusterRef cluster = 1;
+  uint64 from_revision = 2;
+  uint64 to_revision = 3;
+  uint64 config_generation = 4;
+  repeated ISCSIRegistryExportChange changes = 5;
+  string next_page_token = 6;
+  uint64 checkpoint_revision = 7;
+  bool resync_required = 8;
+  string resync_reason = 9;
+  uint64 change_floor_revision = 10;
+  string serving_registry_authority = 11;
+  string storage_layout = 12;
 }
 
 message ListISCSIInitiatorACLsRequest {

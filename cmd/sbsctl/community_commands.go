@@ -10,7 +10,7 @@ func runEnterpriseTopLevel(args []string) bool {
 	}
 	switch args[0] {
 	case "ec", "backup", "dr", "performance", "security", "mobility", "dedupe":
-		fatalf(enterpriseCapabilityRequiredMessage(args[0]))
+		fatalf("%s", enterpriseCapabilityRequiredMessage(args[0]))
 		return true
 	}
 	return false

@@ -26,11 +26,27 @@ func TestDefaultAdminEndpointPrefersSBSPrefix(t *testing.T) {
 	}
 }
 
+func TestDefaultAdminEndpointPrefersCanonicalEnvironment(t *testing.T) {
+	t.Setenv("NAMRBD_SBS_SERVICE_ENDPOINTS", "canonical-admin:9443")
+	t.Setenv("SBS_ADMIN_ENDPOINTS", "legacy-admin:9443")
+	if got := defaultAdminEndpoint(); got != "canonical-admin:9443" {
+		t.Fatalf("defaultAdminEndpoint=%q", got)
+	}
+}
+
 func TestDefaultDataEndpointSupportsAliases(t *testing.T) {
 	t.Setenv("SBS_DATA_ENDPOINTS", "node-a:9460,node-b:9460")
 
 	if got := defaultDataEndpoint(); got != "node-a:9460" {
 		t.Fatalf("defaultDataEndpoint=%q want=%q", got, "node-a:9460")
+	}
+}
+
+func TestDefaultDataEndpointPrefersCanonicalEnvironment(t *testing.T) {
+	t.Setenv("NAMRBD_SBS_DATA_ENDPOINTS", "canonical-data:9444")
+	t.Setenv("SBS_DATA_ENDPOINTS", "legacy-data:9444")
+	if got := defaultDataEndpoint(); got != "canonical-data:9444" {
+		t.Fatalf("defaultDataEndpoint=%q", got)
 	}
 }
 

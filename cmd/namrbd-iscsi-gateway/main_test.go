@@ -42,12 +42,18 @@ func TestGatewaySelfTestJSON(t *testing.T) {
 
 func TestObservabilityHandlerHealthAndMetrics(t *testing.T) {
 	handler := newISCSIObservabilityHandler(iscsiObservabilityState{
-		Backend:        "sbs",
-		ExportID:       "export-a",
-		TargetIQN:      "iqn.2026-08.io.namrbd:test",
-		AuthMode:       "none",
-		RegistryLoaded: true,
-		VolumeID:       "00000065",
+		Backend:                  "sbs",
+		ExportID:                 "export-a",
+		TargetIQN:                "iqn.2026-08.io.namrbd:test",
+		AuthMode:                 "none",
+		RegistryLoaded:           true,
+		VolumeID:                 "00000065",
+		FleetRegistered:          true,
+		FleetMembershipAuthority: "etcd",
+		FleetHealthAuthority:     "etcd",
+		LiveReloadSummary: func() iscsi.LiveReloadSummary {
+			return iscsi.LiveReloadSummary{ReloadSnapshot: iscsi.ReloadSnapshot{RegistryReloadCount: 2, RegistryReloadRevision: 9}, ServedExportCount: 32, MaxExportsPerProcess: 64}
+		},
 	})
 
 	healthReq := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -68,10 +74,21 @@ func TestObservabilityHandlerHealthAndMetrics(t *testing.T) {
 		"namrbd_iscsi_gateway_ready 1",
 		`namrbd_iscsi_gateway_runtime_info{backend="sbs",export_id="export-a",target_iqn="iqn.2026-08.io.namrbd:test",auth_mode="none",volume_id="00000065"} 1`,
 		"namrbd_iscsi_gateway_registry_loaded 1",
+		`namrbd_iscsi_gateway_fleet_registered{membership_authority="etcd",health_authority="etcd"} 1`,
+		"namrbd_iscsi_gateway_registry_reload_total 2",
+		"namrbd_iscsi_gateway_served_exports 32",
+		"namrbd_iscsi_gateway_max_exports 64",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metrics missing %q in\n%s", want, body)
 		}
+	}
+	registryReq := httptest.NewRequest(http.MethodGet, "/debug/registry", nil)
+	registryRec := httptest.NewRecorder()
+	handler.ServeHTTP(registryRec, registryReq)
+	if registryRec.Code != http.StatusOK || !strings.Contains(registryRec.Body.String(), `"served_export_count":32`) ||
+		!strings.Contains(registryRec.Body.String(), `"max_exports_per_process":64`) {
+		t.Fatalf("registry status=%d body=%s", registryRec.Code, registryRec.Body.String())
 	}
 }
 
@@ -385,7 +402,7 @@ func TestGatewaySBSServeRequiresOneClientSource(t *testing.T) {
 			if stdout.Len() != 0 {
 				t.Fatalf("unexpected stdout: %s", stdout.String())
 			}
-			if !strings.Contains(stderr.String(), "requires exactly one of --sbs-fixture or --sbs-endpoint") {
+			if !strings.Contains(stderr.String(), "requires exactly one of --sbs-fixture or --sbs-data-endpoint") {
 				t.Fatalf("stderr=%q, want client source diagnostic", stderr.String())
 			}
 		})

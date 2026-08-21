@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,7 +20,10 @@ import (
 	"github.com/nosway/namrbd/gateway/sbsgrpc"
 	"github.com/nosway/namrbd/gateway/service"
 	"github.com/nosway/namrbd/internal/adminclient"
+	"github.com/nosway/namrbd/internal/cliux"
+	"github.com/nosway/namrbd/internal/depavail"
 	"github.com/nosway/namrbd/iscsi"
+	iscsifleet "github.com/nosway/namrbd/iscsi/fleet"
 	adminv1 "github.com/nosway/namrbd/sbs/admin/v1"
 	sbsv1 "github.com/nosway/namrbd/sbs/v1"
 	namrbdversion "github.com/nosway/namrbd/version"
@@ -33,12 +38,18 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	args = cliux.RewriteDeprecatedFlags(args, []cliux.Alias{
+		{Legacy: "sbs-endpoint", Canonical: "sbs-data-endpoint", DeprecatedIn: "post-1.0"},
+		{Legacy: "sbs-admin-endpoint", Canonical: "sbs-service-endpoint", DeprecatedIn: "post-1.0"},
+	}, stderr)
+	args = cliux.RewriteCommandArgs(args, false, false)
 	if len(args) >= 1 && (args[0] == "--version" || args[0] == "version") {
 		fmt.Fprintln(stdout, namrbdversion.BuildSummary())
 		return 0
 	}
 	fs := flag.NewFlagSet("namrbd-iscsi-gateway", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	configPath := fs.String("config", "", "service config file path (AA-IMPL-001E); when set, it supplies instance settings while target/LUN/export mappings stay registry-owned")
 	backend := fs.String("backend", "memory", "backend mode: memory or sbs")
 	portal := fs.String("portal", "", "explicit portal address")
 	size := fs.String("memory-lun-size", "512MiB", "memory LUN size in bytes, KiB, MiB, or GiB")
@@ -51,12 +62,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	summaryPath := fs.String("summary-json", "", "optional summary JSON artifact path")
 	operationPath := fs.String("operation-jsonl", "", "optional operation JSONL artifact path")
 	volumeID := fs.String("volume-id", "", "SBS volume id for --backend=sbs")
-	sbsEndpoint := fs.String("sbs-endpoint", "", "SBS VolumeService gRPC endpoint host:port for --backend=sbs")
-	sbsAdminEndpoint := fs.String("sbs-admin-endpoint", "", "SBS AdminService gRPC endpoint host:port for registry-backed iSCSI config")
+	sbsEndpoint := fs.String("sbs-data-endpoint", "", "sbs-data VolumeService gRPC endpoint host:port for --backend=sbs")
+	sbsAdminEndpoint := fs.String("sbs-service-endpoint", "", "sbs-service AdminService gRPC endpoint host:port for registry-backed iSCSI config")
 	registryRequired := fs.Bool("registry-required", false, "fail startup unless the iSCSI registry is loaded")
 	lunID := fs.Uint64("lun-id", iscsi.DefaultLUNID, "iSCSI LUN id for registry-backed SBS export")
-	sbsEndpointTLS := fs.Bool("sbs-endpoint-tls", false, "use TLS for --sbs-endpoint")
-	sbsEndpointServerName := fs.String("sbs-endpoint-server-name", "", "TLS server name for --sbs-endpoint")
+	sbsEndpointTLS := fs.Bool("sbs-endpoint-tls", false, "use TLS for --sbs-data-endpoint")
+	sbsEndpointServerName := fs.String("sbs-endpoint-server-name", "", "TLS server name for --sbs-data-endpoint")
 	sbsFixture := fs.Bool("sbs-fixture", false, "use an in-process fixture SBS client for --backend=sbs")
 	sbsFixtureSize := fs.String("sbs-fixture-size", "8MiB", "fixture SBS volume size for --backend=sbs")
 	iscsiGatewayID := fs.String("iscsi-gateway-id", "", "local iSCSI gateway id for SBS request context")
@@ -76,9 +87,73 @@ func run(args []string, stdout, stderr io.Writer) int {
 	allowedInitiatorIQNs := fs.String("allowed-initiator-iqns", "", "comma-separated initiator IQN allowlist for summary/admission evidence")
 	jsonOut := fs.Bool("json", false, "emit final JSON summary to stdout")
 	observabilityListen := fs.String("observability-listen", "", "optional HTTP listen address for /healthz, /readyz, and /metrics")
+	var advertisePortals []string
+	var fleetEtcdEndpoints []string
+	var fleetEtcdRoot string
+	var largeScale bool
+	var reloadMode string
+	var reloadPollInterval int
+	maxExportsPerProcess := iscsi.DefaultMaxExportsPerProcess
+	cliux.InstallStructuredUsage(fs, "namrbd-iscsi-gateway", func(name string) bool {
+		_, hidden := labFlagsRejectedAtScale[name]
+		return hidden
+	})
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
+
+	// Without --config the process behaves exactly as before. Adoption is
+	// additive so existing fixtures and deployments are unaffected.
+	if strings.TrimSpace(*configPath) != "" {
+		summary, err := applyISCSIServiceConfig(*configPath, iscsiConfigBinding{
+			GatewayID:        iscsiGatewayID,
+			Portal:           portal,
+			AdvertisePortals: &advertisePortals,
+			EtcdEndpoints:    &fleetEtcdEndpoints,
+			EtcdRoot:         &fleetEtcdRoot,
+			SBSEndpoint:      sbsEndpoint,
+			SBSAdminEndpoint: sbsAdminEndpoint,
+			SBSEndpointTLS:   sbsEndpointTLS,
+			SBSServerName:    sbsEndpointServerName,
+			RegistryRequired: registryRequired,
+			LargeScale:       &largeScale,
+
+			AuthMode:             authMode,
+			CHAPSecretRef:        chapSecretRef,
+			Allowlist:            allowedInitiatorIQNs,
+			ReloadMode:           &reloadMode,
+			ReloadPollInterval:   &reloadPollInterval,
+			MaxExportsPerProcess: &maxExportsPerProcess,
+
+			ObservabilityListen: observabilityListen,
+		}, explicitlySetFlags(fs))
+		// The summary is emitted either way. On the failure path it is the only
+		// record of which config the process tried to start from.
+		if blob, mErr := json.Marshal(summary); mErr == nil {
+			fmt.Fprintf(stderr, "service config summary: %s\n", blob)
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "service config: %v\n", err)
+			return 2
+		}
+	}
+	if len(advertisePortals) == 0 && strings.TrimSpace(*portal) != "" {
+		advertisePortals = []string{strings.TrimSpace(*portal)}
+	}
+	if largeScale {
+		*backend = "sbs"
+		*serve = true
+	}
+	fleetArgs := iscsiFleetArgs{
+		gatewayID:        *iscsiGatewayID,
+		advertisePortals: advertisePortals,
+		etcdEndpoints:    fleetEtcdEndpoints,
+		etcdRoot:         fleetEtcdRoot,
+	}
+
 	switch *backend {
 	case "memory":
 		return runMemoryBackend(stdout, stderr, memoryGatewayArgs{
@@ -97,6 +172,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			allowlist:           *allowedInitiatorIQNs,
 			jsonOut:             *jsonOut,
 			observabilityListen: *observabilityListen,
+			fleet:               fleetArgs,
 		})
 	case "sbs":
 		return runSBSBackend(stdout, stderr, sbsGatewayArgs{
@@ -135,6 +211,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 			chapSecretRef:         *chapSecretRef,
 			allowlist:             *allowedInitiatorIQNs,
 			observabilityListen:   *observabilityListen,
+			fleet:                 fleetArgs,
+			largeScale:            largeScale,
+			reloadPollInterval:    time.Duration(reloadPollInterval) * time.Second,
+			maxExportsPerProcess:  maxExportsPerProcess,
 		})
 	default:
 		fmt.Fprintf(stderr, "backend %q is not supported; expected memory or sbs\n", *backend)
@@ -158,6 +238,59 @@ type memoryGatewayArgs struct {
 	allowlist           string
 	jsonOut             bool
 	observabilityListen string
+	fleet               iscsiFleetArgs
+}
+
+type iscsiFleetArgs struct {
+	gatewayID        string
+	advertisePortals []string
+	etcdEndpoints    []string
+	etcdRoot         string
+}
+
+func startISCSIGatewayFleet(args iscsiFleetArgs) (*iscsifleet.Registry, error) {
+	if len(args.etcdEndpoints) == 0 {
+		return nil, nil
+	}
+	return iscsifleet.Start(context.Background(), iscsifleet.Config{
+		GatewayID:        args.gatewayID,
+		AdvertisePortals: args.advertisePortals,
+		EtcdEndpoints:    args.etcdEndpoints,
+		EtcdRoot:         args.etcdRoot,
+		BuildVersion:     namrbdversion.ProductVersion(),
+	}, func(err error) {
+		dependencyTracker.Report(depavail.DependencyEtcd, err)
+	})
+}
+
+func markISCSIGatewayFleetError(registry *iscsifleet.Registry, cause error, stderr io.Writer) {
+	if registry == nil || cause == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := registry.SetLifecycle(ctx, service.GatewayReadinessDegraded, service.GatewayDrainActive, cause); err != nil {
+		fmt.Fprintf(stderr, "publish iSCSI gateway fleet error: %v\n", err)
+	}
+}
+
+func stopISCSIGatewayFleet(registry *iscsifleet.Registry, stderr io.Writer) {
+	if registry == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	if err := registry.SetLifecycle(ctx, service.GatewayReadinessDegraded, service.GatewayDrainDraining, nil); err != nil {
+		fmt.Fprintf(stderr, "publish iSCSI gateway drain: %v\n", err)
+	}
+	cancel()
+	registry.Close()
+}
+
+func fleetAuthority(registry *iscsifleet.Registry) string {
+	if registry == nil {
+		return ""
+	}
+	return iscsifleet.MembershipAuthority
 }
 
 func runMemoryBackend(stdout, stderr io.Writer, args memoryGatewayArgs) int {
@@ -182,12 +315,21 @@ func runMemoryBackend(stdout, stderr io.Writer, args memoryGatewayArgs) int {
 	if args.serve {
 		ctx, stop := serveContext()
 		defer stop()
+		fleetRegistry, err := startISCSIGatewayFleet(args.fleet)
+		if err != nil {
+			fmt.Fprintf(stderr, "start iSCSI gateway fleet membership: %v\n", err)
+			return 2
+		}
+		defer stopISCSIGatewayFleet(fleetRegistry, stderr)
 		stopObservability, err := startISCSIObservabilityServer(ctx, args.observabilityListen, iscsiObservabilityState{
-			Backend:        "memory",
-			ExportID:       args.exportID,
-			TargetIQN:      args.targetIQN,
-			AuthMode:       args.authMode,
-			RegistryLoaded: false,
+			Backend:                  "memory",
+			ExportID:                 args.exportID,
+			TargetIQN:                args.targetIQN,
+			AuthMode:                 args.authMode,
+			RegistryLoaded:           false,
+			FleetRegistered:          fleetRegistry != nil,
+			FleetMembershipAuthority: fleetAuthority(fleetRegistry),
+			FleetHealthAuthority:     fleetAuthority(fleetRegistry),
 		}, stderr)
 		if err != nil {
 			fmt.Fprintf(stderr, "start observability listener: %v\n", err)
@@ -207,6 +349,7 @@ func runMemoryBackend(stdout, stderr io.Writer, args memoryGatewayArgs) int {
 			}
 		}
 		if err != nil {
+			markISCSIGatewayFleetError(fleetRegistry, err, stderr)
 			fmt.Fprintf(stderr, "serve failed: %v\n", err)
 			return 1
 		}
@@ -274,6 +417,10 @@ type sbsGatewayArgs struct {
 	registryTargetFound      bool
 	registryLUNFound         bool
 	registryFailoverFound    bool
+	fleet                    iscsiFleetArgs
+	largeScale               bool
+	reloadPollInterval       time.Duration
+	maxExportsPerProcess     int
 }
 
 type iscsiGatewayAdminClient interface {
@@ -289,6 +436,9 @@ var newISCSIGatewayAdminClient = func(ctx context.Context, endpoint string) (isc
 }
 
 func runSBSBackend(stdout, stderr io.Writer, args sbsGatewayArgs) int {
+	if args.largeScale {
+		return runLargeScaleSBSBackend(stdout, stderr, args)
+	}
 	if args.selfTest || !args.serve {
 		sizeBytes, err := iscsi.ParseSizeBytes(args.sbsFixtureSize)
 		if err != nil {
@@ -319,7 +469,7 @@ func runSBSBackend(stdout, stderr io.Writer, args sbsGatewayArgs) int {
 		return 0
 	}
 	if args.registryRequired && strings.TrimSpace(args.sbsAdminEndpoint) == "" {
-		fmt.Fprintln(stderr, "--registry-required requires --sbs-admin-endpoint")
+		fmt.Fprintln(stderr, "--registry-required requires --sbs-service-endpoint")
 		return 2
 	}
 	if strings.TrimSpace(args.sbsAdminEndpoint) != "" {
@@ -368,13 +518,22 @@ func runSBSBackend(stdout, stderr io.Writer, args sbsGatewayArgs) int {
 	defer closeClient()
 	ctx, stop := serveContext()
 	defer stop()
+	fleetRegistry, err := startISCSIGatewayFleet(args.fleet)
+	if err != nil {
+		fmt.Fprintf(stderr, "start iSCSI gateway fleet membership: %v\n", err)
+		return 2
+	}
+	defer stopISCSIGatewayFleet(fleetRegistry, stderr)
 	stopObservability, err := startISCSIObservabilityServer(ctx, args.observabilityListen, iscsiObservabilityState{
-		Backend:        "sbs",
-		ExportID:       args.exportID,
-		TargetIQN:      args.targetIQN,
-		AuthMode:       args.authMode,
-		RegistryLoaded: args.registryLoaded,
-		VolumeID:       args.volumeID,
+		Backend:                  "sbs",
+		ExportID:                 args.exportID,
+		TargetIQN:                args.targetIQN,
+		AuthMode:                 args.authMode,
+		RegistryLoaded:           args.registryLoaded,
+		VolumeID:                 args.volumeID,
+		FleetRegistered:          fleetRegistry != nil,
+		FleetMembershipAuthority: fleetAuthority(fleetRegistry),
+		FleetHealthAuthority:     fleetAuthority(fleetRegistry),
 	}, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "start observability listener: %v\n", err)
@@ -428,6 +587,7 @@ func runSBSBackend(stdout, stderr io.Writer, args sbsGatewayArgs) int {
 		}
 	}
 	if err != nil {
+		markISCSIGatewayFleetError(fleetRegistry, err, stderr)
 		fmt.Fprintf(stderr, "serve failed: %v\n", err)
 		return 1
 	}
@@ -435,12 +595,16 @@ func runSBSBackend(stdout, stderr io.Writer, args sbsGatewayArgs) int {
 }
 
 type iscsiObservabilityState struct {
-	Backend        string
-	ExportID       string
-	TargetIQN      string
-	AuthMode       string
-	RegistryLoaded bool
-	VolumeID       string
+	Backend                  string
+	ExportID                 string
+	TargetIQN                string
+	AuthMode                 string
+	RegistryLoaded           bool
+	VolumeID                 string
+	FleetRegistered          bool
+	FleetMembershipAuthority string
+	FleetHealthAuthority     string
+	LiveReloadSummary        func() iscsi.LiveReloadSummary
 }
 
 func startISCSIObservabilityServer(ctx context.Context, listen string, state iscsiObservabilityState, stderr io.Writer) (func(), error) {
@@ -487,14 +651,9 @@ func newISCSIObservabilityHandler(state iscsiObservabilityState) http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = fmt.Fprintln(w, "ok")
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = fmt.Fprintln(w, "ok")
-	})
+	// /healthz stays process liveness. /readyz includes outcomes from the etcd
+	// lease writes that publish this process's fleet membership.
+	mux.Handle("/readyz", depavail.ReadinessHandler(dependencyTracker))
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -516,6 +675,40 @@ func newISCSIObservabilityHandler(state iscsiObservabilityState) http.Handler {
 		_, _ = fmt.Fprintln(w, "# HELP namrbd_iscsi_gateway_registry_loaded Whether SBS registry state was loaded before serving.")
 		_, _ = fmt.Fprintln(w, "# TYPE namrbd_iscsi_gateway_registry_loaded gauge")
 		_, _ = fmt.Fprintf(w, "namrbd_iscsi_gateway_registry_loaded %d\n", boolToMetric(state.RegistryLoaded))
+		_, _ = fmt.Fprintln(w, "# HELP namrbd_iscsi_gateway_fleet_registered Whether this process holds an etcd fleet lease.")
+		_, _ = fmt.Fprintln(w, "# TYPE namrbd_iscsi_gateway_fleet_registered gauge")
+		_, _ = fmt.Fprintf(w, "namrbd_iscsi_gateway_fleet_registered{membership_authority=\"%s\",health_authority=\"%s\"} %d\n",
+			prometheusLabelValue(state.FleetMembershipAuthority),
+			prometheusLabelValue(state.FleetHealthAuthority),
+			boolToMetric(state.FleetRegistered),
+		)
+		if state.LiveReloadSummary != nil {
+			summary := state.LiveReloadSummary()
+			_, _ = fmt.Fprintln(w, "# HELP namrbd_iscsi_gateway_registry_reload_total Successful registry generations applied by this process.")
+			_, _ = fmt.Fprintln(w, "# TYPE namrbd_iscsi_gateway_registry_reload_total counter")
+			_, _ = fmt.Fprintf(w, "namrbd_iscsi_gateway_registry_reload_total %d\n", summary.RegistryReloadCount)
+			_, _ = fmt.Fprintln(w, "# HELP namrbd_iscsi_gateway_served_exports Number of exports in the current atomic generation.")
+			_, _ = fmt.Fprintln(w, "# TYPE namrbd_iscsi_gateway_served_exports gauge")
+			_, _ = fmt.Fprintf(w, "namrbd_iscsi_gateway_served_exports %d\n", summary.ServedExportCount)
+			_, _ = fmt.Fprintln(w, "# HELP namrbd_iscsi_gateway_max_exports Configured per-process export cap.")
+			_, _ = fmt.Fprintln(w, "# TYPE namrbd_iscsi_gateway_max_exports gauge")
+			_, _ = fmt.Fprintf(w, "namrbd_iscsi_gateway_max_exports %d\n", summary.MaxExportsPerProcess)
+			_, _ = fmt.Fprintln(w, "# HELP namrbd_iscsi_gateway_registry_revision Applied TiKV serving-registry revision.")
+			_, _ = fmt.Fprintln(w, "# TYPE namrbd_iscsi_gateway_registry_revision gauge")
+			_, _ = fmt.Fprintf(w, "namrbd_iscsi_gateway_registry_revision %d\n", summary.RegistryReloadRevision)
+		}
+	})
+	mux.HandleFunc("/debug/registry", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if state.LiveReloadSummary == nil {
+			http.Error(w, "registry reload is not active", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(state.LiveReloadSummary())
 	})
 	return mux
 }
@@ -540,7 +733,7 @@ func resolveSBSGatewayRegistry(ctx context.Context, args *sbsGatewayArgs) error 
 	}
 	targetIQN := strings.TrimSpace(args.targetIQN)
 	if targetIQN == "" {
-		return fmt.Errorf("--sbs-admin-endpoint registry lookup requires --target-iqn")
+		return fmt.Errorf("--sbs-service-endpoint registry lookup requires --target-iqn")
 	}
 	client, closeClient, err := newISCSIGatewayAdminClient(ctx, args.sbsAdminEndpoint)
 	if err != nil {
@@ -696,7 +889,7 @@ func firstNonEmpty(values ...string) string {
 func openSBSClient(args sbsGatewayArgs) (service.SBSClient, func(), error) {
 	endpoint := strings.TrimSpace(args.sbsEndpoint)
 	if args.sbsFixture == (endpoint != "") {
-		return nil, nil, fmt.Errorf("requires exactly one of --sbs-fixture or --sbs-endpoint")
+		return nil, nil, fmt.Errorf("requires exactly one of --sbs-fixture or --sbs-data-endpoint")
 	}
 	if args.sbsFixture {
 		sizeBytes, err := iscsi.ParseSizeBytes(args.sbsFixtureSize)
@@ -721,7 +914,7 @@ func openSBSClient(args sbsGatewayArgs) (service.SBSClient, func(), error) {
 		return client, func() {}, nil
 	}
 	if _, _, err := net.SplitHostPort(endpoint); err != nil {
-		return nil, nil, fmt.Errorf("--sbs-endpoint must be host:port: %w", err)
+		return nil, nil, fmt.Errorf("--sbs-data-endpoint must be host:port: %w", err)
 	}
 	var dialCreds credentials.TransportCredentials
 	if args.sbsEndpointTLS {

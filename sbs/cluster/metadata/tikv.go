@@ -91,6 +91,11 @@ type prefixedTxn struct {
 	prefix string
 }
 
+type prefixedReadSnapshot struct {
+	base   kvReadSnapshot
+	prefix string
+}
+
 func newPrefixedKV(base KV, keyspace string) KV {
 	keyspace = strings.Trim(strings.TrimSpace(keyspace), "/")
 	if keyspace == "" {
@@ -183,6 +188,16 @@ func (kv *prefixedKV) RunInTransaction(ctx context.Context, fn func(tx kvReadWri
 	})
 }
 
+func (kv *prefixedKV) RunInReadSnapshot(ctx context.Context, fn func(snapshot kvReadSnapshot) error) error {
+	runner, ok := kv.base.(consistentSnapshotKV)
+	if !ok {
+		return fmt.Errorf("prefixed kv base does not support read snapshots")
+	}
+	return runner.RunInReadSnapshot(ctx, func(snapshot kvReadSnapshot) error {
+		return fn(&prefixedReadSnapshot{base: snapshot, prefix: kv.prefix})
+	})
+}
+
 func (tx *prefixedTxn) prefixed(key string) string {
 	return tx.prefix + key
 }
@@ -232,6 +247,52 @@ func (tx *prefixedTxn) Delete(ctx context.Context, key string) error {
 	return tx.base.Delete(ctx, tx.prefixed(key))
 }
 
+func (snapshot *prefixedReadSnapshot) prefixed(key string) string {
+	return snapshot.prefix + key
+}
+
+func (snapshot *prefixedReadSnapshot) unprefixed(key string) string {
+	return strings.TrimPrefix(key, snapshot.prefix)
+}
+
+func (snapshot *prefixedReadSnapshot) Get(ctx context.Context, key string) ([]byte, bool, error) {
+	return snapshot.base.Get(ctx, snapshot.prefixed(key))
+}
+
+func (snapshot *prefixedReadSnapshot) BatchGet(ctx context.Context, keys []string) (map[string][]byte, error) {
+	prefixedKeys, originalByPrefixed := prefixBatchKeys(snapshot.prefix, keys)
+	values, err := snapshot.base.BatchGet(ctx, prefixedKeys)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]byte, len(values))
+	for prefixedKey, value := range values {
+		key, ok := originalByPrefixed[prefixedKey]
+		if ok {
+			out[key] = append([]byte(nil), value...)
+		}
+	}
+	return out, nil
+}
+
+func (snapshot *prefixedReadSnapshot) List(ctx context.Context, prefix, cursor string, limit int) ([]string, string, error) {
+	prefixedCursor := ""
+	if cursor != "" {
+		prefixedCursor = snapshot.prefixed(cursor)
+	}
+	keys, next, err := snapshot.base.List(ctx, snapshot.prefixed(prefix), prefixedCursor, limit)
+	if err != nil {
+		return nil, "", err
+	}
+	for i, key := range keys {
+		keys[i] = snapshot.unprefixed(key)
+	}
+	if next != "" {
+		next = snapshot.unprefixed(next)
+	}
+	return keys, next, nil
+}
+
 func prefixBatchKeys(prefix string, keys []string) ([]string, map[string]string) {
 	prefixedKeys := make([]string, 0, len(keys))
 	originalByPrefixed := make(map[string]string, len(keys))
@@ -276,6 +337,36 @@ func (kv *tiKVTxnKV) Get(ctx context.Context, key string) (out []byte, found boo
 	return append([]byte(nil), value...), true, nil
 }
 
+// BatchGet exposes the existing bounded transaction batch reader to top-level
+// registry callers. Otherwise prefixedKV has to turn one 128-object page into
+// 128 standalone point reads.
+func (kv *tiKVTxnKV) BatchGet(ctx context.Context, keys []string) (map[string][]byte, error) {
+	ctx, cancel := kv.withTimeout(ctx)
+	defer cancel()
+	txn, err := kv.beginTxnWithTrace("standalone_batch_get")
+	if err != nil {
+		observeTiKV(err)
+		return nil, err
+	}
+	defer txn.Rollback()
+	return (&tiKVTxn{txn: txn, traceOperations: kv.traceOperations}).BatchGet(ctx, keys)
+}
+
+func (kv *tiKVTxnKV) RunInReadSnapshot(ctx context.Context, fn func(snapshot kvReadSnapshot) error) (err error) {
+	start := time.Now()
+	defer func() {
+		logTiKVOperation(kv.traceOperations, "read_snapshot", "snapshot", "", "", start, err)
+	}()
+	ctx, cancel := kv.withTimeout(ctx)
+	defer cancel()
+	txn, err := kv.beginTxnWithTrace("read_snapshot")
+	if err != nil {
+		return err
+	}
+	defer txn.Rollback()
+	return fn(&tiKVTxn{txn: txn, traceOperations: kv.traceOperations})
+}
+
 func (kv *tiKVTxnKV) Set(ctx context.Context, key string, value []byte) (err error) {
 	start := time.Now()
 	defer func() {
@@ -313,9 +404,7 @@ func (kv *tiKVTxnKV) Delete(ctx context.Context, key string) (err error) {
 }
 
 func (kv *tiKVTxnKV) List(ctx context.Context, prefix, cursor string, limit int) (keys []string, next string, err error) {
-	if limit <= 0 {
-		limit = 128
-	}
+	limit = boundedTiKVListLimit(limit)
 	start := time.Now()
 	defer func() {
 		logTiKVOperation(kv.traceOperations, "list", "standalone", prefix, "", start, err,
@@ -505,6 +594,44 @@ func (tx *tiKVTxn) Get(ctx context.Context, key string) (out []byte, found bool,
 	return append([]byte(nil), value...), true, nil
 }
 
+func (tx *tiKVTxn) List(_ context.Context, prefix, cursor string, limit int) (keys []string, next string, err error) {
+	limit = boundedTiKVListLimit(limit)
+	start := time.Now()
+	defer func() {
+		logTiKVOperation(tx.traceOperations, "txn_list", "snapshot", prefix, "", start, err,
+			structuredlog.F("result_count", len(keys)),
+			structuredlog.F("limit", limit),
+			structuredlog.F("cursor_supplied", cursor != ""),
+			structuredlog.F("has_next", next != ""),
+		)
+	}()
+	startKey := []byte(prefix)
+	if cursor != "" && (prefix == "" || cursor >= prefix) {
+		startKey = nextLexicographicKey([]byte(cursor))
+	}
+	iter, err := tx.txn.Iter(startKey, prefixRangeEnd([]byte(prefix)))
+	if err != nil {
+		return nil, "", err
+	}
+	defer iter.Close()
+
+	keys = make([]string, 0, limit)
+	for iter.Valid() {
+		key := string(iter.Key())
+		if prefix != "" && !strings.HasPrefix(key, prefix) {
+			break
+		}
+		keys = append(keys, key)
+		if len(keys) >= limit {
+			return keys, key, nil
+		}
+		if err := iter.Next(); err != nil {
+			return nil, "", err
+		}
+	}
+	return keys, "", nil
+}
+
 func (tx *tiKVTxn) BatchGet(ctx context.Context, keys []string) (out map[string][]byte, err error) {
 	start := time.Now()
 	foundCount := 0
@@ -531,11 +658,15 @@ func (tx *tiKVTxn) BatchGet(ctx context.Context, keys []string) (out map[string]
 	uniqueKeyCount = len(uniqueKeys)
 	if useTiKVTxnBatchGetPointFallback(uniqueKeyCount) {
 		batchGetMode = "point_get_fallback"
+		tikvPressure.pointGets.Add(int64(len(uniqueKeys)))
 		for _, key := range uniqueKeys {
 			value, getErr := tx.txn.Get(ctx, []byte(key))
 			if tikverr.IsErrNotFound(getErr) {
+				// A missing key is an answer, not an outage.
+				observeTiKV(nil)
 				continue
 			}
+			observeTiKV(getErr)
 			if getErr != nil {
 				return nil, getErr
 			}
@@ -544,13 +675,25 @@ func (tx *tiKVTxn) BatchGet(ctx context.Context, keys []string) (out map[string]
 		}
 		return out, nil
 	}
-	values, err := tx.txn.BatchGet(ctx, rawKeys)
-	if err != nil {
-		return nil, err
+	// Bounded batches. The caller supplies the key set, so this is the only
+	// place its size can be capped.
+	chunks := chunkBatchGetKeys(rawKeys, MaxBatchGetKeys)
+	tikvPressure.batchGets.Add(1)
+	tikvPressure.batchGetKeys.Add(int64(len(rawKeys)))
+	tikvPressure.batchGetChunks.Add(int64(len(chunks)))
+	if len(chunks) > 1 {
+		batchGetMode = "batch_get_chunked"
 	}
-	for key, value := range values {
-		foundCount++
-		out[key] = append([]byte(nil), value...)
+	for _, chunk := range chunks {
+		values, chunkErr := tx.txn.BatchGet(ctx, chunk)
+		observeTiKV(chunkErr)
+		if chunkErr != nil {
+			return nil, chunkErr
+		}
+		for key, value := range values {
+			foundCount++
+			out[key] = append([]byte(nil), value...)
+		}
 	}
 	return out, nil
 }

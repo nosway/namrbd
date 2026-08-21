@@ -34,6 +34,11 @@ message OperationStatus {
   google.protobuf.Timestamp started_at = 10;
   google.protobuf.Timestamp last_progress_at = 11;
   string error_message = 12;
+  string actor = 13;
+  string reason = 14;
+  string approval_id = 15;
+  bool risk_acknowledged = 16;
+  bool follow_on_repair_required = 17;
 }
 
 message GetOperationRequest {

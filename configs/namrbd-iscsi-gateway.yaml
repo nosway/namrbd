@@ -1,0 +1,62 @@
+# namrbd-iscsi-gateway service configuration.
+#
+# Instance identity only. Target IQN, LUN ID, export ID, volume ID, export
+# lease, and export epoch are absent on purpose: they are serving-map authority
+# and come from the TiKV-backed sbs-service iSCSI registry. Today they are
+# startup flags, which is why one process serves one export.
+schema_version: 1
+revision: 1
+profile: large_scale
+process: namrbd-iscsi-gateway
+
+iscsi_gateway:
+  gateway_id: iscsi-gw-01
+
+  advertise_portals:
+    - 10.20.0.11:3260
+
+  etcd:
+    endpoints:
+      - https://etcd-01.namrbd.internal:2379
+      - https://etcd-02.namrbd.internal:2379
+      - https://etcd-03.namrbd.internal:2379
+    root: /namrbd/prod/iscsi-gateways
+
+  sbs_endpoint: sbs-service.namrbd.internal:9091
+  sbs_admin_endpoint: sbs-service.namrbd.internal:9090
+  sbs_endpoint_tls:
+    enable: true
+    cert_file: /etc/namrbd/tls/sbs-client.crt
+    key:
+      file: /etc/namrbd/tls/sbs-client.key
+
+  auth:
+    mode: chap
+    chap_secret:
+      file: /etc/namrbd/secrets/chap.secret
+    allowed_initiator_iqns:
+      - iqn.2026-01.com.example:host-a
+      - iqn.2026-01.com.example:host-b
+
+  reload:
+    mode: watch
+    max_exports_per_process: 64
+
+  # Dependency availability thresholds. See docs/phase-aa-entry-plan.md
+  # Section 4: dependency loss is fail-open for already-admitted serving and
+  # fail-closed for every promotion, admission, and membership change.
+  #
+  # Raising a grace window delays the point at which this process calls itself
+  # degraded. It does not delay any refusal: promotion and membership change
+  # are refused from the first failed probe, because the fleet view stopped
+  # being trustworthy then and not five minutes later.
+  dependency:
+    etcd_unavailable_grace_seconds: 300
+    tikv_unavailable_grace_seconds: 300
+    projection_stale_degraded_ms: 5000
+    projection_stale_blocked_ms: 15000
+
+  observability:
+    listen: 127.0.0.1:9101
+    trace: false
+    debug_endpoints: false

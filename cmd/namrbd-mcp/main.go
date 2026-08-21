@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/nosway/namrbd/internal/serviceconfig"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/nosway/namrbd/internal/mcpops"
@@ -21,6 +24,7 @@ func main() {
 	fs := flag.NewFlagSet("namrbd-mcp", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
+	configPath := fs.String("config", "", "service config file path (AA-IMPL-001H)")
 	fs.StringVar(&cfg.OperationsEndpoint, "operations-endpoint", cfg.OperationsEndpoint, "sbs-service Phase Y operations endpoint")
 	fs.StringVar(&cfg.Mode, "mode", cfg.Mode, "MCP posture: observe or operate")
 	fs.StringVar(&cfg.ApprovalPolicy, "approval-policy", cfg.ApprovalPolicy, "approval policy: dry-run, external-token, or local-confirmation")
@@ -34,6 +38,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "namrbd-mcp: unexpected positional arguments: %v\n", fs.Args())
 		os.Exit(2)
 	}
+	// Without --config the server behaves exactly as before.
+	if strings.TrimSpace(*configPath) != "" {
+		summary, err := applyMCPConfig(*configPath, &cfg, explicitlySetFlags(fs), serviceconfig.OSEnv)
+		if blob, mErr := json.Marshal(summary); mErr == nil {
+			fmt.Fprintf(os.Stderr, "service config summary: %s\n", blob)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "namrbd-mcp: service config: %v\n", err)
+			os.Exit(2)
+		}
+	}
+
 	cfg = cfg.Normalized()
 	if cfg.Mode != mcpops.ModeObserve && cfg.Mode != mcpops.ModeOperate {
 		fmt.Fprintf(os.Stderr, "namrbd-mcp: unsupported mode %q\n", cfg.Mode)

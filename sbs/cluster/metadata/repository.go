@@ -17,6 +17,10 @@ import (
 
 var ErrNotFound = errors.New("metadata record not found")
 var ErrCASConflict = errors.New("metadata compare-and-set conflict")
+var ErrMembershipProjectionStale = errors.New("membership projection is stale")
+var ErrMembershipProjectionChanged = errors.New("membership projection changed during page read")
+
+const membershipMutationMaxAttempts = 5
 
 type kvStore interface {
 	Get(ctx context.Context, key string) ([]byte, bool, error)
@@ -44,6 +48,16 @@ type kvReadWriter interface {
 
 type kvBatchReader interface {
 	BatchGet(ctx context.Context, keys []string) (map[string][]byte, error)
+}
+
+type kvReadSnapshot interface {
+	Get(ctx context.Context, key string) ([]byte, bool, error)
+	BatchGet(ctx context.Context, keys []string) (map[string][]byte, error)
+	List(ctx context.Context, prefix, cursor string, limit int) ([]string, string, error)
+}
+
+type consistentSnapshotKV interface {
+	RunInReadSnapshot(ctx context.Context, fn func(snapshot kvReadSnapshot) error) error
 }
 
 type cachedKVReadWriter struct {
@@ -221,6 +235,11 @@ type Repository struct {
 	asyncWriteMutationFinalize      bool
 	nativeAllocationVolumeMu        sync.RWMutex
 	nativeAllocationVolumesObserved map[string]struct{}
+	membershipCacheMu               sync.RWMutex
+	membershipCacheReady            bool
+	membershipCacheRevision         uint64
+	membershipCacheRecords          []NodeMembershipRecord
+	now                             func() time.Time
 }
 
 func NewRepository(kv kvStore, root string) *Repository {
@@ -233,6 +252,7 @@ func NewRepository(kv kvStore, root string) *Repository {
 		kv:                              kv,
 		root:                            root,
 		nativeAllocationVolumesObserved: make(map[string]struct{}),
+		now:                             time.Now,
 	}
 }
 
@@ -1390,7 +1410,114 @@ func (r *Repository) ListTopologyZones(ctx context.Context) ([]TopologyZoneRecor
 }
 
 func (r *Repository) PutNodeMembership(ctx context.Context, rec NodeMembershipRecord) error {
-	return r.putJSON(ctx, nodeMembershipKey(r.root, rec.NodeID), rec)
+	_, _, err := r.putNodeMembership(ctx, rec, nil)
+	return err
+}
+
+// CompareAndSetNodeMembership writes the authority and its projection in one
+// transaction. expectedGeneration is zero only when the caller expects to
+// create a record that does not exist yet.
+func (r *Repository) CompareAndSetNodeMembership(ctx context.Context, rec NodeMembershipRecord, expectedGeneration uint64) (NodeMembershipRecord, MembershipProjectionStatus, error) {
+	return r.putNodeMembership(ctx, rec, &expectedGeneration)
+}
+
+func (r *Repository) putNodeMembership(ctx context.Context, rec NodeMembershipRecord, expectedGeneration *uint64) (NodeMembershipRecord, MembershipProjectionStatus, error) {
+	rec.NodeID = strings.TrimSpace(rec.NodeID)
+	if rec.NodeID == "" {
+		return NodeMembershipRecord{}, MembershipProjectionStatus{}, fmt.Errorf("node_id is required")
+	}
+	requested := cloneNodeMembershipRecord(rec)
+	var out NodeMembershipRecord
+	var state MembershipProjectionState
+	if txkv, ok := r.kv.(transactionalKV); ok {
+		for attempt := 1; ; attempt++ {
+			generationConflict := false
+			err := txkv.RunInTransaction(ctx, func(store kvReadWriter) error {
+				var applyErr error
+				out, state, generationConflict, applyErr = r.applyNodeMembershipMutation(ctx, store, requested, expectedGeneration)
+				return applyErr
+			})
+			if err == nil {
+				break
+			}
+			if generationConflict || !errors.Is(err, ErrCASConflict) || attempt >= membershipMutationMaxAttempts {
+				return NodeMembershipRecord{}, MembershipProjectionStatus{}, err
+			}
+			tikvPressure.txnRetries.Add(1)
+			backoff := time.Duration(attempt*5) * time.Millisecond
+			structuredlog.Info("sbs.metadata", "membership_projection_transaction_retry",
+				structuredlog.F("node_id", requested.NodeID),
+				structuredlog.F("attempt", attempt),
+				structuredlog.F("backoff_ms", backoff.Milliseconds()),
+			)
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				return NodeMembershipRecord{}, MembershipProjectionStatus{}, ctx.Err()
+			case <-timer.C:
+			}
+		}
+	} else {
+		r.mu.Lock()
+		var err error
+		out, state, _, err = r.applyNodeMembershipMutation(ctx, r.kv, requested, expectedGeneration)
+		r.mu.Unlock()
+		if err != nil {
+			return NodeMembershipRecord{}, MembershipProjectionStatus{}, err
+		}
+	}
+	r.invalidateMembershipCache()
+	return out, r.membershipProjectionStatus(state), nil
+}
+
+func (r *Repository) applyNodeMembershipMutation(ctx context.Context, store kvReadWriter, requested NodeMembershipRecord, expectedGeneration *uint64) (NodeMembershipRecord, MembershipProjectionState, bool, error) {
+	rec := cloneNodeMembershipRecord(requested)
+	var existing NodeMembershipRecord
+	err := getJSONStore(ctx, store, nodeMembershipKey(r.root, rec.NodeID), &existing)
+	switch {
+	case err == nil:
+		if expectedGeneration != nil && existing.Generation != *expectedGeneration {
+			return NodeMembershipRecord{}, MembershipProjectionState{}, true, ErrCASConflict
+		}
+	case errors.Is(err, ErrNotFound):
+		if expectedGeneration != nil && *expectedGeneration != 0 {
+			return NodeMembershipRecord{}, MembershipProjectionState{}, true, ErrCASConflict
+		}
+	case err != nil:
+		return NodeMembershipRecord{}, MembershipProjectionState{}, false, err
+	}
+
+	now := r.currentMembershipTime()
+	normalizeNodeMembershipRecord(&rec, existing, now)
+	var state MembershipProjectionState
+	if err := getJSONStore(ctx, store, membershipProjectionStateKey(r.root), &state); err != nil && !errors.Is(err, ErrNotFound) {
+		return NodeMembershipRecord{}, MembershipProjectionState{}, false, err
+	}
+	state.SchemaVersion = MembershipRecordSchemaV1
+	state.MembershipRevision++
+	if state.MembershipRevision == 0 {
+		state.MembershipRevision = 1
+	}
+	state.MembershipUpdatedAtUnixNano = now.UnixNano()
+	rec.MembershipRevision = state.MembershipRevision
+	if err := putJSONStore(ctx, store, nodeMembershipKey(r.root, rec.NodeID), rec); err != nil {
+		return NodeMembershipRecord{}, MembershipProjectionState{}, false, err
+	}
+	if err := putJSONStore(ctx, store, membershipProjectionNodeKey(r.root, rec.NodeID), rec); err != nil {
+		return NodeMembershipRecord{}, MembershipProjectionState{}, false, err
+	}
+	state.MembershipProjectionRevision = state.MembershipRevision
+	state.ProjectionUpdatedAtUnixNano = now.UnixNano()
+	if err := putJSONStore(ctx, store, membershipProjectionStateKey(r.root), state); err != nil {
+		return NodeMembershipRecord{}, MembershipProjectionState{}, false, err
+	}
+	return cloneNodeMembershipRecord(rec), state, false, nil
 }
 
 func (r *Repository) PutNodeHealthDetail(ctx context.Context, rec NodeHealthDetailRecord) error {
@@ -1410,7 +1537,16 @@ func (r *Repository) GetNodeHealthDetail(ctx context.Context, nodeID string) (No
 }
 
 func (r *Repository) DeleteNodeMembership(ctx context.Context, nodeID string) error {
-	return r.kv.Delete(ctx, nodeMembershipKey(r.root, nodeID))
+	rec, err := r.GetNodeMembership(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	rec.Tombstone = true
+	rec.LifecycleState = NodeLifecycleRemoved
+	rec.DesiredState = string(NodeLifecycleRemoved)
+	rec.UpdateReason = "node membership tombstoned"
+	_, _, err = r.CompareAndSetNodeMembership(ctx, rec, rec.Generation)
+	return err
 }
 
 func (r *Repository) GetNodeMembership(ctx context.Context, nodeID string) (NodeMembershipRecord, error) {
@@ -1422,8 +1558,343 @@ func (r *Repository) GetNodeMembership(ctx context.Context, nodeID string) (Node
 }
 
 func (r *Repository) ListNodeMemberships(ctx context.Context) ([]NodeMembershipRecord, error) {
-	prefix := fmt.Sprintf("%s/nodes/", r.root)
-	keys, err := r.listAll(ctx, prefix)
+	status, err := r.GetMembershipProjectionStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if status.Stale {
+		return nil, fmt.Errorf("%w: authority revision=%d projection revision=%d lag=%dms", ErrMembershipProjectionStale, status.MembershipRevision, status.MembershipProjectionRevision, status.ProjectionLagMS)
+	}
+	r.membershipCacheMu.RLock()
+	if r.membershipCacheReady && r.membershipCacheRevision == status.MembershipProjectionRevision {
+		out := cloneNodeMembershipRecords(r.membershipCacheRecords)
+		r.membershipCacheMu.RUnlock()
+		return out, nil
+	}
+	r.membershipCacheMu.RUnlock()
+
+	var out []NodeMembershipRecord
+	if snapshotter, ok := r.kv.(consistentSnapshotKV); ok {
+		err := snapshotter.RunInReadSnapshot(ctx, func(snapshot kvReadSnapshot) error {
+			cursor := ""
+			for {
+				page, err := r.listMembershipProjectionPageSnapshot(ctx, snapshot, cursor, MembershipProjectionPageMaximum, false)
+				if err != nil {
+					return err
+				}
+				if page.Status.Stale {
+					return ErrMembershipProjectionStale
+				}
+				out = append(out, page.Records...)
+				status = page.Status
+				if page.NextCursor == "" {
+					return nil
+				}
+				cursor = page.NextCursor
+			}
+		})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cursor := ""
+		for {
+			page, err := r.ListMembershipProjectionPage(ctx, cursor, MembershipProjectionPageMaximum, false)
+			if err != nil {
+				return nil, err
+			}
+			if page.Status.Stale {
+				return nil, ErrMembershipProjectionStale
+			}
+			out = append(out, page.Records...)
+			if page.NextCursor == "" {
+				status = page.Status
+				break
+			}
+			cursor = page.NextCursor
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].NodeID < out[j].NodeID })
+	r.membershipCacheMu.Lock()
+	r.membershipCacheReady = true
+	r.membershipCacheRevision = status.MembershipProjectionRevision
+	r.membershipCacheRecords = cloneNodeMembershipRecords(out)
+	r.membershipCacheMu.Unlock()
+	return cloneNodeMembershipRecords(out), nil
+}
+
+func (r *Repository) GetMembershipProjectionStatus(ctx context.Context) (MembershipProjectionStatus, error) {
+	if err := r.ensureMembershipProjection(ctx); err != nil {
+		return MembershipProjectionStatus{}, err
+	}
+	var state MembershipProjectionState
+	if err := r.getJSON(ctx, membershipProjectionStateKey(r.root), &state); err != nil {
+		return MembershipProjectionStatus{}, err
+	}
+	return r.membershipProjectionStatus(state), nil
+}
+
+func (r *Repository) ListMembershipProjectionPage(ctx context.Context, cursor string, limit int, includeTombstones bool) (MembershipProjectionPage, error) {
+	if err := r.ensureMembershipProjection(ctx); err != nil {
+		return MembershipProjectionPage{}, err
+	}
+	if limit <= 0 {
+		limit = MembershipProjectionPageDefault
+	}
+	if limit > MembershipProjectionPageMaximum {
+		limit = MembershipProjectionPageMaximum
+	}
+	if snapshotter, ok := r.kv.(consistentSnapshotKV); ok {
+		var page MembershipProjectionPage
+		err := snapshotter.RunInReadSnapshot(ctx, func(snapshot kvReadSnapshot) error {
+			var err error
+			page, err = r.listMembershipProjectionPageSnapshot(ctx, snapshot, cursor, limit, includeTombstones)
+			return err
+		})
+		return page, err
+	}
+	prefix := membershipProjectionNodesPrefix(r.root)
+	storeCursor := ""
+	if strings.TrimSpace(cursor) != "" {
+		storeCursor = membershipProjectionNodeKey(r.root, cursor)
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		var before MembershipProjectionState
+		if err := r.getJSON(ctx, membershipProjectionStateKey(r.root), &before); err != nil {
+			return MembershipProjectionPage{}, err
+		}
+		keys, next, err := r.kv.List(ctx, prefix, storeCursor, limit)
+		if err != nil {
+			return MembershipProjectionPage{}, err
+		}
+		page := MembershipProjectionPage{
+			Records: make([]NodeMembershipRecord, 0, len(keys)),
+			Status:  r.membershipProjectionStatus(before),
+		}
+		var after MembershipProjectionState
+		if batcher, ok := r.kv.(kvBatchReader); ok {
+			stateKey := membershipProjectionStateKey(r.root)
+			batchKeys := make([]string, 0, len(keys)+1)
+			batchKeys = append(batchKeys, stateKey)
+			batchKeys = append(batchKeys, keys...)
+			values, err := batcher.BatchGet(ctx, batchKeys)
+			if err != nil {
+				return MembershipProjectionPage{}, err
+			}
+			stateRaw, found := values[stateKey]
+			if !found {
+				return MembershipProjectionPage{}, ErrNotFound
+			}
+			if err := json.Unmarshal(stateRaw, &after); err != nil {
+				return MembershipProjectionPage{}, err
+			}
+			if before.MembershipProjectionRevision != after.MembershipProjectionRevision {
+				continue
+			}
+			changed := false
+			for _, key := range keys {
+				raw, found := values[key]
+				if !found {
+					changed = true
+					break
+				}
+				var rec NodeMembershipRecord
+				if err := json.Unmarshal(raw, &rec); err != nil {
+					return MembershipProjectionPage{}, err
+				}
+				if includeTombstones || !rec.Tombstone {
+					page.Records = append(page.Records, rec)
+				}
+			}
+			if changed {
+				continue
+			}
+		} else {
+			changed := false
+			for _, key := range keys {
+				var rec NodeMembershipRecord
+				if err := r.getJSON(ctx, key, &rec); err != nil {
+					if errors.Is(err, ErrNotFound) {
+						changed = true
+						break
+					}
+					return MembershipProjectionPage{}, err
+				}
+				if includeTombstones || !rec.Tombstone {
+					page.Records = append(page.Records, rec)
+				}
+			}
+			if changed {
+				continue
+			}
+			if err := r.getJSON(ctx, membershipProjectionStateKey(r.root), &after); err != nil {
+				return MembershipProjectionPage{}, err
+			}
+		}
+		if before.MembershipProjectionRevision != after.MembershipProjectionRevision {
+			continue
+		}
+		page.Status = r.membershipProjectionStatus(after)
+		if next != "" {
+			page.NextCursor = strings.TrimPrefix(next, prefix)
+		}
+		return page, nil
+	}
+	return MembershipProjectionPage{}, ErrMembershipProjectionChanged
+}
+
+func (r *Repository) listMembershipProjectionPageSnapshot(ctx context.Context, snapshot kvReadSnapshot, cursor string, limit int, includeTombstones bool) (MembershipProjectionPage, error) {
+	stateKey := membershipProjectionStateKey(r.root)
+	stateRaw, found, err := snapshot.Get(ctx, stateKey)
+	if err != nil {
+		return MembershipProjectionPage{}, err
+	}
+	if !found {
+		return MembershipProjectionPage{}, ErrNotFound
+	}
+	var state MembershipProjectionState
+	if err := json.Unmarshal(stateRaw, &state); err != nil {
+		return MembershipProjectionPage{}, err
+	}
+
+	prefix := membershipProjectionNodesPrefix(r.root)
+	storeCursor := ""
+	if strings.TrimSpace(cursor) != "" {
+		storeCursor = membershipProjectionNodeKey(r.root, cursor)
+	}
+	keys, next, err := snapshot.List(ctx, prefix, storeCursor, limit)
+	if err != nil {
+		return MembershipProjectionPage{}, err
+	}
+	values, err := snapshot.BatchGet(ctx, keys)
+	if err != nil {
+		return MembershipProjectionPage{}, err
+	}
+	page := MembershipProjectionPage{
+		Records: make([]NodeMembershipRecord, 0, len(keys)),
+		Status:  r.membershipProjectionStatus(state),
+	}
+	for _, key := range keys {
+		raw, found := values[key]
+		if !found {
+			return MembershipProjectionPage{}, ErrMembershipProjectionChanged
+		}
+		var rec NodeMembershipRecord
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			return MembershipProjectionPage{}, err
+		}
+		if includeTombstones || !rec.Tombstone {
+			page.Records = append(page.Records, rec)
+		}
+	}
+	if next != "" {
+		page.NextCursor = strings.TrimPrefix(next, prefix)
+	}
+	return page, nil
+}
+
+// RebuildMembershipProjection is an explicit bounded resync path. It scans
+// authority and projection keys in fixed-size pages, then commits only if the
+// authority revision observed before the scan is still current.
+func (r *Repository) RebuildMembershipProjection(ctx context.Context) (MembershipProjectionStatus, error) {
+	for attempt := 0; attempt < 3; attempt++ {
+		var before MembershipProjectionState
+		beforeErr := r.getJSON(ctx, membershipProjectionStateKey(r.root), &before)
+		beforeExists := beforeErr == nil
+		if beforeErr != nil && !errors.Is(beforeErr, ErrNotFound) {
+			return MembershipProjectionStatus{}, beforeErr
+		}
+		records, err := r.listAuthorityMembershipRecords(ctx)
+		if err != nil {
+			return MembershipProjectionStatus{}, err
+		}
+		oldProjectionKeys, err := r.listAll(ctx, membershipProjectionNodesPrefix(r.root))
+		if err != nil {
+			return MembershipProjectionStatus{}, err
+		}
+		now := r.currentMembershipTime()
+		var rebuilt MembershipProjectionState
+		apply := func(store kvReadWriter) error {
+			var current MembershipProjectionState
+			currentErr := getJSONStore(ctx, store, membershipProjectionStateKey(r.root), &current)
+			currentExists := currentErr == nil
+			if currentErr != nil && !errors.Is(currentErr, ErrNotFound) {
+				return currentErr
+			}
+			if currentExists != beforeExists || (currentExists && current.MembershipRevision != before.MembershipRevision) {
+				return ErrCASConflict
+			}
+
+			state := current
+			state.SchemaVersion = MembershipRecordSchemaV1
+			if state.MembershipRevision == 0 && len(records) > 0 {
+				for i := range records {
+					normalizeLegacyNodeMembershipRecord(&records[i], now)
+					state.MembershipRevision++
+					records[i].MembershipRevision = state.MembershipRevision
+					if err := putJSONStore(ctx, store, nodeMembershipKey(r.root, records[i].NodeID), records[i]); err != nil {
+						return err
+					}
+				}
+				state.MembershipUpdatedAtUnixNano = now.UnixNano()
+			}
+			for _, key := range oldProjectionKeys {
+				if err := store.Delete(ctx, key); err != nil {
+					return err
+				}
+			}
+			for _, rec := range records {
+				if err := putJSONStore(ctx, store, membershipProjectionNodeKey(r.root, rec.NodeID), rec); err != nil {
+					return err
+				}
+			}
+			if state.MembershipProjectionRevision != state.MembershipRevision {
+				state.ProjectionResyncCount++
+			}
+			state.MembershipProjectionRevision = state.MembershipRevision
+			state.ProjectionUpdatedAtUnixNano = now.UnixNano()
+			state.ProjectionRebuildCount++
+			state.LastError = ""
+			if err := putJSONStore(ctx, store, membershipProjectionStateKey(r.root), state); err != nil {
+				return err
+			}
+			rebuilt = state
+			return nil
+		}
+		if txkv, ok := r.kv.(transactionalKV); ok {
+			err = txkv.RunInTransaction(ctx, apply)
+		} else {
+			r.mu.Lock()
+			err = apply(r.kv)
+			r.mu.Unlock()
+		}
+		if errors.Is(err, ErrCASConflict) {
+			continue
+		}
+		if err != nil {
+			return MembershipProjectionStatus{}, err
+		}
+		r.invalidateMembershipCache()
+		return r.membershipProjectionStatus(rebuilt), nil
+	}
+	return MembershipProjectionStatus{}, ErrCASConflict
+}
+
+func (r *Repository) ensureMembershipProjection(ctx context.Context) error {
+	var state MembershipProjectionState
+	err := r.getJSON(ctx, membershipProjectionStateKey(r.root), &state)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	_, err = r.RebuildMembershipProjection(ctx)
+	return err
+}
+
+func (r *Repository) listAuthorityMembershipRecords(ctx context.Context) ([]NodeMembershipRecord, error) {
+	keys, err := r.listAll(ctx, fmt.Sprintf("%s/nodes/", r.root))
 	if err != nil {
 		return nil, err
 	}
@@ -1434,12 +1905,118 @@ func (r *Repository) ListNodeMemberships(ctx context.Context) ([]NodeMembershipR
 		}
 		var rec NodeMembershipRecord
 		if err := r.getJSON(ctx, key, &rec); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
 			return nil, err
 		}
 		out = append(out, rec)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].NodeID < out[j].NodeID })
 	return out, nil
+}
+
+func normalizeNodeMembershipRecord(rec *NodeMembershipRecord, existing NodeMembershipRecord, now time.Time) {
+	normalizeLegacyNodeMembershipRecord(rec, now)
+	if existing.Generation > 0 {
+		rec.Generation = existing.Generation + 1
+	} else {
+		rec.Generation = 1
+	}
+	if existing.CreatedAtUnix > 0 {
+		rec.CreatedAtUnix = existing.CreatedAtUnix
+	}
+}
+
+func normalizeLegacyNodeMembershipRecord(rec *NodeMembershipRecord, now time.Time) {
+	rec.NodeID = strings.TrimSpace(rec.NodeID)
+	if rec.SchemaVersion == "" {
+		rec.SchemaVersion = MembershipRecordSchemaV1
+	}
+	if rec.ReplicaID == "" {
+		rec.ReplicaID = rec.NodeID
+	}
+	if len(rec.StoreIDs) == 0 && rec.ReplicaID != "" {
+		rec.StoreIDs = []string{rec.ReplicaID}
+	}
+	if len(rec.Roles) == 0 {
+		rec.Roles = []string{"sbs-data"}
+	}
+	if rec.DesiredState == "" {
+		rec.DesiredState = string(rec.LifecycleState)
+	}
+	if rec.ObservedState == "" {
+		rec.ObservedState = string(rec.HealthState)
+	}
+	if rec.Generation == 0 {
+		rec.Generation = 1
+	}
+	if rec.CreatedAtUnix == 0 {
+		rec.CreatedAtUnix = now.Unix()
+	}
+	rec.UpdatedAtUnix = now.Unix()
+}
+
+func (r *Repository) membershipProjectionStatus(state MembershipProjectionState) MembershipProjectionStatus {
+	status := MembershipProjectionStatus{
+		MembershipRevision:           state.MembershipRevision,
+		MembershipProjectionRevision: state.MembershipProjectionRevision,
+		ProjectionHealth:             "healthy",
+		ProjectionRebuildCount:       state.ProjectionRebuildCount,
+		ProjectionResyncCount:        state.ProjectionResyncCount,
+		FirstError:                   state.FirstError,
+		LastError:                    state.LastError,
+	}
+	if state.MembershipProjectionRevision == state.MembershipRevision {
+		return status
+	}
+	status.Stale = true
+	status.ProjectionHealth = "degraded"
+	if state.MembershipProjectionRevision > state.MembershipRevision {
+		status.ProjectionHealth = "blocked"
+		return status
+	}
+	updated := time.Unix(0, state.MembershipUpdatedAtUnixNano)
+	lag := r.currentMembershipTime().Sub(updated)
+	if state.MembershipUpdatedAtUnixNano == 0 || lag < 0 {
+		lag = 0
+	}
+	status.ProjectionLagMS = lag.Milliseconds()
+	if lag >= MembershipProjectionBlockedAfter {
+		status.ProjectionHealth = "blocked"
+	}
+	return status
+}
+
+func (r *Repository) currentMembershipTime() time.Time {
+	if r.now == nil {
+		return time.Now()
+	}
+	return r.now()
+}
+
+func (r *Repository) invalidateMembershipCache() {
+	r.membershipCacheMu.Lock()
+	r.membershipCacheReady = false
+	r.membershipCacheRevision = 0
+	r.membershipCacheRecords = nil
+	r.membershipCacheMu.Unlock()
+}
+
+func cloneNodeMembershipRecord(rec NodeMembershipRecord) NodeMembershipRecord {
+	rec.StoreIDs = slices.Clone(rec.StoreIDs)
+	rec.Roles = slices.Clone(rec.Roles)
+	rec.Capabilities = slices.Clone(rec.Capabilities)
+	rec.SBSEndpoints = slices.Clone(rec.SBSEndpoints)
+	return rec
+}
+
+func cloneNodeMembershipRecords(records []NodeMembershipRecord) []NodeMembershipRecord {
+	out := make([]NodeMembershipRecord, len(records))
+	for i := range records {
+		out[i] = cloneNodeMembershipRecord(records[i])
+	}
+	return out
 }
 
 func (r *Repository) PutPlacementTransition(ctx context.Context, rec PlacementTransitionRecord) error {
@@ -4454,6 +5031,18 @@ func topologyZoneKey(root, zoneID string) string {
 
 func nodeMembershipKey(root, nodeID string) string {
 	return fmt.Sprintf("%s/nodes/%s/membership", root, nodeID)
+}
+
+func membershipProjectionStateKey(root string) string {
+	return fmt.Sprintf("%s/membership/state", root)
+}
+
+func membershipProjectionNodesPrefix(root string) string {
+	return fmt.Sprintf("%s/membership/projection/nodes/", root)
+}
+
+func membershipProjectionNodeKey(root, nodeID string) string {
+	return fmt.Sprintf("%s%s", membershipProjectionNodesPrefix(root), strings.TrimSpace(nodeID))
 }
 
 func nodeHealthDetailKey(root, nodeID string) string {

@@ -19,6 +19,9 @@ import (
 
 	"github.com/nosway/namrbd/gateway/sbsgrpc"
 	"github.com/nosway/namrbd/gateway/service"
+	"github.com/nosway/namrbd/internal/cliux"
+	"github.com/nosway/namrbd/internal/depavail"
+	"github.com/nosway/namrbd/internal/envcompat"
 	"github.com/nosway/namrbd/sbs/local"
 	sbsv1 "github.com/nosway/namrbd/sbs/v1"
 	namrbdversion "github.com/nosway/namrbd/version"
@@ -27,6 +30,7 @@ import (
 )
 
 var buildVersion = namrbdversion.ProductVersion()
+var dependencyTracker = depavail.NewTracker(depavail.DefaultThresholds())
 
 func main() {
 	for _, arg := range os.Args[1:] {
@@ -35,19 +39,57 @@ func main() {
 			return
 		}
 	}
+	os.Args = append(os.Args[:1], cliux.RewriteDeprecatedFlags(os.Args[1:], []cliux.Alias{
+		{Legacy: "grpc-listen", Canonical: "sbs-data-listen", DeprecatedIn: "post-1.0"},
+		{Legacy: "http-listen", Canonical: "sbs-data-http-listen", DeprecatedIn: "post-1.0"},
+	}, os.Stderr)...)
+	os.Args = append(os.Args[:1], cliux.RewriteCommandArgs(os.Args[1:], false, false)...)
 	fs := flag.NewFlagSet("sbs-data", flag.ExitOnError)
-	path := fs.String("path", getenvOrDefault("NAMRBD_SBS_DATA_DIR", "./var/sbs-data"), "local sbs-data path")
+	configPath := fs.String("config", "", "service config file path (AA-IMPL-001G); store layout stays in --store-config")
+	clusterID := fs.String("cluster-id", getenvOrDefault("NAMRBD_CLUSTER_ID", "namrbd-dev"), "NAMRBD cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", getenvOrDefault("NAMRBD_SBS_CLUSTER_ID", ""), "SBS cluster id; defaults to --cluster-id when omitted")
+	nodeID := fs.String("node-id", getenvOrDefault("NAMRBD_SBS_DATA_NODE_ID", "sbs-data-1"), "sbs-data node id")
+	path := fs.String("path", getenvCompatOrDefault(envcompat.SBSDataPath, "./var/sbs-data"), "local sbs-data path")
 	storeConfigPath := fs.String("store-config", getenvOrDefault("NAMRBD_SBS_STORE_CONFIG", ""), "YAML store config file path")
 	var storeSpecs storeFlag
 	fs.Var(&storeSpecs, "store", "payload store spec path:shards=N,weight=W[,id=ID] (repeatable)")
-	grpcListen := fs.String("grpc-listen", getenvOrDefault("NAMRBD_SBS_GRPC_ADDR", "0.0.0.0:9444"), "listen address for sbs-data gRPC")
-	httpListen := fs.String("http-listen", getenvOrDefault("NAMRBD_BIND_ADDR", "0.0.0.0:9082"), "listen address for HTTP health/debug")
+	grpcListen := fs.String("sbs-data-listen", getenvCompatOrDefault(envcompat.SBSDataGRPCListen, "0.0.0.0:9444"), "listen address for sbs-data gRPC")
+	httpListen := fs.String("sbs-data-http-listen", getenvCompatOrDefault(envcompat.SBSDataHTTPListen, "0.0.0.0:9082"), "listen address for sbs-data HTTP health and observability")
 	enableLabStoreDebug := fs.Bool("enable-lab-store-debug", getenvBoolOrDefault("NAMRBD_SBS_ENABLE_LAB_STORE_DEBUG", false), "enable lab-only debug store mutation endpoints")
 	disableIdempotencySync := fs.Bool("lab-disable-idempotency-sync", getenvBoolOrDefault("NAMRBD_SBS_LAB_DISABLE_IDEMPOTENCY_SYNC", false), "lab-only: write idempotency records without Pebble sync")
 	cacheOpenVolumeSpec := fs.Bool("lab-cache-open-volume-spec", getenvBoolOrDefault("NAMRBD_SBS_LAB_CACHE_OPEN_VOLUME_SPEC", false), "lab-only: reuse the opened volume spec on hot data-plane requests")
 	disablePhysicalWriteIdempotency := fs.Bool("lab-disable-physical-write-idempotency", getenvBoolOrDefault("NAMRBD_SBS_LAB_DISABLE_PHYSICAL_WRITE_IDEMPOTENCY", false), "lab-only: skip durable idempotency lookup/store for fresh physical chunk writes")
 	dataOperationTrace := fs.Bool("data-operation-trace", getenvBoolOrDefault("NAMRBD_SBS_DATA_OPERATION_TRACE", false), "lab-only: emit structured sbs-data read/write success trace events")
+	cliux.InstallStructuredUsage(fs, "sbs-data", func(name string) bool {
+		_, hidden := sbsDataLabFlagsRejectedAtScale[name]
+		return hidden
+	})
 	fs.Parse(os.Args[1:])
+
+	// Without --config sbs-data behaves exactly as before.
+	if strings.TrimSpace(*configPath) != "" {
+		summary, err := applySBSDataConfig(*configPath, sbsDataConfigBinding{
+			ClusterID:       clusterID,
+			SBSClusterID:    sbsClusterID,
+			NodeID:          nodeID,
+			DataPath:        path,
+			StoreConfigPath: storeConfigPath,
+			GRPCListen:      grpcListen,
+			HTTPListen:      httpListen,
+
+			EnableLabStoreDebug: enableLabStoreDebug,
+			DataOperationTrace:  dataOperationTrace,
+		}, explicitlySetFlags(fs), osEnvLookup)
+		if blob, mErr := json.Marshal(summary); mErr == nil {
+			log.Printf("service config summary: %s", blob)
+		}
+		if err != nil {
+			log.Fatalf("service config: %v", err)
+		}
+	}
+	if strings.TrimSpace(*sbsClusterID) == "" {
+		*sbsClusterID = strings.TrimSpace(*clusterID)
+	}
 
 	if strings.TrimSpace(*storeConfigPath) != "" && len(storeSpecs) > 0 {
 		log.Fatalf("--store-config and -store cannot be used together")
@@ -82,8 +124,10 @@ func main() {
 	sbsv1.RegisterVolumeServiceServer(grpcSrv, sbsgrpc.NewServer(client))
 
 	httpSrv := &http.Server{
-		Addr:    *httpListen,
-		Handler: observabilityMux(*path, *storeConfigPath, client, *enableLabStoreDebug),
+		Addr: *httpListen,
+		Handler: observabilityMuxWithIdentity(*path, *storeConfigPath, client, *enableLabStoreDebug, sbsDataIdentity{
+			ClusterID: *clusterID, SBSClusterID: *sbsClusterID, NodeID: *nodeID,
+		}),
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -110,15 +154,29 @@ func main() {
 }
 
 func observabilityMux(path, storeConfigPath string, client *local.Client, enableLabStoreDebug bool) http.Handler {
+	return observabilityMuxWithIdentity(path, storeConfigPath, client, enableLabStoreDebug, sbsDataIdentity{})
+}
+
+type sbsDataIdentity struct {
+	ClusterID    string
+	SBSClusterID string
+	NodeID       string
+}
+
+func observabilityMuxWithIdentity(path, storeConfigPath string, client *local.Client, enableLabStoreDebug bool, identity sbsDataIdentity) http.Handler {
 	mux := http.NewServeMux()
+	// Tracks which store configuration this node is serving, so a fleet-wide
+	// rollout can be told apart from a node that never picked the change up.
+	revision := &storeConfigRevision{}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok\n"))
-	})
+	// AA-IMPL-004B. sbs-data has no etcd/TiKV dependency today, so the tracker
+	// reports the healthy default. The JSON surface is still important: every
+	// long-running process exposes the same readiness contract before
+	// AA-IMPL-012 adds receiver-side fencing to this process.
+	mux.Handle("/readyz", depavail.ReadinessHandler(dependencyTracker))
 	mux.HandleFunc("/debug/summary", func(w http.ResponseWriter, _ *http.Request) {
 		snapshot, err := client.ObservabilitySnapshot()
 		if err != nil {
@@ -126,16 +184,21 @@ func observabilityMux(path, storeConfigPath string, client *local.Client, enable
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"path":                path,
-			"build_version":       snapshot.BuildVersion,
-			"volumes":             snapshot.Volumes,
-			"open_sessions":       snapshot.OpenSessions,
-			"allocation_pages":    snapshot.ExtentPages,
-			"extent_pages":        snapshot.ExtentPages,
-			"garbage_chunks":      snapshot.GarbageChunks,
-			"idempotency_records": snapshot.IdempotencyRecords,
-			"stores":              snapshot.Stores,
-			"timings":             snapshot.Timings,
+			"cluster_id":                  identity.ClusterID,
+			"sbs_cluster_id":              identity.SBSClusterID,
+			"node_id":                     identity.NodeID,
+			"path":                        path,
+			"build_version":               snapshot.BuildVersion,
+			"volumes":                     snapshot.Volumes,
+			"open_sessions":               snapshot.OpenSessions,
+			"allocation_pages":            snapshot.ExtentPages,
+			"extent_pages":                snapshot.ExtentPages,
+			"garbage_chunks":              snapshot.GarbageChunks,
+			"idempotency_records":         snapshot.IdempotencyRecords,
+			"iscsi_writer_fences":         snapshot.ISCSIWriterFences,
+			"stale_writer_rejected_count": snapshot.StaleWriterRejectedCount,
+			"stores":                      snapshot.Stores,
+			"timings":                     snapshot.Timings,
 		})
 	})
 	mux.HandleFunc("/debug/store-health", func(w http.ResponseWriter, _ *http.Request) {
@@ -151,7 +214,16 @@ func observabilityMux(path, storeConfigPath string, client *local.Client, enable
 			"timings":       snapshot.Timings,
 		})
 	})
-	mux.HandleFunc("/debug/materialize-volume", func(w http.ResponseWriter, r *http.Request) {
+	labStoreDebug := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if !enableLabStoreDebug {
+				http.NotFound(w, r)
+				return
+			}
+			next(w, r)
+		}
+	}
+	mux.HandleFunc("/debug/materialize-volume", labStoreDebug(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -210,7 +282,7 @@ func observabilityMux(path, storeConfigPath string, client *local.Client, enable
 			"chunk_size_bytes":            spec.ChunkSizeBytes,
 			"extent_page_bytes":           spec.ExtentPageBytes,
 		})
-	})
+	}))
 	handleAllocationPagesDebug := func(w http.ResponseWriter, r *http.Request) {
 		volumeID := strings.TrimSpace(r.URL.Query().Get("volume_id"))
 		if volumeID == "" {
@@ -227,9 +299,9 @@ func observabilityMux(path, storeConfigPath string, client *local.Client, enable
 			"pages":     pages,
 		})
 	}
-	mux.HandleFunc("/debug/allocation-pages", handleAllocationPagesDebug)
-	mux.HandleFunc("/debug/extent-pages", handleAllocationPagesDebug)
-	mux.HandleFunc("/debug/store-shards", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/debug/allocation-pages", labStoreDebug(handleAllocationPagesDebug))
+	mux.HandleFunc("/debug/extent-pages", labStoreDebug(handleAllocationPagesDebug))
+	mux.HandleFunc("/debug/store-shards", labStoreDebug(func(w http.ResponseWriter, r *http.Request) {
 		snapshots, err := client.ShardSnapshots()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -238,8 +310,8 @@ func observabilityMux(path, storeConfigPath string, client *local.Client, enable
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"shards": snapshots,
 		})
-	})
-	mux.HandleFunc("/debug/write-pattern", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/debug/write-pattern", labStoreDebug(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -295,7 +367,7 @@ func observabilityMux(path, storeConfigPath string, client *local.Client, enable
 			"fill_byte":       fmt.Sprintf("0x%02x", fillByte),
 			"volume_revision": resp.VolumeRevision,
 		})
-	})
+	}))
 	if enableLabStoreDebug {
 		mux.HandleFunc("/debug/purge-volume", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodPost {
@@ -419,10 +491,13 @@ func observabilityMux(path, storeConfigPath string, client *local.Client, enable
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			rev, digest := revision.observe(configPath)
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"ok":          true,
-				"config_path": configPath,
-				"stores":      snapshot.Stores,
+				"ok":                    true,
+				"config_path":           configPath,
+				"store_config_revision": rev,
+				"store_config_digest":   digest,
+				"stores":                snapshot.Stores,
 			})
 		})
 	}
@@ -536,6 +611,12 @@ func observabilityMux(path, storeConfigPath string, client *local.Client, enable
 		_, _ = fmt.Fprintln(w, "# HELP sbs_data_open_sessions Number of currently open writer sessions.")
 		_, _ = fmt.Fprintln(w, "# TYPE sbs_data_open_sessions gauge")
 		_, _ = fmt.Fprintf(w, "sbs_data_open_sessions %d\n", snapshot.OpenSessions)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_data_iscsi_writer_fences Number of cached receiver-side iSCSI writer fences.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_data_iscsi_writer_fences gauge")
+		_, _ = fmt.Fprintf(w, "sbs_data_iscsi_writer_fences %d\n", snapshot.ISCSIWriterFences)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_data_stale_writer_rejected_total Number of iSCSI requests rejected by receiver-side fencing.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_data_stale_writer_rejected_total counter")
+		_, _ = fmt.Fprintf(w, "sbs_data_stale_writer_rejected_total %d\n", snapshot.StaleWriterRejectedCount)
 		_, _ = fmt.Fprintln(w, "# HELP sbs_data_allocation_pages_total Number of persisted allocation page metadata records.")
 		_, _ = fmt.Fprintln(w, "# TYPE sbs_data_allocation_pages_total gauge")
 		_, _ = fmt.Fprintf(w, "sbs_data_allocation_pages_total %d\n", snapshot.ExtentPages)
@@ -662,6 +743,18 @@ func (f *storeFlag) Set(raw string) error {
 func getenvOrDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getenvCompatOrDefault(spec envcompat.Spec, fallback string) string {
+	resolved, err := envcompat.ResolveCurrent(spec, os.LookupEnv)
+	if err != nil {
+		log.Fatalf("environment configuration: %v", err)
+	}
+	envcompat.WriteWarnings(os.Stderr, resolved.Warnings)
+	if resolved.Present {
+		return resolved.Value
 	}
 	return fallback
 }

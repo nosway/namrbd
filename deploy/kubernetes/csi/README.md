@@ -122,8 +122,9 @@ placeholders. Use a Kubernetes Secret or External Secrets instead.
 
 ## Runtime Notes
 
-`NAMRBD_ADMIN_ENDPOINT` is the primary SBS admin gRPC target.
-`NAMRBD_ADMIN_ENDPOINTS` may provide a comma- or space-separated endpoint list.
+`NAMRBD_SBS_SERVICE_ENDPOINT` is the primary `sbs-service` AdminService gRPC
+target. `NAMRBD_SBS_SERVICE_ENDPOINTS` provides its optional comma- or
+space-separated leader-aware failover list.
 Entries may use `node_id=endpoint`, for example
 `svc-a=10.0.0.10:9443 svc-b=10.0.0.11:9443`.
 

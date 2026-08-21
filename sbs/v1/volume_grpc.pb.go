@@ -19,20 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VolumeService_OpenVolume_FullMethodName         = "/sbs.v1.VolumeService/OpenVolume"
-	VolumeService_CloseVolume_FullMethodName        = "/sbs.v1.VolumeService/CloseVolume"
-	VolumeService_GetVolumeProfile_FullMethodName   = "/sbs.v1.VolumeService/GetVolumeProfile"
-	VolumeService_GetVolumeStatus_FullMethodName    = "/sbs.v1.VolumeService/GetVolumeStatus"
-	VolumeService_Read_FullMethodName               = "/sbs.v1.VolumeService/Read"
-	VolumeService_Write_FullMethodName              = "/sbs.v1.VolumeService/Write"
-	VolumeService_ReadPhysicalChunk_FullMethodName  = "/sbs.v1.VolumeService/ReadPhysicalChunk"
-	VolumeService_WritePhysicalChunk_FullMethodName = "/sbs.v1.VolumeService/WritePhysicalChunk"
-	VolumeService_WriteECShard_FullMethodName       = "/sbs.v1.VolumeService/WriteECShard"
-	VolumeService_ReadECShard_FullMethodName        = "/sbs.v1.VolumeService/ReadECShard"
-	VolumeService_DeleteECShard_FullMethodName      = "/sbs.v1.VolumeService/DeleteECShard"
-	VolumeService_Flush_FullMethodName              = "/sbs.v1.VolumeService/Flush"
-	VolumeService_Discard_FullMethodName            = "/sbs.v1.VolumeService/Discard"
-	VolumeService_Zero_FullMethodName               = "/sbs.v1.VolumeService/Zero"
+	VolumeService_OpenVolume_FullMethodName            = "/sbs.v1.VolumeService/OpenVolume"
+	VolumeService_CloseVolume_FullMethodName           = "/sbs.v1.VolumeService/CloseVolume"
+	VolumeService_GetVolumeProfile_FullMethodName      = "/sbs.v1.VolumeService/GetVolumeProfile"
+	VolumeService_GetVolumeStatus_FullMethodName       = "/sbs.v1.VolumeService/GetVolumeStatus"
+	VolumeService_Read_FullMethodName                  = "/sbs.v1.VolumeService/Read"
+	VolumeService_Write_FullMethodName                 = "/sbs.v1.VolumeService/Write"
+	VolumeService_ReadPhysicalChunk_FullMethodName     = "/sbs.v1.VolumeService/ReadPhysicalChunk"
+	VolumeService_WritePhysicalChunk_FullMethodName    = "/sbs.v1.VolumeService/WritePhysicalChunk"
+	VolumeService_WriteECShard_FullMethodName          = "/sbs.v1.VolumeService/WriteECShard"
+	VolumeService_ReadECShard_FullMethodName           = "/sbs.v1.VolumeService/ReadECShard"
+	VolumeService_DeleteECShard_FullMethodName         = "/sbs.v1.VolumeService/DeleteECShard"
+	VolumeService_Flush_FullMethodName                 = "/sbs.v1.VolumeService/Flush"
+	VolumeService_Discard_FullMethodName               = "/sbs.v1.VolumeService/Discard"
+	VolumeService_Zero_FullMethodName                  = "/sbs.v1.VolumeService/Zero"
+	VolumeService_ApplyISCSIWriterFence_FullMethodName = "/sbs.v1.VolumeService/ApplyISCSIWriterFence"
 )
 
 // VolumeServiceClient is the client API for VolumeService service.
@@ -53,6 +54,7 @@ type VolumeServiceClient interface {
 	Flush(ctx context.Context, in *FlushRequest, opts ...grpc.CallOption) (*FlushResponse, error)
 	Discard(ctx context.Context, in *DiscardRequest, opts ...grpc.CallOption) (*DiscardResponse, error)
 	Zero(ctx context.Context, in *ZeroRequest, opts ...grpc.CallOption) (*ZeroResponse, error)
+	ApplyISCSIWriterFence(ctx context.Context, in *ApplyISCSIWriterFenceRequest, opts ...grpc.CallOption) (*ApplyISCSIWriterFenceResponse, error)
 }
 
 type volumeServiceClient struct {
@@ -203,6 +205,16 @@ func (c *volumeServiceClient) Zero(ctx context.Context, in *ZeroRequest, opts ..
 	return out, nil
 }
 
+func (c *volumeServiceClient) ApplyISCSIWriterFence(ctx context.Context, in *ApplyISCSIWriterFenceRequest, opts ...grpc.CallOption) (*ApplyISCSIWriterFenceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyISCSIWriterFenceResponse)
+	err := c.cc.Invoke(ctx, VolumeService_ApplyISCSIWriterFence_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // VolumeServiceServer is the server API for VolumeService service.
 // All implementations must embed UnimplementedVolumeServiceServer
 // for forward compatibility.
@@ -221,6 +233,7 @@ type VolumeServiceServer interface {
 	Flush(context.Context, *FlushRequest) (*FlushResponse, error)
 	Discard(context.Context, *DiscardRequest) (*DiscardResponse, error)
 	Zero(context.Context, *ZeroRequest) (*ZeroResponse, error)
+	ApplyISCSIWriterFence(context.Context, *ApplyISCSIWriterFenceRequest) (*ApplyISCSIWriterFenceResponse, error)
 	mustEmbedUnimplementedVolumeServiceServer()
 }
 
@@ -272,6 +285,9 @@ func (UnimplementedVolumeServiceServer) Discard(context.Context, *DiscardRequest
 }
 func (UnimplementedVolumeServiceServer) Zero(context.Context, *ZeroRequest) (*ZeroResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Zero not implemented")
+}
+func (UnimplementedVolumeServiceServer) ApplyISCSIWriterFence(context.Context, *ApplyISCSIWriterFenceRequest) (*ApplyISCSIWriterFenceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ApplyISCSIWriterFence not implemented")
 }
 func (UnimplementedVolumeServiceServer) mustEmbedUnimplementedVolumeServiceServer() {}
 func (UnimplementedVolumeServiceServer) testEmbeddedByValue()                       {}
@@ -546,6 +562,24 @@ func _VolumeService_Zero_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VolumeService_ApplyISCSIWriterFence_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyISCSIWriterFenceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumeServiceServer).ApplyISCSIWriterFence(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumeService_ApplyISCSIWriterFence_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumeServiceServer).ApplyISCSIWriterFence(ctx, req.(*ApplyISCSIWriterFenceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // VolumeService_ServiceDesc is the grpc.ServiceDesc for VolumeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -608,6 +642,10 @@ var VolumeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Zero",
 			Handler:    _VolumeService_Zero_Handler,
+		},
+		{
+			MethodName: "ApplyISCSIWriterFence",
+			Handler:    _VolumeService_ApplyISCSIWriterFence_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

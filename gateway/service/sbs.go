@@ -37,6 +37,7 @@ const (
 	SBSErrorCodeAttachmentMismatch  SBSErrorCode = "attachment_mismatch"
 	SBSErrorCodeIdempotencyConflict SBSErrorCode = "idempotency_conflict"
 	SBSErrorCodeSecurityRejected    SBSErrorCode = "security_rejected"
+	SBSErrorCodeFenced              SBSErrorCode = "fenced"
 	SBSErrorCodeUnavailable         SBSErrorCode = "unavailable"
 	SBSErrorCodeTimeout             SBSErrorCode = "timeout"
 	SBSErrorCodeInternal            SBSErrorCode = "internal"
@@ -55,15 +56,18 @@ var (
 )
 
 type SBSRequestContext struct {
-	RequestID      string `json:"request_id"`
-	GatewayID      string `json:"gateway_id"`
-	HostID         string `json:"host_id,omitempty"`
-	SessionID      string `json:"session_id,omitempty"`
-	AttachmentID   string `json:"attachment_id,omitempty"`
-	Generation     uint64 `json:"generation,omitempty"`
-	IdempotencyKey string `json:"idempotency_key,omitempty"`
-	DeadlineUnixMS int64  `json:"deadline_unix_ms,omitempty"`
-	TraceID        string `json:"trace_id,omitempty"`
+	RequestID          string `json:"request_id"`
+	GatewayID          string `json:"gateway_id"`
+	HostID             string `json:"host_id,omitempty"`
+	SessionID          string `json:"session_id,omitempty"`
+	AttachmentID       string `json:"attachment_id,omitempty"`
+	Generation         uint64 `json:"generation,omitempty"`
+	IdempotencyKey     string `json:"idempotency_key,omitempty"`
+	DeadlineUnixMS     int64  `json:"deadline_unix_ms,omitempty"`
+	TraceID            string `json:"trace_id,omitempty"`
+	ISCSIExportID      string `json:"iscsi_export_id,omitempty"`
+	ISCSIExportLeaseID string `json:"iscsi_export_lease_id,omitempty"`
+	ISCSIExportEpoch   uint64 `json:"iscsi_export_epoch,omitempty"`
 }
 
 func (c SBSRequestContext) Validate(requireWriter bool, requireIdempotency bool) error {
@@ -525,6 +529,54 @@ type SBSClient interface {
 	Flush(ctx context.Context, req *FlushRequest) (*FlushResponse, error)
 	Discard(ctx context.Context, req *DiscardRequest) (*DiscardResponse, error)
 	Zero(ctx context.Context, req *ZeroRequest) (*ZeroResponse, error)
+}
+
+// ISCSIWriterFence is the receiver-side authority projected by sbs-service
+// before an iSCSI failover revision becomes visible to gateways.
+type ISCSIWriterFence struct {
+	VolumeID         string `json:"volume_id"`
+	ExportID         string `json:"export_id"`
+	ExportLeaseID    string `json:"export_lease_id"`
+	ExportEpoch      uint64 `json:"export_epoch"`
+	ActiveGatewayID  string `json:"active_gateway_id"`
+	RegistryRevision uint64 `json:"registry_revision"`
+}
+
+func (f ISCSIWriterFence) Validate() error {
+	if err := validateSBSVolumeID(f.VolumeID); err != nil {
+		return err
+	}
+	if f.ExportID == "" {
+		return fmt.Errorf("iscsi export_id is required")
+	}
+	if f.ExportLeaseID == "" {
+		return fmt.Errorf("iscsi export_lease_id is required")
+	}
+	if f.ExportEpoch == 0 {
+		return fmt.Errorf("iscsi export_epoch must be >= 1")
+	}
+	if f.ActiveGatewayID == "" {
+		return fmt.Errorf("iscsi active_gateway_id is required")
+	}
+	if f.RegistryRevision == 0 {
+		return fmt.Errorf("iscsi registry_revision must be >= 1")
+	}
+	return nil
+}
+
+type ApplyISCSIWriterFenceRequest struct {
+	Fence ISCSIWriterFence `json:"fence"`
+}
+
+type ApplyISCSIWriterFenceResponse struct {
+	Status                   string           `json:"status"`
+	Applied                  bool             `json:"applied"`
+	Fence                    ISCSIWriterFence `json:"fence"`
+	StaleWriterRejectedCount uint64           `json:"stale_writer_rejected_count"`
+}
+
+type ISCSIWriterFenceClient interface {
+	ApplyISCSIWriterFence(context.Context, *ApplyISCSIWriterFenceRequest) (*ApplyISCSIWriterFenceResponse, error)
 }
 
 type PhysicalChunkSBSClient interface {

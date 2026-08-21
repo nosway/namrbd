@@ -17,12 +17,40 @@ import (
 	"github.com/nosway/namrbd/gateway/service"
 )
 
-const defaultLeaseTTL = 30
+const defaultLeaseTTL = 15
 const extentCASRetryLimit = 8
 
 type EtcdRepository struct {
+	pressure *EtcdPressure
 	client   *clientv3.Client
 	rootPath string
+
+	// onEtcdOutcome receives the result of etcd calls this repository already
+	// makes. AA-IMPL-004B feeds the dependency availability tracker from it.
+	//
+	// It is a function rather than a depavail dependency so this package keeps
+	// knowing nothing about availability policy: it reports what happened, and
+	// what that means is decided elsewhere.
+	onEtcdOutcome func(error)
+}
+
+// SetEtcdOutcomeObserver installs the outcome observer. Calling it with nil
+// removes the observer.
+//
+// Reporting from calls the repository already makes is the whole point. A
+// dedicated liveness probe would add a standing read per process per
+// dependency, which is a fraction of the load AA-IMPL-003 spent three slices
+// removing, to learn something the lease renewal already knows.
+func (r *EtcdRepository) SetEtcdOutcomeObserver(f func(error)) {
+	if r != nil {
+		r.onEtcdOutcome = f
+	}
+}
+
+func (r *EtcdRepository) observeEtcd(err error) {
+	if r != nil && r.onEtcdOutcome != nil {
+		r.onEtcdOutcome(err)
+	}
 }
 
 func NewEtcdRepository(client *clientv3.Client, rootPath string) *EtcdRepository {
@@ -31,7 +59,7 @@ func NewEtcdRepository(client *clientv3.Client, rootPath string) *EtcdRepository
 		rootPath = "/namrbd"
 	}
 	rootPath = strings.TrimRight(rootPath, "/")
-	return &EtcdRepository{client: client, rootPath: rootPath}
+	return &EtcdRepository{pressure: &EtcdPressure{}, client: client, rootPath: rootPath}
 }
 
 func NewEtcdClient(endpoints []string, timeout time.Duration) (*clientv3.Client, error) {
@@ -301,6 +329,7 @@ func (r *EtcdRepository) PutVolumeStatus(ctx context.Context, status service.Vol
 }
 
 func (r *EtcdRepository) ListVolumes(ctx context.Context) ([]service.VolumeSpec, error) {
+	r.pressure.countPrefixScan()
 	resp, err := r.client.Get(ctx, r.volumeSpecPrefix(), clientv3.WithPrefix())
 	if err != nil {
 		return nil, err
@@ -651,33 +680,42 @@ func (r *EtcdRepository) GetGateway(ctx context.Context, gatewayID string) (serv
 	if err := json.Unmarshal(resp.Kvs[0].Value, &rec); err != nil {
 		return service.GatewayRecord{}, err
 	}
+	rec = service.NormalizeGatewayFleetRecord(rec)
+	rec.RegistryRevision = resp.Kvs[0].ModRevision
+	if err := service.ValidateGatewayFleetRecord(rec); err != nil {
+		return service.GatewayRecord{}, err
+	}
 	return rec, nil
 }
 
 func (r *EtcdRepository) ListGateways(ctx context.Context) ([]service.GatewayRecord, error) {
-	resp, err := r.client.Get(ctx, r.gatewayPrefix(), clientv3.WithPrefix())
-	if err != nil {
-		return nil, err
-	}
-	out := make([]service.GatewayRecord, 0, len(resp.Kvs))
-	for _, kv := range resp.Kvs {
-		if !strings.HasSuffix(string(kv.Key), "/status") {
-			continue
-		}
-		var rec service.GatewayRecord
-		if err := json.Unmarshal(kv.Value, &rec); err != nil {
+	out := []service.GatewayRecord{}
+	opts := GatewayFleetListOptions{}
+	for {
+		page, err := r.ListGatewayFleetPage(ctx, opts)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, rec)
+		out = append(out, page.Records...)
+		if page.NextCursor == "" {
+			break
+		}
+		opts.Cursor = page.NextCursor
+		opts.Revision = page.Revision
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].GatewayID < out[j].GatewayID })
 	return out, nil
 }
 
 func (r *EtcdRepository) PutGateway(ctx context.Context, rec service.GatewayRecord) error {
+	rec = service.NormalizeGatewayFleetRecord(rec)
+	if err := service.ValidateGatewayFleetRecord(rec); err != nil {
+		return err
+	}
 	if err := r.validateGatewayRecordAgainstRegistry(ctx, rec); err != nil {
 		return err
 	}
+	rec.RegistryRevision = 0
 	recBytes, err := json.Marshal(rec)
 	if err != nil {
 		return err
@@ -687,26 +725,30 @@ func (r *EtcdRepository) PutGateway(ctx context.Context, rec service.GatewayReco
 }
 
 func (r *EtcdRepository) validateGatewayRecordAgainstRegistry(ctx context.Context, rec service.GatewayRecord) error {
-	resp, err := r.client.Get(ctx, r.gatewayPrefix(), clientv3.WithPrefix())
-	if err != nil {
+	rec = service.NormalizeGatewayFleetRecord(rec)
+	if err := service.ValidateGatewayFleetRecord(rec); err != nil {
 		return err
 	}
-	for _, kv := range resp.Kvs {
-		if !strings.HasSuffix(string(kv.Key), "/status") {
-			continue
-		}
-		var existing service.GatewayRecord
-		if err := json.Unmarshal(kv.Value, &existing); err != nil {
+	opts := GatewayFleetListOptions{}
+	for {
+		page, err := r.ListGatewayFleetPage(ctx, opts)
+		if err != nil {
 			return err
 		}
-		if existing.GatewayID == "" || existing.GatewayID == rec.GatewayID {
-			continue
+		for _, existing := range page.Records {
+			if existing.GatewayID == "" || existing.GatewayID == rec.GatewayID {
+				continue
+			}
+			if err := validateGatewayRecordCompatibility(existing, rec); err != nil {
+				return err
+			}
 		}
-		if err := validateGatewayRecordCompatibility(existing, rec); err != nil {
-			return err
+		if page.NextCursor == "" {
+			return nil
 		}
+		opts.Cursor = page.NextCursor
+		opts.Revision = page.Revision
 	}
-	return nil
 }
 
 func validateGatewayRecordCompatibility(existing, incoming service.GatewayRecord) error {
@@ -715,6 +757,7 @@ func validateGatewayRecordCompatibility(existing, incoming service.GatewayRecord
 		existing string
 		incoming string
 	}{
+		{field: "product", existing: string(existing.Product), incoming: string(incoming.Product)},
 		{field: "cluster_id", existing: existing.ClusterID, incoming: incoming.ClusterID},
 		{field: "sbs_cluster_id", existing: existing.SBSClusterID, incoming: incoming.SBSClusterID},
 		{field: "metadata_backend", existing: existing.MetadataBackend, incoming: incoming.MetadataBackend},
@@ -767,6 +810,7 @@ func (r *EtcdRepository) GetExtentPage(ctx context.Context, volumeID, pageNo uin
 }
 
 func (r *EtcdRepository) ListExtentPages(ctx context.Context, volumeID uint64) ([]service.AllocationPageRecord, error) {
+	r.pressure.countPrefixScan()
 	volume, err := r.GetVolume(ctx, volumeID)
 	if err != nil {
 		return nil, err
@@ -884,6 +928,7 @@ func (r *EtcdRepository) PutChunkGarbage(ctx context.Context, rec service.Alloca
 }
 
 func (r *EtcdRepository) ListChunkGarbage(ctx context.Context, volumeID uint64, limit int) ([]service.AllocationChunkGarbageRecord, error) {
+	r.pressure.countPrefixScan()
 	if _, err := r.GetVolume(ctx, volumeID); err != nil {
 		return nil, err
 	}

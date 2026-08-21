@@ -1,0 +1,79 @@
+# sbs-service configuration.
+#
+# One versioned profile per cluster, so TiKV, leader, health, and cache budgets
+# cannot drift between service instances. The health block is the AA-IMPL-007
+# bounded reconciler; the TiKV scan bounds are the AA-IMPL-003 budget.
+schema_version: 1
+revision: 1
+profile: large_scale
+process: sbs-service
+
+sbs_service:
+  cluster_id: namrbd-prod
+  sbs_cluster_id: sbs-prod
+  node_id: sbs-svc-01
+  metadata_backend: tikv
+
+  grpc_listen: 0.0.0.0:9090
+  http_listen: 127.0.0.1:9092
+  payload_root: /var/lib/namrbd/sbs
+
+  tikv:
+    pd_endpoints:
+      - https://pd-01.namrbd.internal:2379
+      - https://pd-02.namrbd.internal:2379
+      - https://pd-03.namrbd.internal:2379
+    keyspace: namrbd-prod
+    api_version: v2
+    timeout_seconds: 5
+    tls:
+      enable: true
+      cert_file: /etc/namrbd/tls/tikv-client.crt
+      key:
+        file: /etc/namrbd/tls/tikv-client.key
+    # AA-IMPL-003 scan budget at t2_large.
+    scan_page_size: 512
+    batch_get_size: 128
+    operation_trace: false
+
+  leader:
+    lease_duration_seconds: 15
+    renew_interval_seconds: 5
+
+  # AA-IMPL-007. At 100 nodes this needs at least ceil(100/25) = 4 shards so
+  # health cost does not grow with cluster size.
+  health:
+    shard_count: 4
+    concurrency_per_shard: 16
+    interval_seconds: 10
+    timeout_seconds: 2
+    suspect_threshold: 3
+    down_threshold: 6
+    recovery_cooldown_seconds: 30
+
+  # The profile Phase X accepted.
+  write_effects:
+    service_owned: true
+    native_allocation_fast_path: true
+    batch_max: 64
+    lane_bucket_count: 8
+    async_mutation_finalize: false
+
+  # Dependency availability thresholds. See docs/phase-aa-entry-plan.md
+  # Section 4: dependency loss is fail-open for already-admitted serving and
+  # fail-closed for every promotion, admission, and membership change.
+  #
+  # Raising a grace window delays the point at which this process calls itself
+  # degraded. It does not delay any refusal: promotion and membership change
+  # are refused from the first failed probe, because the fleet view stopped
+  # being trustworthy then and not five minutes later.
+  dependency:
+    etcd_unavailable_grace_seconds: 300
+    tikv_unavailable_grace_seconds: 300
+    projection_stale_degraded_ms: 5000
+    projection_stale_blocked_ms: 15000
+
+  observability:
+    listen: 127.0.0.1:9102
+    trace: false
+    debug_endpoints: false

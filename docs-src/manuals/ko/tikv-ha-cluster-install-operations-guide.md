@@ -259,8 +259,8 @@ export NAMRBD_TIKV_KEYSPACE="namrbd-sbs-prod-001"
   --tikv-pd-endpoints "$NAMRBD_TIKV_PD_ENDPOINTS" \
   --tikv-api-version "$NAMRBD_TIKV_API_VERSION" \
   --tikv-keyspace "$NAMRBD_TIKV_KEYSPACE" \
-  --grpc-listen 0.0.0.0:9443 \
-  --http-listen 0.0.0.0:9081
+  --sbs-service-listen 0.0.0.0:9443 \
+  --sbs-service-http-listen 0.0.0.0:9081
 ```
 
 모든 `sbs-service` 인스턴스와 동일 cluster의 gateway(legacy raw metadata 경로)는 **같은 PD/keyspace**를 사용한다.

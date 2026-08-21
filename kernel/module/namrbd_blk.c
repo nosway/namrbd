@@ -5720,4 +5720,5 @@ module_exit(namrbd_blk_exit);
 
 MODULE_DESCRIPTION("NAMRBD blk-mq block device with multipath scheduler");
 MODULE_AUTHOR("Taewoong Kim (taewoong.kim@gmail.com)");
+MODULE_VERSION("1.0.0");
 MODULE_LICENSE("GPL");

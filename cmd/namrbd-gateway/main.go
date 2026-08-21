@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -27,6 +28,10 @@ import (
 	"github.com/nosway/namrbd/gateway/service"
 	"github.com/nosway/namrbd/gateway/store"
 	"github.com/nosway/namrbd/internal/adminclient"
+	"github.com/nosway/namrbd/internal/cliux"
+	"github.com/nosway/namrbd/internal/depavail"
+	"github.com/nosway/namrbd/internal/envcompat"
+	"github.com/nosway/namrbd/internal/serviceconfig"
 	adminv1 "github.com/nosway/namrbd/sbs/admin/v1"
 	sbscluster "github.com/nosway/namrbd/sbs/cluster"
 	clustercontrol "github.com/nosway/namrbd/sbs/cluster/control"
@@ -67,9 +72,16 @@ func main() {
 			return
 		}
 	}
-	listenAddr := flag.String("listen", ":9701", "http listen address")
+	os.Args = append(os.Args[:1], cliux.RewriteDeprecatedFlags(os.Args[1:], []cliux.Alias{
+		{Legacy: "listen", Canonical: "control-http-listen", DeprecatedIn: "post-1.0"},
+		{Legacy: "sbs-admin-endpoint", Canonical: "sbs-service-endpoint", DeprecatedIn: "post-1.0"},
+	}, os.Stderr)...)
+	os.Args = append(os.Args[:1], cliux.RewriteCommandArgs(os.Args[1:], false, false)...)
+	printConfig := flag.Bool("print-config", false, "emit an equivalent service config for this invocation on stdout and exit (AA-IMPL-002)")
+	configPath := flag.String("config", "", "service config file path (AA-IMPL-001D); when set, it supplies stable settings and explicitly typed flags still win")
+	listenAddr := flag.String("control-http-listen", getenvCompatOrDefault(envcompat.GatewayControlListen, "0.0.0.0:9701"), "HTTP control-plane listen address")
 	dataListenAddr := flag.String("data-listen", ":9700", "binary dataplane listen address")
-	advertiseControlAddr := flag.String("advertise-control-address", "", "control-plane address advertised in metadata/discovery (defaults to host from --listen, or 127.0.0.1 for wildcard listen)")
+	advertiseControlAddr := flag.String("advertise-control-address", "", "control-plane address advertised in metadata/discovery (defaults to host from --control-http-listen in dev)")
 	advertiseDataAddr := flag.String("advertise-data-address", "", "dataplane address advertised in metadata/discovery (defaults to host from --data-listen, or 127.0.0.1 for wildcard listen)")
 	dataDisable := flag.Bool("data-disable", false, "disable dataplane listener while still advertising dataplane endpoint metadata")
 	dataplaneRequestTrace := flag.Bool("dataplane-request-trace", false, "lab only: emit structured dataplane request success trace events for kernel-origin workload capture")
@@ -81,14 +93,14 @@ func main() {
 	etcdEndpoints := flag.String("etcd-endpoints", "127.0.0.1:2379", "comma-separated etcd endpoints")
 	etcdRoot := flag.String("etcd-root", "/namrbd", "etcd metadata root path")
 	gatewayID := flag.String("gateway-id", defaultGatewayID(), "gateway id advertised in metadata")
-	dataBackendMode := flag.String("data-backend-mode", "c6", "data backend mode: c6|sbs|sbs-cluster")
+	dataBackendMode := flag.String("data-backend-mode", "c6", "data backend mode: c6|sbs|sbs-local (sbs-cluster is a deprecated alias for sbs)")
 	storeBackend := flag.String("store-backend", "memory", "storage backend: memory (redis requires -tags legacy_redis)")
 	sbsLocalPath := flag.String("sbs-local-path", "", "filesystem path for single-node local SBS when --data-backend-mode=sbs")
 	sbsClusterReplicas := flag.String("sbs-cluster-replicas", "", "comma-separated replica definitions replica_id=path for legacy/dev sbs-cluster bootstrap; primary uses the admin-published view")
 	sbsClusterMetadataBackend := flag.String("sbs-cluster-metadata-backend", "", "legacy/dev raw SBS cluster metadata backend: pebble; primary admin mode does not open raw SBS cluster metadata")
 	sbsClusterMetadataPath := flag.String("sbs-cluster-metadata-path", "", "legacy/dev pebble SBS cluster metadata path; primary admin mode must not set this")
 	sbsClusterMetadataRoot := flag.String("sbs-cluster-metadata-root", "sbs/cluster", "legacy/dev raw SBS cluster metadata root prefix")
-	sbsAdminEndpoint := flag.String("sbs-admin-endpoint", "", "sbs-service admin/internal gRPC endpoint for primary sbs-cluster target, volume, placement, and write authority")
+	sbsAdminEndpoint := flag.String("sbs-service-endpoint", getenvCompatOrDefault(envcompat.GatewaySBSServiceEndpoint, ""), "sbs-service admin/internal gRPC endpoint for SBS target, volume, placement, and write authority")
 	sbsClusterBootstrapMetadata := flag.Bool("sbs-cluster-bootstrap-metadata", false, "legacy/dev only: bootstrap SBS cluster metadata from gateway metadata and --sbs-cluster-replicas")
 	redisAddr := flag.String("redis-addr", "127.0.0.1:6379", "redis address (requires -tags legacy_redis)")
 	volumeSpec := flag.String("volumes", "", "volume specs: volume_id,prefix,size_bytes;...")
@@ -122,14 +134,15 @@ func main() {
 	phaseOPerformanceAdmission := flag.Bool("phase-o-performance-admission", false, "lab only: enable Phase O gateway-local foreground I/O admission before dispatch")
 	phaseOPerformancePolicyID := flag.String("phase-o-performance-policy-id", "gateway-local", "Phase O lab admission policy id reported in gateway responses")
 	phaseOPerformancePolicyGeneration := flag.Uint64("phase-o-performance-policy-generation", 1, "Phase O lab admission policy generation reported in gateway responses")
-	phaseOPerformanceCapScope := flag.String("phase-o-performance-cap-scope", phaseperformance.CapScopeLabOnly, "Phase O admission cap scope: lab_only|per_gateway|cluster_volume (cluster_volume requires --sbs-admin-endpoint)")
+	phaseOPerformanceCapScope := flag.String("phase-o-performance-cap-scope", phaseperformance.CapScopeLabOnly, "Phase O admission cap scope: lab_only|per_gateway|cluster_volume (cluster_volume requires --sbs-service-endpoint)")
 	phaseOPerformanceThrottleMode := flag.String("phase-o-performance-throttle-mode", phaseperformance.ThrottleModeWait, "Phase O lab admission throttle mode: wait|reject")
 	phaseOPerformanceIOPSCap := flag.Uint64("phase-o-performance-iops-cap", 0, "Phase O lab admission foreground IOPS cap; 0 leaves IOPS uncapped")
 	phaseOPerformanceBWCap := flag.Uint64("phase-o-performance-bandwidth-cap", 0, "Phase O lab admission foreground bandwidth cap in bytes/sec; 0 leaves bandwidth uncapped")
 	phaseOPerformanceBurstIOPS := flag.Uint64("phase-o-performance-burst-iops", 0, "Phase O lab admission additional IOPS burst tokens")
 	phaseOPerformanceBurstBytes := flag.Uint64("phase-o-performance-burst-bytes", 0, "Phase O lab admission additional byte burst tokens")
 	phasePRepositoryFlags := registerPhasePRepositoryFlags(flag.CommandLine)
-	gatewayLeaseTTL := flag.Duration("gateway-lease-ttl", 30*time.Second, "TTL for gateway liveness lease in etcd")
+	gatewayLeaseTTL := flag.Duration("gateway-lease-ttl", 15*time.Second, "TTL for gateway liveness lease in etcd")
+	gatewayStatusRefreshInterval := flag.Duration("gateway-status-refresh-interval", 5*time.Second, "gateway status refresh interval in etcd; jittered by +/-20%")
 	pathPlanReconcileInterval := flag.Duration("path-plan-reconcile-interval", 5*time.Second, "background desired/observed gateway path-plan reconcile interval; <=0 disables the worker")
 	chunkGCInterval := flag.Duration("chunk-gc-interval", 30*time.Second, "background allocation chunk (AC) garbage collection interval; <=0 disables the worker")
 	chunkGCBatchSize := flag.Int("chunk-gc-batch-size", 256, "maximum allocation chunk (AC) garbage candidates to process per volume in one sweep")
@@ -142,7 +155,96 @@ func main() {
 	dataplaneSessionKey := flag.String("dataplane-session-key", "", "dataplane session derivation key (or "+envDataplaneSessionKey+")")
 	dataplaneTokenTTL := flag.Duration("dataplane-token-ttl", 5*time.Minute, "dataplane token TTL")
 	dataplaneWireVersion := flag.Int("dataplane-wire-version", 1, "dataplane wire version: 1 or 2")
+	cliux.InstallStructuredUsage(flag.CommandLine, "namrbd-gateway", func(name string) bool {
+		f := flag.CommandLine.Lookup(name)
+		labOnly := f != nil && strings.Contains(strings.ToLower(f.Usage), "lab only")
+		return labOnly || strings.HasPrefix(name, "phase-") || strings.Contains(name, "lab-") || strings.HasPrefix(name, "sbs-unsafe-") ||
+			name == "sbs-cluster-replicas" || name == "sbs-cluster-bootstrap-metadata" || name == "volumes"
+	})
 	flag.Parse()
+
+	gatewayBinding := gatewayConfigBinding{
+		ListenAddr:           listenAddr,
+		DataListenAddr:       dataListenAddr,
+		AdvertiseControlAddr: advertiseControlAddr,
+		AdvertiseDataAddr:    advertiseDataAddr,
+		DataDisable:          dataDisable,
+		GatewayID:            gatewayID,
+
+		TLSEnable:     controlTLSEnable,
+		TLSCertFile:   controlTLSCertFile,
+		TLSKeyFile:    controlTLSKeyFile,
+		TLSServerName: controlTLSServerName,
+
+		EtcdEndpoints: etcdEndpoints,
+		EtcdRoot:      etcdRoot,
+
+		SBSAdminEndpoint: sbsAdminEndpoint,
+		MetadataBackend:  metadataBackend,
+		DataBackendMode:  dataBackendMode,
+
+		VolumeCacheTTL:             volumeCacheTTL,
+		ZeroEvidenceCacheTTL:       sbsZeroEvidenceCacheTTL,
+		OpenReuseTTL:               sbsOpenReuseTTL,
+		ChunkIDAllocationCacheSize: sbsChunkIDAllocationCacheSize,
+		WritePlanCacheTTL:          sbsWritePlanCacheTTL,
+		BeginWriteVolumeStateTTL:   sbsBeginWriteVolumeStateCacheTTL,
+
+		PathPlanReconcileInterval:    pathPlanReconcileInterval,
+		GatewayLeaseTTL:              gatewayLeaseTTL,
+		GatewayStatusRefreshInterval: gatewayStatusRefreshInterval,
+		ChunkGCInterval:              chunkGCInterval,
+		ChunkGCBatchSize:             chunkGCBatchSize,
+
+		MaxInflightRequests:  maxInflightRequests,
+		MaxInflightBytes:     maxInflightBytes,
+		MaxIOSize:            maxIOSize,
+		DataplaneTokenKey:    dataplaneTokenKey,
+		DataplaneSessionKey:  dataplaneSessionKey,
+		DataplaneTokenTTL:    dataplaneTokenTTL,
+		DataplaneWireVersion: dataplaneWireVersion,
+
+		DataplaneRequestTrace: dataplaneRequestTrace,
+	}
+
+	// --print-config converts a flag-started invocation into a config file so
+	// adopting config does not mean hand-rewriting every deployment.
+	if *printConfig {
+		file, secrets, dropped := buildConfigFromFlags(gatewayBinding, explicitlySetFlags())
+		out, err := serviceconfig.Generate(file, secrets, dropped)
+		if err != nil {
+			log.Fatalf("generate config: %v", err)
+		}
+		fmt.Print(out.YAML)
+		for _, f := range out.SecretsToSupply {
+			fmt.Fprintf(os.Stderr, "supply secret material for %s before starting from this file\n", f)
+		}
+		for _, d := range out.DroppedFlags {
+			fmt.Fprintf(os.Stderr, "not carried over %s\n", d)
+		}
+		return
+	}
+
+	// When no --config is given the gateway behaves exactly as before: every
+	// flag keeps the value it already had. Adoption is additive so existing
+	// deployments and lab fixtures are unaffected.
+	if strings.TrimSpace(*configPath) != "" {
+		summary, err := applyServiceConfig(*configPath, gatewayBinding)
+		// The summary is emitted either way. On the failure path it is the only
+		// record of which config the process tried to start from.
+		if blob, mErr := json.Marshal(summary); mErr == nil {
+			log.Printf("service config summary: %s", blob)
+		}
+		if err != nil {
+			log.Fatalf("service config: %v", err)
+		}
+	}
+	if *dataBackendMode == "sbs-cluster" {
+		log.Printf("deprecated data backend mode %q: use %q", "sbs-cluster", "sbs")
+	}
+	if *dataBackendMode == "sbs" && strings.TrimSpace(*sbsLocalPath) != "" {
+		log.Printf("deprecated local SBS mode %q with --sbs-local-path: use %q", "sbs", "sbs-local")
+	}
 
 	volumes, err := parseVolumes(*volumeSpec)
 	if err != nil {
@@ -169,7 +271,7 @@ func main() {
 	}
 	controlPort, err := parseListenPort(*listenAddr)
 	if err != nil {
-		log.Fatalf("invalid --listen: %v", err)
+		log.Fatalf("invalid --control-http-listen: %v", err)
 	}
 	dataPort, err := parseListenPort(*dataListenAddr)
 	if err != nil {
@@ -214,6 +316,7 @@ func main() {
 		SBSWritePlanCacheTTL:                *sbsWritePlanCacheTTL,
 		SBSBeginWriteVolumeStateCacheTTL:    *sbsBeginWriteVolumeStateCacheTTL,
 		GatewayLeaseTTL:                     *gatewayLeaseTTL,
+		GatewayStatusRefreshInterval:        *gatewayStatusRefreshInterval,
 		Volumes:                             toVolumeSpecs(volumes),
 		ControlAddress:                      effectiveAdvertisedAddress(*advertiseControlAddr, *listenAddr),
 		ControlPort:                         uint16(controlPort),
@@ -300,7 +403,7 @@ func main() {
 		DataPort:          uint16(dataPort),
 		GatewayID:         *gatewayID,
 		RuntimeMode: func() string {
-			if *dataBackendMode == "sbs-cluster" {
+			if distributedSBSMode(*dataBackendMode, *sbsLocalPath) {
 				if *sbsClusterBootstrapMetadata {
 					return "legacy-dev-bootstrap"
 				}
@@ -328,9 +431,23 @@ func main() {
 			}
 			return ""
 		}(),
-		DataplaneTokenTTL:            *dataplaneTokenTTL,
-		ClusterNodeDebug:             clusterDebug,
-		MetadataRepo:                 metadataRepo,
+		DataplaneTokenTTL: *dataplaneTokenTTL,
+		ClusterNodeDebug:  clusterDebug,
+		MetadataRepo:      metadataRepo,
+		EtcdPressure: func() httpapi.EtcdPressureSnapshot {
+			repo, ok := metadataRepo.(*metadata.EtcdRepository)
+			if !ok {
+				return httpapi.EtcdPressureSnapshot{}
+			}
+			snapshot := repo.PressureSnapshot()
+			return httpapi.EtcdPressureSnapshot{
+				PrefixScanCount:        snapshot.PrefixScanCount,
+				StatusWriteCount:       snapshot.StatusWriteCount,
+				PointReadCount:         snapshot.PointReadCount,
+				ResyncCount:            snapshot.ResyncCount,
+				SkippedValidationCount: snapshot.SkippedValidationCount,
+			}
+		},
 		AttachAdmission:              attachAdmission,
 		PerformanceAdmission:         performanceAdmissionCfg,
 		PerformanceBudgetLeaseClient: performanceBudgetLeaseClient,
@@ -344,6 +461,7 @@ func main() {
 			}
 		},
 	})
+	httpSrv.SetDependencyTracker(dependencyTracker)
 	if gcCollector != nil && *chunkGCInterval > 0 {
 		gcCtx, cancelGC := context.WithCancel(context.Background())
 		prevCleanup := cleanup
@@ -351,11 +469,17 @@ func main() {
 			cancelGC()
 			prevCleanup()
 		}
+		// The sweep rotates through volumes rather than listing and sweeping
+		// every one on every tick. Garbage collection is background work with
+		// no deadline, so spreading it costs nothing observable and removes a
+		// prefix scan that grew with volume count.
+		boundedSweeper := service.NewBoundedChunkSweeper(gcCollector,
+			service.DefaultSweepVolumesPerPass, *chunkGCBatchSize)
 		go func() {
 			ticker := time.NewTicker(*chunkGCInterval)
 			defer ticker.Stop()
 			for {
-				results, err := gcCollector.SweepAll(gcCtx, *chunkGCBatchSize)
+				results, err := boundedSweeper.SweepPass(gcCtx)
 				if err != nil {
 					if gcCtx.Err() != nil {
 						return
@@ -385,10 +509,43 @@ func main() {
 			cancelReconcile()
 			prevCleanup()
 		}
+		// The loop reads the whole gateway and volume prefixes when it runs, so
+		// a tick that runs unconditionally pays that cost whether or not
+		// anything moved. When the backend can report changes, the gate lets a
+		// quiet cluster skip the read entirely; when it cannot, the gate stays
+		// dirty and the behavior is unchanged.
+		reconcileGate := service.NewReconcileGate()
+		if notifier, ok := metadataRepo.(metadata.PathPlanChangeNotifier); ok {
+			if changes, err := notifier.WatchPathPlanInputs(reconcileCtx); err == nil {
+				reconcileGate.AttachWatch()
+				go func() {
+					for range changes {
+						reconcileGate.MarkChanged()
+					}
+					// The feed ended. Resync rather than going idle: a gateway
+					// that stops reconciling is worse than one that scans.
+					reconcileGate.DetachWatch()
+				}()
+			} else {
+				log.Printf("gateway path-plan change watch unavailable, falling back to scanning every tick: %v", err)
+			}
+		}
 		go func() {
 			ticker := time.NewTicker(*pathPlanReconcileInterval)
 			defer ticker.Stop()
 			for {
+				if !reconcileGate.ShouldScan() {
+					select {
+					case <-reconcileCtx.Done():
+						return
+					case <-ticker.C:
+					}
+					continue
+				}
+				// Classify on a loop the gateway already runs. Refresh does no
+				// I/O, so this adds nothing an operator would measure.
+				dependencyTracker.Refresh()
+
 				updated, err := reconcileAllGatewayPathPlanStatuses(reconcileCtx, metadataRepo)
 				if err != nil {
 					if reconcileCtx.Err() != nil {
@@ -545,6 +702,7 @@ type repositoryConfig struct {
 	SBSWritePlanCacheTTL                time.Duration
 	SBSBeginWriteVolumeStateCacheTTL    time.Duration
 	GatewayLeaseTTL                     time.Duration
+	GatewayStatusRefreshInterval        time.Duration
 	Volumes                             []service.VolumeSpec
 	ControlAddress                      string
 	ControlPort                         uint16
@@ -559,8 +717,8 @@ func validateLegacyClusterBootstrapConfig(cfg repositoryConfig) error {
 	if !cfg.SBSClusterBootstrapMetadata {
 		return nil
 	}
-	if strings.TrimSpace(cfg.DataBackendMode) != "sbs-cluster" {
-		return fmt.Errorf("legacy/dev SBS cluster bootstrap requires --data-backend-mode=sbs-cluster")
+	if !distributedSBSMode(cfg.DataBackendMode, cfg.SBSLocalPath) {
+		return fmt.Errorf("legacy/dev SBS cluster bootstrap requires --data-backend-mode=sbs")
 	}
 	if len(cfg.SBSClusterReplicas) == 0 {
 		return fmt.Errorf("legacy/dev SBS cluster bootstrap requires explicit --sbs-cluster-replicas")
@@ -569,20 +727,20 @@ func validateLegacyClusterBootstrapConfig(cfg repositoryConfig) error {
 }
 
 func validatePrimaryClusterRuntimeConfig(cfg repositoryConfig) error {
-	if strings.TrimSpace(cfg.DataBackendMode) != "sbs-cluster" {
+	if !distributedSBSMode(cfg.DataBackendMode, cfg.SBSLocalPath) {
 		return nil
 	}
 	if cfg.SBSClusterBootstrapMetadata {
 		return nil
 	}
 	if strings.TrimSpace(cfg.SBSAdminEndpoint) == "" {
-		return fmt.Errorf("primary sbs-cluster runtime requires --sbs-admin-endpoint; raw metadata fallbacks are legacy/dev only")
+		return fmt.Errorf("primary SBS runtime requires --sbs-service-endpoint; raw metadata fallbacks are legacy/dev only")
 	}
 	if strings.TrimSpace(cfg.MetadataBackend) != "etcd" {
-		return fmt.Errorf("primary sbs-cluster runtime requires --metadata-backend=etcd; gateway/control-plane metadata ownership is not available via %q", cfg.MetadataBackend)
+		return fmt.Errorf("primary SBS runtime requires --metadata-backend=etcd; gateway/control-plane metadata ownership is not available via %q", cfg.MetadataBackend)
 	}
 	if strings.TrimSpace(cfg.SBSClusterMetadataPath) != "" {
-		return fmt.Errorf("primary sbs-cluster runtime must not set --sbs-cluster-metadata-path; local pebble metadata paths are legacy/dev bootstrap only")
+		return fmt.Errorf("primary SBS runtime must not set --sbs-cluster-metadata-path; local pebble metadata paths are legacy/dev bootstrap only")
 	}
 	return nil
 }
@@ -620,11 +778,18 @@ func newRepositories(cfg repositoryConfig) (service.MetadataRepository, service.
 			return nil, nil, nil, nil, "", nil, err
 		}
 		repo := metadata.NewEtcdRepository(client, cfg.EtcdRoot)
+		// AA-IMPL-004B. The lease renewal is this gateway's highest-frequency
+		// etcd interaction and its failure is definitionally "etcd is not
+		// answering this process", so it is where reachability is learned. No
+		// probe of our own is added.
+		repo.SetEtcdOutcomeObserver(func(err error) {
+			dependencyTracker.Report(depavail.DependencyEtcd, err)
+		})
 		wrappedRepo := service.NewCachedMetadataRepository(repo, cfg.VolumeCacheTTL)
 		cleanup := func() {
 			_ = client.Close()
 		}
-		lease, err := repo.StartGatewayLease(context.Background(), gatewayRecordFromConfig(cfg), cfg.GatewayLeaseTTL)
+		lease, err := repo.StartGatewayLease(context.Background(), gatewayRecordFromConfig(cfg), cfg.GatewayLeaseTTL, cfg.GatewayStatusRefreshInterval)
 		if err != nil {
 			cleanup()
 			return nil, nil, nil, nil, "", nil, err
@@ -654,7 +819,23 @@ func newRepositories(cfg repositoryConfig) (service.MetadataRepository, service.
 }
 
 func newDataRepository(ctx context.Context, meta service.MetadataRepository, cfg repositoryConfig) (service.MetadataRepository, service.DataRepository, *service.ChunkGarbageCollector, *clustercontrol.Controller, string, func(), error) {
-	switch strings.TrimSpace(cfg.DataBackendMode) {
+	dataMode := strings.TrimSpace(cfg.DataBackendMode)
+	if dataMode == "sbs-local" || (dataMode == "sbs" && strings.TrimSpace(cfg.SBSLocalPath) != "") {
+		if strings.TrimSpace(cfg.SBSLocalPath) == "" {
+			return nil, nil, nil, nil, "", nil, fmt.Errorf("--sbs-local-path is required when --data-backend-mode=sbs-local")
+		}
+		client, err := local.Open(local.Config{Path: cfg.SBSLocalPath, BuildVersion: buildVersion})
+		if err != nil {
+			return nil, nil, nil, nil, "", nil, err
+		}
+		if err := bootstrapSBSVolumes(ctx, meta, client); err != nil {
+			_ = client.Close()
+			return nil, nil, nil, nil, "", nil, err
+		}
+		dataRepo := service.NewSBSDataRepositoryWithOpenReuseTTL(meta, client, cfg.GatewayID, cfg.SBSOpenReuseTTL, buildVersion)
+		return meta, dataRepo, nil, nil, "sbs=local path=" + cfg.SBSLocalPath, func() { _ = client.Close() }, nil
+	}
+	switch dataMode {
 	case "", "c6":
 		objects, dataDesc, closeObjects, err := newObjectStore(ctx, cfg)
 		if err != nil {
@@ -668,21 +849,7 @@ func newDataRepository(ctx context.Context, meta service.MetadataRepository, cfg
 		}
 		gcCollector := service.NewChunkGarbageCollector(meta, objects)
 		return meta, dataRepo, gcCollector, nil, dataDesc, func() { closeObjects() }, nil
-	case "sbs":
-		if strings.TrimSpace(cfg.SBSLocalPath) == "" {
-			return nil, nil, nil, nil, "", nil, fmt.Errorf("--sbs-local-path is required when --data-backend-mode=sbs")
-		}
-		client, err := local.Open(local.Config{Path: cfg.SBSLocalPath, BuildVersion: buildVersion})
-		if err != nil {
-			return nil, nil, nil, nil, "", nil, err
-		}
-		if err := bootstrapSBSVolumes(ctx, meta, client); err != nil {
-			_ = client.Close()
-			return nil, nil, nil, nil, "", nil, err
-		}
-		dataRepo := service.NewSBSDataRepositoryWithOpenReuseTTL(meta, client, cfg.GatewayID, cfg.SBSOpenReuseTTL, buildVersion)
-		return meta, dataRepo, nil, nil, "sbs=local path=" + cfg.SBSLocalPath, func() { _ = client.Close() }, nil
-	case "sbs-cluster":
+	case "sbs", "sbs-cluster":
 		caps := runtimeClusterCapabilities{}
 		clusterMetadataDesc := "admin-endpoint-only"
 		cleanupFns := []func(){}
@@ -940,8 +1107,13 @@ func newDataRepository(ctx context.Context, meta service.MetadataRepository, cfg
 			}
 		}, nil
 	default:
-		return nil, nil, nil, nil, "", nil, fmt.Errorf("invalid --data-backend-mode %q: must be c6, sbs, or sbs-cluster", cfg.DataBackendMode)
+		return nil, nil, nil, nil, "", nil, fmt.Errorf("invalid --data-backend-mode %q: must be c6, sbs, or sbs-local", cfg.DataBackendMode)
 	}
+}
+
+func distributedSBSMode(mode, localPath string) bool {
+	mode = strings.TrimSpace(mode)
+	return mode == "sbs-cluster" || (mode == "sbs" && strings.TrimSpace(localPath) == "")
 }
 
 type clusterVolumeLookup struct {
@@ -1745,6 +1917,10 @@ func gatewayRecordFromConfig(cfg repositoryConfig) service.GatewayRecord {
 	rec.SBSClusterMetadataBackend = canonicalSBSClusterMetadataBackend(cfg)
 	rec.SBSClusterMetadataRoot = canonicalSBSClusterMetadataRoot(cfg)
 	rec.FailureDomain = gatewayFailureDomainFromConfig(cfg)
+	rec.AdvertisedAddresses = []string{
+		net.JoinHostPort(cfg.ControlAddress, strconv.Itoa(int(cfg.ControlPort))),
+		net.JoinHostPort(cfg.DataAddress, strconv.Itoa(int(cfg.DataPort))),
+	}
 	return rec
 }
 
@@ -1801,7 +1977,7 @@ func newAdminEndpointSourceSnapshotListerDefault(cfg repositoryConfig) (runtimeS
 func newAdminEndpointPerformanceBudgetLeaseClient(endpoint string) (httpapi.PerformanceBudgetLeaseClient, func(), error) {
 	endpoint = strings.TrimSpace(endpoint)
 	if endpoint == "" {
-		return nil, nil, fmt.Errorf("--sbs-admin-endpoint is required for Phase O cluster_volume performance admission")
+		return nil, nil, fmt.Errorf("--sbs-service-endpoint is required for Phase O cluster_volume performance admission")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -1884,7 +2060,7 @@ func canonicalGatewayMetadataRoot(cfg repositoryConfig) string {
 }
 
 func canonicalSBSClusterMetadataBackend(cfg repositoryConfig) string {
-	if strings.TrimSpace(cfg.DataBackendMode) != "sbs-cluster" {
+	if !distributedSBSMode(cfg.DataBackendMode, cfg.SBSLocalPath) {
 		return ""
 	}
 	return effectiveSBSClusterMetadataBackend(cfg)
@@ -1899,7 +2075,7 @@ func effectiveSBSClusterMetadataBackend(cfg repositoryConfig) string {
 }
 
 func canonicalSBSClusterMetadataRoot(cfg repositoryConfig) string {
-	if strings.TrimSpace(cfg.DataBackendMode) != "sbs-cluster" {
+	if !distributedSBSMode(cfg.DataBackendMode, cfg.SBSLocalPath) {
 		return ""
 	}
 	root := strings.TrimSpace(cfg.SBSClusterMetadataRoot)
@@ -2220,7 +2396,7 @@ func loadSBSClusterReplicaTargets(ctx context.Context, cfg repositoryConfig, clu
 		return replicaTargets, "static-config", nil
 	}
 	if !cfg.SBSClusterBootstrapMetadata {
-		return nil, "", fmt.Errorf("sbs-cluster startup requires explicit --sbs-cluster-replicas or reachable --sbs-admin-endpoint")
+		return nil, "", fmt.Errorf("SBS startup requires explicit --sbs-cluster-replicas or reachable --sbs-service-endpoint")
 	}
 	if clusterRepo == nil {
 		return nil, "", fmt.Errorf("runtime cluster metadata repository does not support legacy target bootstrap fallback")
@@ -2383,7 +2559,7 @@ func resolveReplicaTargetsFromAdmin(ctx context.Context, cfg repositoryConfig) (
 	if err != nil {
 		return nil, err
 	}
-	nodesResp, err := client.Admin.ListNodes(ctx, &adminv1.ListNodesRequest{Cluster: cluster})
+	nodesResp, err := adminclient.ListAllNodes(ctx, client.Admin, cluster, false)
 	if err != nil {
 		log.Printf("gateway published node membership view unavailable while adding replica target node aliases: %v", err)
 		return targets, nil
@@ -2955,6 +3131,18 @@ func appendUnique(values []string, next string) []string {
 		}
 	}
 	return append(values, next)
+}
+
+func getenvCompatOrDefault(spec envcompat.Spec, fallback string) string {
+	resolved, err := envcompat.ResolveCurrent(spec, os.LookupEnv)
+	if err != nil {
+		log.Fatalf("environment configuration: %v", err)
+	}
+	envcompat.WriteWarnings(os.Stderr, resolved.Warnings)
+	if resolved.Present {
+		return resolved.Value
+	}
+	return fallback
 }
 
 func defaultGatewayID() string {

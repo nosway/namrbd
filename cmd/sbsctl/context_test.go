@@ -108,6 +108,15 @@ func TestContextEnvOverridesFile(t *testing.T) {
 	}
 }
 
+func TestCanonicalEnvironmentSourceIsReported(t *testing.T) {
+	t.Setenv("NAMRBD_SBSCTL_OUTPUT", "json")
+	defaults := cliDefaults{}
+	setting := defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT")
+	if setting.Value != "json" || setting.Source != "env:NAMRBD_SBSCTL_OUTPUT" {
+		t.Fatalf("setting=%+v", setting)
+	}
+}
+
 func TestSourceForFlagPrefersFlagOverEnvAndContext(t *testing.T) {
 	defaults := cliDefaults{
 		contextFile: "/tmp/test-context.yaml",

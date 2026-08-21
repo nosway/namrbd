@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/nosway/namrbd/control/netlinktlv"
+	"github.com/nosway/namrbd/gateway/metadata"
 	"github.com/nosway/namrbd/gateway/service"
 )
 
@@ -39,6 +40,32 @@ func TestHasUintFlag(t *testing.T) {
 	}
 	if hasUintFlag([]string{"--volume=3"}, "device") {
 		t.Fatalf("unexpected detection")
+	}
+}
+
+func TestNormalizeRootArgsSupportsJSONAndCommandHelp(t *testing.T) {
+	got, jsonOutput := normalizeRootArgs([]string{"namrbdctl", "attach", "--json", "help"})
+	if !jsonOutput || strings.Join(got, " ") != "namrbdctl attach --help" {
+		t.Fatalf("args=%v json=%t", got, jsonOutput)
+	}
+}
+
+func TestDiscoverGatewayControlEndpointUsesBoundedHealthyFleetPage(t *testing.T) {
+	orig := openEtcdMetadataRepositoryFunc
+	openEtcdMetadataRepositoryFunc = func(*etcdMetadataCLIConfig) (namrbdctlDirectEtcdMetadataRepository, func(), error) {
+		return namrbdctlFakeMetadataRepository{gateways: []service.GatewayRecord{
+			{GatewayID: "gw-b", Product: service.GatewayProductNAMRBD, Role: service.GatewayRoleBlock, ConnectionState: service.GatewayStateDown, ControlEndpoints: []service.EndpointSpec{{Address: "10.0.0.2", Port: 9701}}},
+			{GatewayID: "gw-a", Product: service.GatewayProductNAMRBD, Role: service.GatewayRoleBlock, ConnectionState: service.GatewayStateUp, Readiness: service.GatewayReadinessReady, DrainState: service.GatewayDrainActive, ControlEndpoints: []service.EndpointSpec{{Address: "10.0.0.1", Port: 9701, UseTLS: true}}},
+		}}, func() {}, nil
+	}
+	defer func() { openEtcdMetadataRepositoryFunc = orig }()
+
+	endpoint, err := discoverGatewayControlEndpoint(context.Background(), &etcdMetadataCLIConfig{}, 128)
+	if err != nil {
+		t.Fatalf("discoverGatewayControlEndpoint: %v", err)
+	}
+	if endpoint != "https://10.0.0.1:9701" {
+		t.Fatalf("endpoint=%q", endpoint)
 	}
 }
 
@@ -2290,6 +2317,13 @@ func (f namrbdctlFakeMetadataRepository) ListGateways(context.Context) ([]servic
 		return []service.GatewayRecord{f.gateway}, nil
 	}
 	return nil, nil
+}
+func (f namrbdctlFakeMetadataRepository) ListGatewayFleetPage(_ context.Context, opts metadata.GatewayFleetListOptions) (metadata.GatewayFleetPage, error) {
+	records := append([]service.GatewayRecord(nil), f.gateways...)
+	if opts.Limit > 0 && int64(len(records)) > opts.Limit {
+		records = records[:opts.Limit]
+	}
+	return metadata.GatewayFleetPage{Records: records, Revision: 1}, nil
 }
 func (f namrbdctlFakeMetadataRepository) PutGateway(context.Context, service.GatewayRecord) error {
 	return nil

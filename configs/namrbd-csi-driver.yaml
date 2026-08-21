@@ -1,0 +1,25 @@
+# namrbd-csi-driver configuration.
+#
+# Deployed per Kubernetes node, which is exactly where copied command lines
+# drift. Admin endpoints are plural so a single endpoint is not an availability
+# single point.
+schema_version: 1
+revision: 1
+profile: large_scale
+process: namrbd-csi-driver
+
+csi_driver:
+  driver_name: namrbd.csi.nosway.io
+  node_id: worker-01
+  endpoint: unix:///csi/csi.sock
+  admin_endpoints:
+    - sbs-service-01.namrbd.internal:9090
+    - sbs-service-02.namrbd.internal:9090
+  cluster_id: namrbd-prod
+  sbs_cluster_id: sbs-prod
+  gateway_url: https://gateway.namrbd.internal:8080
+
+  observability:
+    listen: 127.0.0.1:9104
+    trace: false
+    debug_endpoints: false

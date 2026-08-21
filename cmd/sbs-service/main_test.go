@@ -18,6 +18,7 @@ import (
 
 	"github.com/nosway/namrbd/gateway/sbsgrpc"
 	"github.com/nosway/namrbd/gateway/service"
+	"github.com/nosway/namrbd/internal/depavail"
 	"github.com/nosway/namrbd/internal/structuredlog"
 	adminv1 "github.com/nosway/namrbd/sbs/admin/v1"
 	clustercontrol "github.com/nosway/namrbd/sbs/cluster/control"
@@ -35,6 +36,41 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
+func TestDependencyEndpointReportsDependencySurface(t *testing.T) {
+	old := dependencyTracker
+	t.Cleanup(func() { dependencyTracker = old })
+
+	tr := depavail.NewTracker(depavail.DefaultThresholds())
+	tr.SetProjectionLag(30 * time.Second)
+	tr.Refresh()
+	dependencyTracker = tr
+
+	rec := httptest.NewRecorder()
+	observabilityMux(&server{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/dependency", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/dependency status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var report depavail.Report
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
+		t.Fatalf("/dependency body is not dependency JSON: %v\n%s", err, rec.Body.String())
+	}
+	if report.Status.Readiness != depavail.ReadinessBlocked {
+		t.Errorf("readiness=%s, want %s", report.Status.Readiness, depavail.ReadinessBlocked)
+	}
+}
+
+func installBlockedDependencyTracker(t *testing.T) *depavail.Tracker {
+	t.Helper()
+	old := dependencyTracker
+	t.Cleanup(func() { dependencyTracker = old })
+
+	tr := depavail.NewTracker(depavail.DefaultThresholds())
+	tr.SetProjectionLag(30 * time.Second)
+	tr.Refresh()
+	dependencyTracker = tr
+	return tr
+}
+
 func TestProductDefaultRuntimeKnobs(t *testing.T) {
 	if !defaultServiceOwnedWriteEffects {
 		t.Fatal("service-owned write effects must be the product default")
@@ -44,6 +80,63 @@ func TestProductDefaultRuntimeKnobs(t *testing.T) {
 	}
 	if defaultServiceRuntimeWriteEffectsBatchCoalesceWait != time.Millisecond {
 		t.Fatalf("write effects batch coalesce wait=%v want 1ms", defaultServiceRuntimeWriteEffectsBatchCoalesceWait)
+	}
+}
+
+func TestDependencyEnforcementRejectsMembershipChange(t *testing.T) {
+	ctx := context.Background()
+	tr := installBlockedDependencyTracker(t)
+	srv := newTestMaintenanceServer(t)
+	srv.leader = &leaderLeaseManager{}
+	srv.leader.isLeader.Store(true)
+
+	_, err := srv.JoinNode(ctx, &adminv1.JoinNodeRequest{
+		Cluster:        &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"},
+		NodeId:         "node-blocked",
+		GrpcEndpoint:   "127.0.0.1:9461",
+		Zone:           "zone-blocked",
+		AutoCreateZone: true,
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("JoinNode code=%v err=%v want FailedPrecondition", status.Code(err), err)
+	}
+	if got := tr.Status().MembershipRejectCount; got != 1 {
+		t.Fatalf("membership_change_rejected_count=%d want 1", got)
+	}
+	if _, err := srv.repo.GetNodeMembership(ctx, "node-blocked"); !errors.Is(err, clustermeta.ErrNotFound) {
+		t.Fatalf("GetNodeMembership after rejected join err=%v want ErrNotFound", err)
+	}
+	if _, err := srv.repo.GetTopologyZone(ctx, "zone-blocked"); !errors.Is(err, clustermeta.ErrNotFound) {
+		t.Fatalf("GetTopologyZone after rejected auto-create err=%v want ErrNotFound", err)
+	}
+}
+
+func TestDependencyEnforcementKeepsTopologyReadsOpen(t *testing.T) {
+	ctx := context.Background()
+	tr := installBlockedDependencyTracker(t)
+	srv := newTestMaintenanceServer(t)
+
+	if err := srv.repo.PutTopologyZone(ctx, clustermeta.TopologyZoneRecord{
+		ZoneID:        "zone-readable",
+		Lifecycle:     clustermeta.TopologyZoneLifecycleActive,
+		CreatedAtUnix: 1,
+		UpdatedAtUnix: 1,
+	}); err != nil {
+		t.Fatalf("PutTopologyZone: %v", err)
+	}
+
+	resp, err := srv.GetTopologyZone(ctx, &adminv1.GetTopologyZoneRequest{
+		Cluster: &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"},
+		ZoneId:  "zone-readable",
+	})
+	if err != nil {
+		t.Fatalf("GetTopologyZone under blocked dependency view: %v", err)
+	}
+	if resp.GetZone().GetZoneId() != "zone-readable" {
+		t.Fatalf("zone_id=%q want zone-readable", resp.GetZone().GetZoneId())
+	}
+	if got := tr.Status().MembershipRejectCount; got != 0 {
+		t.Fatalf("membership_change_rejected_count=%d want 0 for read-only topology lookup", got)
 	}
 }
 
@@ -95,6 +188,62 @@ func TestJoinNodePreservesDrainingLifecycle(t *testing.T) {
 	}
 	if len(rec.SBSEndpoints) != 1 || rec.SBSEndpoints[0].Address != "127.0.0.1" || rec.SBSEndpoints[0].Port != 9461 {
 		t.Fatalf("sbs endpoints=%+v", rec.SBSEndpoints)
+	}
+}
+
+func TestMembershipProjectionAdminContract(t *testing.T) {
+	oldTracker := dependencyTracker
+	dependencyTracker = depavail.NewTracker(depavail.DefaultThresholds())
+	t.Cleanup(func() { dependencyTracker = oldTracker })
+
+	ctx := context.Background()
+	srv := newTestMaintenanceServer(t)
+	srv.leader = &leaderLeaseManager{}
+	srv.leader.isLeader.Store(true)
+	cluster := &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"}
+	_, err := srv.JoinNode(ctx, &adminv1.JoinNodeRequest{
+		Cluster:           cluster,
+		Meta:              &adminv1.RequestMeta{Actor: "operator-a", Reason: "scale out"},
+		NodeId:            "node-projection-a",
+		GrpcEndpoint:      "127.0.0.1:9461",
+		AdminHttpEndpoint: "127.0.0.1:9082",
+		Zone:              "zone-a",
+	})
+	if err != nil {
+		t.Fatalf("JoinNode: %v", err)
+	}
+
+	listed, err := srv.ListNodes(ctx, &adminv1.ListNodesRequest{Cluster: cluster, PageSize: 1})
+	if err != nil {
+		t.Fatalf("ListNodes: %v", err)
+	}
+	if listed.GetMembershipRevision() != 1 || listed.GetMembershipProjectionRevision() != 1 || listed.GetProjectionHealth() != "healthy" {
+		t.Fatalf("ListNodes projection=%+v", listed)
+	}
+	node := listed.GetNodes()[0]
+	if node.GetGeneration() != 1 || node.GetMembershipRevision() != 1 || node.GetUpdatedBy() != "operator-a" || node.GetUpdateReason() != "scale out" {
+		t.Fatalf("ListNodes node=%+v", node)
+	}
+	if node.GetClusterId() != "test-cluster" || node.GetSbsClusterId() != "test-sbs" || len(node.GetStoreIds()) != 1 || len(node.GetRoles()) != 1 {
+		t.Fatalf("ListNodes authority fields=%+v", node)
+	}
+
+	projection, err := srv.GetMembershipProjectionStatus(ctx, &adminv1.GetMembershipProjectionStatusRequest{Cluster: cluster})
+	if err != nil {
+		t.Fatalf("GetMembershipProjectionStatus: %v", err)
+	}
+	if projection.GetStatus().GetProjectionStale() {
+		t.Fatalf("projection status=%+v", projection.GetStatus())
+	}
+	rebuilt, err := srv.RebuildMembershipProjection(ctx, &adminv1.RebuildMembershipProjectionRequest{
+		Cluster: cluster,
+		Meta:    &adminv1.RequestMeta{Actor: "operator-a", Reason: "fixture"},
+	})
+	if err != nil {
+		t.Fatalf("RebuildMembershipProjection: %v", err)
+	}
+	if rebuilt.GetStatus().GetProjectionRebuildCount() < 1 || rebuilt.GetStatus().GetMembershipRevision() != rebuilt.GetStatus().GetMembershipProjectionRevision() {
+		t.Fatalf("rebuilt projection=%+v", rebuilt.GetStatus())
 	}
 }
 
@@ -1054,6 +1203,7 @@ func TestServerPlacementApplyObservabilityEndpoints(t *testing.T) {
 	}
 	for _, want := range []string{
 		`sbs_service_placement_apply_requests_total{class="ok"} 1`,
+		`sbs_service_tikv_operations_total{operation="full_scan"}`,
 		`sbs_service_placement_apply_duration_seconds_total`,
 		`sbs_service_write_session_requests_total{class="ok"} 1`,
 		`sbs_service_write_session_duration_seconds_total`,
@@ -5936,6 +6086,168 @@ func TestRunNodeHealthReconcilerTransitionsNodeToSuspectAndDown(t *testing.T) {
 	}
 }
 
+func TestRunNodeHealthReconcilerShardsOneHundredNodes(t *testing.T) {
+	ctx := context.Background()
+	srv := newTestMaintenanceServer(t)
+	srv.healthMinimumShardCount = 4
+	srv.healthConcurrencyPerShard = 16
+	srv.healthSuspectAfter = 3
+	srv.healthDownAfter = 6
+	var mu sync.Mutex
+	inFlight := 0
+	maxInFlight := 0
+	srv.probeNodeHealth = func(context.Context, clustermeta.NodeMembershipRecord) error {
+		mu.Lock()
+		inFlight++
+		if inFlight > maxInFlight {
+			maxInFlight = inFlight
+		}
+		mu.Unlock()
+		time.Sleep(2 * time.Millisecond)
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		return nil
+	}
+	for i := 0; i < 100; i++ {
+		if err := srv.repo.PutNodeMembership(ctx, clustermeta.NodeMembershipRecord{
+			NodeID: fmt.Sprintf("node-%03d", i), LifecycleState: clustermeta.NodeLifecycleActive, HealthState: clustermeta.NodeHealthHealthy,
+		}); err != nil {
+			t.Fatalf("PutNodeMembership(%d): %v", i, err)
+		}
+	}
+	if err := srv.runNodeHealthReconcilerOnce(ctx); err != nil {
+		t.Fatalf("runNodeHealthReconcilerOnce: %v", err)
+	}
+	status := srv.nodeHealthStatusSnapshot()
+	if status.ShardCount != 4 || status.ProbeCount != 100 || status.PeakQueueDepth != 100 || status.QueueDepth != 0 {
+		t.Fatalf("health status=%+v", status)
+	}
+	if status.MaxInFlight > 16 || maxInFlight > 16 || status.MaxInFlight < 2 {
+		t.Fatalf("status max_in_flight=%d observed=%d want 2..16", status.MaxInFlight, maxInFlight)
+	}
+	if status.TransitionCount != 0 || status.VolumeReconcileCount != 0 {
+		t.Fatalf("unexpected health decisions after successful probes: %+v", status)
+	}
+}
+
+func TestRunNodeHealthReconcilerSingleMissMakesNoPlacementDecision(t *testing.T) {
+	ctx := context.Background()
+	srv := newTestMaintenanceServer(t)
+	srv.healthSuspectAfter = 0
+	srv.healthDownAfter = 0
+	srv.probeNodeHealth = func(context.Context, clustermeta.NodeMembershipRecord) error {
+		return fmt.Errorf("fixture miss")
+	}
+	if err := srv.repo.PutNodeMembership(ctx, clustermeta.NodeMembershipRecord{
+		NodeID: "node-single-miss", LifecycleState: clustermeta.NodeLifecycleActive, HealthState: clustermeta.NodeHealthHealthy,
+	}); err != nil {
+		t.Fatalf("PutNodeMembership: %v", err)
+	}
+	if err := srv.runNodeHealthReconcilerOnce(ctx); err != nil {
+		t.Fatalf("runNodeHealthReconcilerOnce: %v", err)
+	}
+	rec, err := srv.repo.GetNodeMembership(ctx, "node-single-miss")
+	if err != nil {
+		t.Fatalf("GetNodeMembership: %v", err)
+	}
+	if rec.HealthState != clustermeta.NodeHealthHealthy {
+		t.Fatalf("health=%q want healthy after one miss", rec.HealthState)
+	}
+	status := srv.nodeHealthStatusSnapshot()
+	if status.TransitionCount != 0 || status.VolumeReconcileCount != 0 {
+		t.Fatalf("single miss made placement decision: %+v", status)
+	}
+}
+
+func TestAuditedNodeLeaveRemoveAndForceRemove(t *testing.T) {
+	oldTracker := dependencyTracker
+	dependencyTracker = depavail.NewTracker(depavail.DefaultThresholds())
+	t.Cleanup(func() { dependencyTracker = oldTracker })
+	ctx := context.Background()
+	srv := newTestMaintenanceServer(t)
+	srv.leader = &leaderLeaseManager{}
+	srv.leader.isLeader.Store(true)
+	cluster := &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"}
+
+	if err := srv.repo.PutNodeMembership(ctx, clustermeta.NodeMembershipRecord{
+		NodeID: "node-leave", LifecycleState: clustermeta.NodeLifecycleActive, HealthState: clustermeta.NodeHealthHealthy,
+	}); err != nil {
+		t.Fatalf("PutNodeMembership(leave): %v", err)
+	}
+	leave, err := srv.LeaveNode(ctx, &adminv1.LeaveNodeRequest{
+		Cluster: cluster, Meta: &adminv1.RequestMeta{Actor: "operator-a", Reason: "rolling replacement"}, NodeId: "node-leave",
+	})
+	if err != nil {
+		t.Fatalf("LeaveNode: %v", err)
+	}
+	leaveOp, err := srv.ops.get(leave.GetOperation().GetOperationId())
+	if err != nil {
+		t.Fatalf("get leave operation: %v", err)
+	}
+	if leaveOp.GetKind() != "node.leave" || leaveOp.GetActor() != "operator-a" || leaveOp.GetReason() != "rolling replacement" {
+		t.Fatalf("leave operation=%+v", leaveOp)
+	}
+	removed, err := srv.RemoveNode(ctx, &adminv1.RemoveNodeRequest{
+		Cluster: cluster, Meta: &adminv1.RequestMeta{Actor: "operator-b", Reason: "drain completed"}, NodeId: "node-leave",
+	})
+	if err != nil {
+		t.Fatalf("RemoveNode: %v", err)
+	}
+	removeOp, err := srv.ops.get(removed.GetOperation().GetOperationId())
+	if err != nil {
+		t.Fatalf("get remove operation: %v", err)
+	}
+	if removeOp.GetActor() != "operator-b" || removeOp.GetReason() != "drain completed" {
+		t.Fatalf("remove operation=%+v", removeOp)
+	}
+	rec, err := srv.repo.GetNodeMembership(ctx, "node-leave")
+	if err != nil {
+		t.Fatalf("GetNodeMembership(removed): %v", err)
+	}
+	if !rec.Tombstone || rec.LifecycleState != clustermeta.NodeLifecycleRemoved {
+		t.Fatalf("removed membership=%+v", rec)
+	}
+
+	if err := srv.repo.PutNodeMembership(ctx, clustermeta.NodeMembershipRecord{
+		NodeID: "node-force", LifecycleState: clustermeta.NodeLifecycleActive, HealthState: clustermeta.NodeHealthDown,
+	}); err != nil {
+		t.Fatalf("PutNodeMembership(force): %v", err)
+	}
+	grpcEndpoint := "127.0.0.1:9462"
+	registration, err := srv.UpdateNodeRegistration(ctx, &adminv1.UpdateNodeRegistrationRequest{
+		Cluster: cluster, Meta: &adminv1.RequestMeta{Actor: "operator-c", Reason: "replace endpoints"}, NodeId: "node-force",
+		GrpcEndpoint: &grpcEndpoint, StoreIds: []string{"store-b", "store-a", "store-a"}, Roles: []string{"sbs-data"},
+	})
+	if err != nil {
+		t.Fatalf("UpdateNodeRegistration: %v", err)
+	}
+	registrationOp, err := srv.ops.get(registration.GetOperation().GetOperationId())
+	if err != nil || registrationOp.GetActor() != "operator-c" || registration.GetNode().GetGeneration() < 2 {
+		t.Fatalf("registration operation=%+v response=%+v err=%v", registrationOp, registration, err)
+	}
+	_, err = srv.ForceRemoveNode(ctx, &adminv1.ForceRemoveNodeRequest{
+		Cluster: cluster, Meta: &adminv1.RequestMeta{Actor: "operator-c", Reason: "lost host"}, NodeId: "node-force",
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("ForceRemoveNode without approval code=%s err=%v", status.Code(err), err)
+	}
+	forced, err := srv.ForceRemoveNode(ctx, &adminv1.ForceRemoveNodeRequest{
+		Cluster: cluster, Meta: &adminv1.RequestMeta{Actor: "operator-c", Reason: "lost host"}, NodeId: "node-force",
+		ApprovalId: "approval-007", AcknowledgeDataLossRisk: true,
+	})
+	if err != nil {
+		t.Fatalf("ForceRemoveNode: %v", err)
+	}
+	forceOp, err := srv.ops.get(forced.GetOperation().GetOperationId())
+	if err != nil {
+		t.Fatalf("get force operation: %v", err)
+	}
+	if forceOp.GetApprovalId() != "approval-007" || !forceOp.GetRiskAcknowledged() || !forceOp.GetFollowOnRepairRequired() {
+		t.Fatalf("force operation=%+v", forceOp)
+	}
+}
+
 func TestRunNodeHealthReconcilerRecoversNodeToHealthyAfterSuccessStreak(t *testing.T) {
 	ctx := context.Background()
 	srv := newTestMaintenanceServer(t)
@@ -6068,8 +6380,12 @@ func TestRunNodeHealthReconcilerPersistsStoreCapacitySummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetNodeMembership: %v", err)
 	}
-	if rec.CapacityBytes != 1750 || rec.UsedBytes != 900 {
-		t.Fatalf("membership capacity=(%d,%d) want (1750,900)", rec.CapacityBytes, rec.UsedBytes)
+	if rec.CapacityBytes != 0 || rec.UsedBytes != 0 || rec.Generation != 1 {
+		t.Fatalf("routine probe mutated membership projection: %+v", rec)
+	}
+	summary := srv.nodeToProto(ctx, rec)
+	if summary.GetLastProbeTime().GetSeconds() != now.Unix() || summary.GetLastHeartbeatTime().GetSeconds() != now.Unix() {
+		t.Fatalf("node summary probe/heartbeat=%v/%v want %d", summary.GetLastProbeTime(), summary.GetLastHeartbeatTime(), now.Unix())
 	}
 }
 

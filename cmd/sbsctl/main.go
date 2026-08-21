@@ -30,6 +30,7 @@ import (
 var (
 	globalContextFile string
 	globalContextName string
+	globalJSONOutput  bool
 )
 
 const (
@@ -38,8 +39,24 @@ const (
 )
 
 func main() {
-	if len(os.Args) >= 2 && (os.Args[1] == "--version" || os.Args[1] == "version") {
-		fmt.Println(namrbdversion.BuildSummary())
+	rootArgs := make([]string, 0, len(os.Args)-1)
+	for _, arg := range os.Args[1:] {
+		if arg == "--json" || arg == "-json" {
+			globalJSONOutput = true
+			continue
+		}
+		rootArgs = append(rootArgs, arg)
+	}
+	if len(rootArgs) >= 1 && (rootArgs[0] == "--version" || rootArgs[0] == "version") {
+		if globalJSONOutput {
+			writeJSON(map[string]any{"version": namrbdversion.BuildSummary()})
+		} else {
+			fmt.Println(namrbdversion.BuildSummary())
+		}
+		return
+	}
+	if len(rootArgs) >= 1 && (rootArgs[0] == "--help" || rootArgs[0] == "-h") {
+		usage()
 		return
 	}
 	// Parse global flags before the command so scripts can call:
@@ -48,16 +65,30 @@ func main() {
 	global.SetOutput(io.Discard)
 	global.StringVar(&globalContextFile, "context-file", "", "context file path")
 	global.StringVar(&globalContextName, "context", "", "context name/profile")
-	_ = global.Parse(os.Args[1:])
+	_ = global.Parse(rootArgs)
 	args := global.Args()
 
 	if len(args) >= 1 && args[0] == "version" {
-		fmt.Println(namrbdversion.BuildSummary())
+		if globalJSONOutput {
+			writeJSON(map[string]any{"version": namrbdversion.BuildSummary()})
+		} else {
+			fmt.Println(namrbdversion.BuildSummary())
+		}
 		return
 	}
 	if len(args) < 1 {
 		usage()
 		os.Exit(2)
+	}
+	if args[0] == "help" {
+		if len(args) == 1 {
+			usage()
+			return
+		}
+		if len(args) == 2 && printGroupUsage(args[1]) {
+			return
+		}
+		args = append(append([]string(nil), args[1:]...), "--help")
 	}
 
 	switch args[0] {
@@ -120,6 +151,26 @@ func runNode(args []string) {
 		runNodeJoin(args[1:])
 	case "update-topology":
 		runNodeUpdateTopology(args[1:])
+	case "update-registration":
+		runNodeUpdateRegistration(args[1:])
+	case "leave":
+		runNodeLeave(args[1:])
+	case "list":
+		runNodeList(args[1:])
+	case "projection":
+		if len(args) < 2 {
+			nodeUsage()
+			os.Exit(2)
+		}
+		switch args[1] {
+		case "status":
+			runNodeProjectionStatus(args[2:])
+		case "rebuild":
+			runNodeProjectionRebuild(args[2:])
+		default:
+			nodeUsage()
+			os.Exit(2)
+		}
 	case "status":
 		runNodeStatus(args[1:])
 	case "drain":
@@ -134,6 +185,113 @@ func runNode(args []string) {
 		nodeUsage()
 		os.Exit(2)
 	}
+}
+
+func runNodeList(args []string) {
+	defaults := mustResolveCLIDefaults(args)
+	fs := flag.NewFlagSet("node list", flag.ExitOnError)
+	registerContextFlags(fs, defaults)
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	includeTombstones := fs.Bool("include-tombstones", false, "include removed membership tombstones")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
+	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
+	parseCommandFlags(fs, args)
+	if *output == "" {
+		*output = "table"
+	}
+	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
+	defer cancel()
+	defer client.Close()
+	resp, err := adminclient.ListAllNodes(ctx, client.Admin, clusterRef(*clusterID, *sbsClusterID), *includeTombstones)
+	if err != nil {
+		fatalf("node list failed: %v", err)
+	}
+	if *output == "json" {
+		writeJSON(resp)
+		return
+	}
+	fmt.Printf("membership_revision: %d\n", resp.GetMembershipRevision())
+	fmt.Printf("membership_projection_revision: %d\n", resp.GetMembershipProjectionRevision())
+	fmt.Printf("projection_health: %s\n", resp.GetProjectionHealth())
+	for _, node := range resp.GetNodes() {
+		fmt.Printf("%s\t%s\t%s\t%s\tgeneration=%d\trevision=%d\ttombstone=%t\n", node.GetNodeId(), node.GetLifecycle().String(), node.GetHealth().String(), node.GetGrpcEndpoint(), node.GetGeneration(), node.GetMembershipRevision(), node.GetTombstone())
+	}
+}
+
+func runNodeProjectionStatus(args []string) {
+	defaults := mustResolveCLIDefaults(args)
+	fs := flag.NewFlagSet("node projection status", flag.ExitOnError)
+	registerContextFlags(fs, defaults)
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
+	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
+	parseCommandFlags(fs, args)
+	if *output == "" {
+		*output = "table"
+	}
+	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
+	defer cancel()
+	defer client.Close()
+	resp, err := client.Admin.GetMembershipProjectionStatus(ctx, &adminv1.GetMembershipProjectionStatusRequest{
+		Cluster: clusterRef(*clusterID, *sbsClusterID),
+	})
+	if err != nil {
+		fatalf("node projection status failed: %v", err)
+	}
+	if *output == "json" {
+		writeJSON(resp)
+		return
+	}
+	printMembershipProjectionStatus(resp.GetStatus())
+}
+
+func runNodeProjectionRebuild(args []string) {
+	defaults := mustResolveCLIDefaults(args)
+	fs := flag.NewFlagSet("node projection rebuild", flag.ExitOnError)
+	registerContextFlags(fs, defaults)
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
+	reason := fs.String("reason", "operator projection rebuild", "reason")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
+	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
+	parseCommandFlags(fs, args)
+	if *output == "" {
+		*output = "table"
+	}
+	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
+	defer cancel()
+	defer client.Close()
+	resp, err := client.Admin.RebuildMembershipProjection(ctx, &adminv1.RebuildMembershipProjectionRequest{
+		Cluster: clusterRef(*clusterID, *sbsClusterID),
+		Meta:    &adminv1.RequestMeta{Actor: *actor, Reason: *reason},
+	})
+	if err != nil {
+		fatalf("node projection rebuild failed: %v", err)
+	}
+	if *output == "json" {
+		writeJSON(resp)
+		return
+	}
+	printMembershipProjectionStatus(resp.GetStatus())
+}
+
+func printMembershipProjectionStatus(status *adminv1.MembershipProjectionStatus) {
+	if status == nil {
+		fatalf("empty membership projection status")
+	}
+	fmt.Printf("membership_revision: %d\n", status.GetMembershipRevision())
+	fmt.Printf("membership_projection_revision: %d\n", status.GetMembershipProjectionRevision())
+	fmt.Printf("projection_lag_ms: %d\n", status.GetProjectionLagMs())
+	fmt.Printf("projection_health: %s\n", status.GetProjectionHealth())
+	fmt.Printf("projection_stale: %t\n", status.GetProjectionStale())
+	fmt.Printf("projection_rebuild_count: %d\n", status.GetProjectionRebuildCount())
+	fmt.Printf("projection_resync_count: %d\n", status.GetProjectionResyncCount())
 }
 
 func runStore(args []string) {
@@ -314,20 +472,20 @@ func runClusterStatus(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("cluster status", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 
@@ -341,9 +499,7 @@ func runClusterStatus(args []string) {
 	if err != nil {
 		fatalf("cluster status failed: %v", err)
 	}
-	nodesResp, err := client.Admin.ListNodes(ctx, &adminv1.ListNodesRequest{
-		Cluster: clusterRef(*clusterID, *sbsClusterID),
-	})
+	nodesResp, err := adminclient.ListAllNodes(ctx, client.Admin, clusterRef(*clusterID, *sbsClusterID), false)
 	if err != nil {
 		fatalf("list nodes for cluster status failed: %v", err)
 	}
@@ -370,6 +526,11 @@ func runClusterStatus(args []string) {
 			fmt.Printf("maintenance_cooldown_volumes: %d\n", resp.GetMaintenanceCooldownVolumes())
 			fmt.Printf("maintenance_cooldown_max_remaining_seconds: %d\n", resp.GetMaintenanceCooldownMaxRemainingSeconds())
 		}
+		fmt.Printf("health_probe_sharded: %t\n", resp.GetHealthProbeSharded())
+		fmt.Printf("health_probe_shard_count: %d\n", resp.GetHealthProbeShardCount())
+		fmt.Printf("health_probe_queue_depth: %d\n", resp.GetHealthProbeQueueDepth())
+		fmt.Printf("health_probe_max_concurrency: %d\n", resp.GetHealthProbeMaxConcurrency())
+		fmt.Printf("health_probe_thresholds: suspect=%d down=%d recovery_cooldown=%ds\n", resp.GetHealthProbeSuspectAfter(), resp.GetHealthProbeDownAfter(), resp.GetHealthProbeRecoveryCooldownSeconds())
 		fmt.Printf("nodes:\n")
 		for _, n := range nodesResp.GetNodes() {
 			fmt.Printf("  %s: %s\n", n.GetNodeId(), compactNodeHealthName(n.GetHealth()))
@@ -381,17 +542,17 @@ func runClusterInit(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("cluster init", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "bootstrap", "reason")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 
@@ -412,22 +573,22 @@ func runNodeStatus(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("node status", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "SBS_NODE_ID", "NAMRBD_NODE_ID"), "node id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "node id")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("node_id", "node-id", "", "SBS_NODE_ID", "NAMRBD_NODE_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("node_id", "node-id", "", "NAMRBD_SBS_NODE_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *nodeID == "" {
@@ -562,6 +723,23 @@ func clusterStatusJSON(resp *adminv1.GetClusterStatusResponse, nodes []*adminv1.
 		"drain_backlog":                resp.GetDrainBacklog(),
 		"maintenance_cooldown_volumes": resp.GetMaintenanceCooldownVolumes(),
 		"maintenance_cooldown_max_remaining_seconds": resp.GetMaintenanceCooldownMaxRemainingSeconds(),
+		"health_probe": map[string]any{
+			"sharded":                   resp.GetHealthProbeSharded(),
+			"shard_count":               resp.GetHealthProbeShardCount(),
+			"queue_depth":               resp.GetHealthProbeQueueDepth(),
+			"peak_queue_depth":          resp.GetHealthProbePeakQueueDepth(),
+			"max_concurrency":           resp.GetHealthProbeMaxConcurrency(),
+			"interval_seconds":          resp.GetHealthProbeIntervalSeconds(),
+			"timeout_seconds":           resp.GetHealthProbeTimeoutSeconds(),
+			"suspect_after":             resp.GetHealthProbeSuspectAfter(),
+			"down_after":                resp.GetHealthProbeDownAfter(),
+			"recovery_cooldown_seconds": resp.GetHealthProbeRecoveryCooldownSeconds(),
+			"probe_count":               resp.GetHealthProbeCount(),
+			"transition_count":          resp.GetHealthTransitionCount(),
+			"volume_reconcile_count":    resp.GetHealthVolumeReconcileCount(),
+			"first_error":               resp.GetHealthProbeFirstError(),
+			"last_error":                resp.GetHealthProbeLastError(),
+		},
 		"node_health_summary": map[string]any{
 			"active_healthy_nodes": summary.ActiveHealthyNodes,
 			"active_suspect_nodes": summary.ActiveSuspectNodes,
@@ -677,20 +855,20 @@ func runStoreStatus(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("store status", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminHTTP := fs.String("admin-http-endpoint", defaults.fieldValue("sbs_node_admin_http", "SBS_NODE_ADMIN_HTTP", "NAMRBD_SBS_ADMIN_ADDR"), "node-local admin/debug HTTP endpoint")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	adminHTTP := fs.String("sbs-service-http-endpoint", defaults.fieldValue("sbs_node_admin_http", "NAMRBD_SBS_SERVICE_HTTP_ENDPOINT"), "node-local admin/debug HTTP endpoint")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
-		defaults.fieldSetting("sbs_node_admin_http", "admin-http-endpoint", "", "SBS_NODE_ADMIN_HTTP", "NAMRBD_SBS_ADMIN_ADDR"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_node_admin_http", "sbs-service-http-endpoint", "", "NAMRBD_SBS_SERVICE_HTTP_ENDPOINT"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if strings.TrimSpace(*adminHTTP) == "" {
-		fatalf("--admin-http-endpoint is required")
+		fatalf("--sbs-service-http-endpoint is required")
 	}
 
 	summary, err := runStoreStatusRemote(*adminHTTP, *timeout)
@@ -832,26 +1010,26 @@ func runStoreTuning(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("store tuning", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "SBS_NODE_ID", "NAMRBD_NODE_ID"), "node id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "node id")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "store-tuning", "reason")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
 	var tuning storeTuningFlag
 	fs.Var(&tuning, "store-tuning", "store tuning spec store_id=<id>,allocation_weight=<n> (weight=<n> is accepted as compatibility alias; repeatable)")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("node_id", "node-id", "", "SBS_NODE_ID", "NAMRBD_NODE_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("node_id", "node-id", "", "NAMRBD_SBS_NODE_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *nodeID == "" {
@@ -895,9 +1073,9 @@ func runTopologyZoneCreate(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("topology zone create", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	zoneID := fs.String("zone", "", "zone id")
 	displayName := fs.String("display-name", "", "display name")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
@@ -905,11 +1083,11 @@ func runTopologyZoneCreate(args []string) {
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
 	var labels labelFlag
 	fs.Var(&labels, "label", "label k=v (repeatable)")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if strings.TrimSpace(*zoneID) == "" {
@@ -935,20 +1113,20 @@ func runTopologyZoneList(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("topology zone list", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
@@ -976,13 +1154,13 @@ func runTopologyZoneGet(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("topology zone get", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	zoneID := fs.String("zone", "", "zone id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
@@ -1007,9 +1185,9 @@ func runTopologyZoneUpdate(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("topology zone update", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	zoneID := fs.String("zone", "", "zone id")
 	displayName := fs.String("display-name", "", "display name")
 	enable := fs.Bool("enable", false, "set lifecycle active")
@@ -1020,7 +1198,7 @@ func runTopologyZoneUpdate(args []string) {
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
 	var labels labelFlag
 	fs.Var(&labels, "label", "label k=v (repeatable)")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if strings.TrimSpace(*zoneID) == "" {
 		fatalf("--zone is required")
 	}
@@ -1069,15 +1247,15 @@ func runTopologyZoneDelete(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("topology zone delete", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	zoneID := fs.String("zone", "", "zone id")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "topology-zone-delete", "reason")
 	yes := fs.Bool("yes", false, "confirm delete")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if !*yes {
 		fatalf("--yes is required for topology zone delete")
 	}
@@ -1144,26 +1322,26 @@ func runNodeJoin(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("node join", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "SBS_NODE_ID", "NAMRBD_NODE_ID"), "node id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "node id")
 	grpcEndpoint := fs.String("grpc-endpoint", defaults.dataEndpoint(), "sbs-data gRPC endpoint")
-	adminHTTP := fs.String("admin-http-endpoint", defaults.fieldValue("sbs_node_admin_http", "SBS_NODE_ADMIN_HTTP", "NAMRBD_SBS_ADMIN_ADDR"), "node-local admin/debug HTTP endpoint")
-	zone := fs.String("zone", defaults.fieldValue("zone", "SBS_ZONE", "NAMRBD_ZONE"), "zone")
+	adminHTTP := fs.String("sbs-service-http-endpoint", defaults.fieldValue("sbs_node_admin_http", "NAMRBD_SBS_SERVICE_HTTP_ENDPOINT"), "node-local admin/debug HTTP endpoint")
+	zone := fs.String("zone", defaults.fieldValue("zone", "NAMRBD_SBS_ZONE"), "zone")
 	autoCreateZone := fs.Bool("auto-create-zone", false, "create the zone if missing")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "join", "reason")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("node_id", "node-id", "", "SBS_NODE_ID", "NAMRBD_NODE_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("node_id", "node-id", "", "NAMRBD_SBS_NODE_ID"),
 		defaults.dataEndpointSetting(),
-		defaults.fieldSetting("sbs_node_admin_http", "admin-http-endpoint", "", "SBS_NODE_ADMIN_HTTP", "NAMRBD_SBS_ADMIN_ADDR"),
-		defaults.fieldSetting("zone", "zone", "", "SBS_ZONE", "NAMRBD_ZONE"),
+		defaults.fieldSetting("sbs_node_admin_http", "sbs-service-http-endpoint", "", "NAMRBD_SBS_SERVICE_HTTP_ENDPOINT"),
+		defaults.fieldSetting("zone", "zone", "", "NAMRBD_SBS_ZONE"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *nodeID == "" || *grpcEndpoint == "" {
@@ -1192,22 +1370,22 @@ func runNodeUpdateTopology(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("node update-topology", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "SBS_NODE_ID", "NAMRBD_NODE_ID"), "node id")
-	zone := fs.String("zone", defaults.fieldValue("zone", "SBS_ZONE", "NAMRBD_ZONE"), "zone")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "node id")
+	zone := fs.String("zone", defaults.fieldValue("zone", "NAMRBD_SBS_ZONE"), "zone")
 	autoCreateZone := fs.Bool("auto-create-zone", false, "create the zone if missing")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "node-update-topology", "reason")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("node_id", "node-id", "", "SBS_NODE_ID", "NAMRBD_NODE_ID"),
-		defaults.fieldSetting("zone", "zone", "", "SBS_ZONE", "NAMRBD_ZONE"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("node_id", "node-id", "", "NAMRBD_SBS_NODE_ID"),
+		defaults.fieldSetting("zone", "zone", "", "NAMRBD_SBS_ZONE"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if strings.TrimSpace(*nodeID) == "" || strings.TrimSpace(*zone) == "" {
@@ -1233,20 +1411,20 @@ func runNodeDrain(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("node drain", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "SBS_NODE_ID", "NAMRBD_NODE_ID"), "node id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "node id")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "drain", "reason")
 	yes := fs.Bool("yes", false, "confirm drain")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("node_id", "node-id", "", "SBS_NODE_ID", "NAMRBD_NODE_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("node_id", "node-id", "", "NAMRBD_SBS_NODE_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if !*yes {
@@ -1270,26 +1448,103 @@ func runNodeDrain(args []string) {
 	writeJSON(resp)
 }
 
+func runNodeLeave(args []string) {
+	defaults := mustResolveCLIDefaults(args)
+	fs := flag.NewFlagSet("node leave", flag.ExitOnError)
+	registerContextFlags(fs, defaults)
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "node id")
+	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
+	reason := fs.String("reason", "leave", "reason")
+	yes := fs.Bool("yes", false, "confirm leave and drain")
+	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
+	parseCommandFlags(fs, args)
+	if !*yes {
+		fatalf("--yes is required for node leave")
+	}
+	if strings.TrimSpace(*nodeID) == "" {
+		fatalf("--node-id is required")
+	}
+	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
+	defer cancel()
+	defer client.Close()
+	resp, err := client.Admin.LeaveNode(ctx, &adminv1.LeaveNodeRequest{
+		Cluster: clusterRef(*clusterID, *sbsClusterID),
+		Meta:    &adminv1.RequestMeta{Actor: *actor, Reason: *reason},
+		NodeId:  strings.TrimSpace(*nodeID),
+	})
+	if err != nil {
+		fatalf("node leave failed: %v", err)
+	}
+	writeJSON(resp)
+}
+
+func runNodeUpdateRegistration(args []string) {
+	defaults := mustResolveCLIDefaults(args)
+	fs := flag.NewFlagSet("node update-registration", flag.ExitOnError)
+	registerContextFlags(fs, defaults)
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "node id")
+	grpcEndpoint := fs.String("grpc-endpoint", "", "replacement sbs-data gRPC endpoint")
+	adminHTTPEndpoint := fs.String("sbs-service-http-endpoint", "", "replacement sbs-data admin HTTP endpoint")
+	storeIDs := fs.String("store-ids", "", "comma-separated store IDs")
+	roles := fs.String("roles", "", "comma-separated node roles")
+	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
+	reason := fs.String("reason", "update-node-registration", "reason")
+	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
+	parseCommandFlags(fs, args)
+	if strings.TrimSpace(*nodeID) == "" {
+		fatalf("--node-id is required")
+	}
+	req := &adminv1.UpdateNodeRegistrationRequest{
+		Cluster: clusterRef(*clusterID, *sbsClusterID), Meta: &adminv1.RequestMeta{Actor: *actor, Reason: *reason}, NodeId: strings.TrimSpace(*nodeID),
+	}
+	if flagWasSet(fs, "grpc-endpoint") {
+		req.GrpcEndpoint = grpcEndpoint
+	}
+	if flagWasSet(fs, "sbs-service-http-endpoint") {
+		req.AdminHttpEndpoint = adminHTTPEndpoint
+	}
+	if flagWasSet(fs, "store-ids") {
+		req.StoreIds = parseCSV(*storeIDs)
+	}
+	if flagWasSet(fs, "roles") {
+		req.Roles = parseCSV(*roles)
+	}
+	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
+	defer cancel()
+	defer client.Close()
+	resp, err := client.Admin.UpdateNodeRegistration(ctx, req)
+	if err != nil {
+		fatalf("node update-registration failed: %v", err)
+	}
+	writeJSON(resp)
+}
+
 func runNodeDrainStatus(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("node drain status", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "SBS_NODE_ID", "NAMRBD_NODE_ID"), "node id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "node id")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("node_id", "node-id", "", "SBS_NODE_ID", "NAMRBD_NODE_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("node_id", "node-id", "", "NAMRBD_SBS_NODE_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *nodeID == "" {
@@ -1333,21 +1588,23 @@ func runNodeRemove(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("node remove", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "SBS_NODE_ID", "NAMRBD_NODE_ID"), "node id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "node id")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "remove", "reason")
 	force := fs.Bool("force", false, "force remove")
+	approvalID := fs.String("approval-id", "", "break-glass approval id for force remove")
+	acknowledgeRisk := fs.Bool("acknowledge-data-loss-risk", false, "acknowledge force-remove data loss risk")
 	yes := fs.Bool("yes", false, "confirm remove")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("node_id", "node-id", "", "SBS_NODE_ID", "NAMRBD_NODE_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("node_id", "node-id", "", "NAMRBD_SBS_NODE_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if !*yes {
@@ -1362,10 +1619,15 @@ func runNodeRemove(args []string) {
 	defer client.Close()
 
 	if *force {
+		if strings.TrimSpace(*approvalID) == "" || !*acknowledgeRisk {
+			fatalf("node remove --force requires --approval-id and --acknowledge-data-loss-risk")
+		}
 		resp, err := client.Admin.ForceRemoveNode(ctx, &adminv1.ForceRemoveNodeRequest{
-			Cluster: clusterRef(*clusterID, *sbsClusterID),
-			Meta:    &adminv1.RequestMeta{Actor: *actor, Reason: *reason},
-			NodeId:  *nodeID,
+			Cluster:                 clusterRef(*clusterID, *sbsClusterID),
+			Meta:                    &adminv1.RequestMeta{Actor: *actor, Reason: *reason},
+			NodeId:                  *nodeID,
+			ApprovalId:              strings.TrimSpace(*approvalID),
+			AcknowledgeDataLossRisk: true,
 		})
 		if err != nil {
 			fatalf("node remove --force failed: %v", err)
@@ -1389,9 +1651,9 @@ func runVolumeCreate(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume create", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	volumeID := fs.String("volume-id", "", "volume id")
 	size := fs.String("size", "", "volume size, e.g. 10G or 100T")
 	blockSize := fs.String("block-size", "4K", "block size, e.g. 4K")
@@ -1407,11 +1669,11 @@ func runVolumeCreate(args []string) {
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "create-volume", "reason")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *volumeID == "" {
@@ -1470,9 +1732,9 @@ func runVolumeRestoreFromSnapshot(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume restore-from-snapshot", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	sourceSnapshotID := fs.String("source-snapshot-id", "", "source snapshot id")
 	volumeID := fs.String("volume-id", "", "restored target volume id")
 	size := fs.String("size", "", "restored target size, e.g. 10G; empty uses source snapshot size")
@@ -1480,11 +1742,11 @@ func runVolumeRestoreFromSnapshot(args []string) {
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "restore-volume-from-snapshot", "reason")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *sourceSnapshotID == "" {
@@ -1520,9 +1782,9 @@ func runVolumeExpand(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume expand", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	volumeID := fs.String("volume-id", "", "volume id")
 	targetSize := fs.String("target-size", "", "target volume size, e.g. 100G")
 	addSize := fs.String("add-size", "", "size to add, e.g. 10G")
@@ -1530,11 +1792,11 @@ func runVolumeExpand(args []string) {
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "expand-volume", "reason")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *volumeID == "" {
@@ -1655,19 +1917,19 @@ func runVolumeDelete(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume delete", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	volumeID := fs.String("volume-id", "", "volume id")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "delete-volume", "reason")
 	yes := fs.Bool("yes", false, "confirm delete")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if !*yes {
@@ -1708,20 +1970,20 @@ func runVolumePurge(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume purge", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	volumeID := fs.String("volume-id", "", "volume id")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "purge-volume", "reason")
 	yes := fs.Bool("yes", false, "confirm purge")
 	confirmedDeletion := fs.Bool("i-confirmed-deletion", false, "explicitly acknowledge destructive purge semantics")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if err := validateVolumePurgeArgs(*volumeID, *yes, *confirmedDeletion); err != nil {
@@ -1747,14 +2009,14 @@ func runVolumeStatus(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume status", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	volumeID := fs.String("volume-id", "", "volume id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	summaryMode := fs.String("summary-mode", "", "summary mode: full|spec-only")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
@@ -1770,8 +2032,8 @@ func runVolumeStatus(args []string) {
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *volumeID == "" {
@@ -1854,21 +2116,21 @@ func runVolumeReplicaTargets(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume replica-targets", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	volumeID := fs.String("volume-id", "", "volume id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if strings.TrimSpace(*volumeID) == "" {
@@ -1920,24 +2182,24 @@ func runVolumeAllocationPage(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume allocation-page", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	volumeID := fs.String("volume-id", "", "volume id")
 	pageNo := fs.Uint64("page-no", 0, "allocation page number")
 	allocationPageSize := fs.String("allocation-page-size", "", "allocation page size, e.g. 4M")
 	allocationChunkSize := fs.String("allocation-chunk-size", "", "allocation chunk size, e.g. 64K")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if strings.TrimSpace(*volumeID) == "" {
@@ -1999,21 +2261,21 @@ func runVolumeHealth(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume health", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	volumeID := fs.String("volume-id", "", "volume id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *volumeID == "" {
@@ -2049,23 +2311,23 @@ func runVolumePlacement(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume placement", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
-	adminHTTP := fs.String("admin-http-endpoint", defaults.fieldValue("sbs_node_admin_http", "SBS_NODE_ADMIN_HTTP", "NAMRBD_SBS_ADMIN_ADDR"), "optional node-local admin/debug HTTP endpoint for current placement rows")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminHTTP := fs.String("sbs-service-http-endpoint", defaults.fieldValue("sbs_node_admin_http", "NAMRBD_SBS_SERVICE_HTTP_ENDPOINT"), "optional node-local admin/debug HTTP endpoint for current placement rows")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	volumeID := fs.String("volume-id", "", "volume id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
-		defaults.fieldSetting("sbs_node_admin_http", "admin-http-endpoint", "", "SBS_NODE_ADMIN_HTTP", "NAMRBD_SBS_ADMIN_ADDR"),
+		defaults.fieldSetting("sbs_node_admin_http", "sbs-service-http-endpoint", "", "NAMRBD_SBS_SERVICE_HTTP_ENDPOINT"),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *volumeID == "" {
@@ -2168,21 +2430,21 @@ func runVolumeTransitions(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume transitions", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminHTTP := fs.String("admin-http-endpoint", defaults.fieldValue("sbs_node_admin_http", "SBS_NODE_ADMIN_HTTP", "NAMRBD_SBS_ADMIN_ADDR"), "node-local admin/debug HTTP endpoint")
+	adminHTTP := fs.String("sbs-service-http-endpoint", defaults.fieldValue("sbs_node_admin_http", "NAMRBD_SBS_SERVICE_HTTP_ENDPOINT"), "node-local admin/debug HTTP endpoint")
 	volumeID := fs.String("volume-id", "", "volume id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
-		defaults.fieldSetting("sbs_node_admin_http", "admin-http-endpoint", "", "SBS_NODE_ADMIN_HTTP", "NAMRBD_SBS_ADMIN_ADDR"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_node_admin_http", "sbs-service-http-endpoint", "", "NAMRBD_SBS_SERVICE_HTTP_ENDPOINT"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if strings.TrimSpace(*adminHTTP) == "" {
-		fatalf("--admin-http-endpoint is required")
+		fatalf("--sbs-service-http-endpoint is required")
 	}
 	if *volumeID == "" {
 		fatalf("--volume-id is required")
@@ -2430,20 +2692,20 @@ func runVolumeList(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("volume list", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 
@@ -2474,21 +2736,21 @@ func runOperationShow(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("operations show", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	operationID := fs.String("operation-id", "", "operation id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *operationID == "" {
@@ -2520,6 +2782,11 @@ func runOperationShow(args []string) {
 		fmt.Printf("phase: %s\n", op.GetPhase())
 		fmt.Printf("blocking_reason: %s\n", op.GetBlockingReason())
 		fmt.Printf("error_message: %s\n", op.GetErrorMessage())
+		fmt.Printf("actor: %s\n", op.GetActor())
+		fmt.Printf("reason: %s\n", op.GetReason())
+		fmt.Printf("approval_id: %s\n", op.GetApprovalId())
+		fmt.Printf("risk_acknowledged: %t\n", op.GetRiskAcknowledged())
+		fmt.Printf("follow_on_repair_required: %t\n", op.GetFollowOnRepairRequired())
 		if ts := op.GetStartedAt(); ts != nil {
 			fmt.Printf("started_at: %s\n", ts.AsTime().UTC().Format(time.RFC3339))
 		}
@@ -2533,22 +2800,22 @@ func runOperationList(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("operations list", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	kind := fs.String("kind", "", "optional operation kind filter")
 	state := fs.String("state", "", "optional state filter: queued|running|completed|failed|canceled")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 
@@ -2574,14 +2841,15 @@ func runOperationList(args []string) {
 	case "json":
 		writeJSON(resp)
 	case "", "table":
-		fmt.Println("OPERATION\tKIND\tSTATE\tVOLUME\tNODE\tPHASE")
+		fmt.Println("OPERATION\tKIND\tSTATE\tVOLUME\tNODE\tACTOR\tPHASE")
 		for _, op := range resp.GetOperations() {
-			fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\n",
+			fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				op.GetOperationId(),
 				op.GetKind(),
 				op.GetState().String(),
 				op.GetTargetVolumeId(),
 				op.GetTargetNodeId(),
+				op.GetActor(),
 				op.GetPhase(),
 			)
 		}
@@ -2616,20 +2884,20 @@ func runRepairList(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("repair list", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 
@@ -2660,22 +2928,22 @@ func runRepairShow(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("repair show", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	volumeID := fs.String("volume-id", "", "volume id")
 	placementRef := fs.String("placement-ref", "", "optional placement ref filter")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *volumeID == "" {
@@ -2720,20 +2988,20 @@ func runRebalanceList(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("rebalance list", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 
@@ -2764,20 +3032,20 @@ func runMaintenanceThrottle(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("maintenance throttle", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	repairs := fs.Uint("repairs", 0, "max concurrent repairs")
 	rebalances := fs.Uint("rebalances", 0, "max concurrent rebalances")
 	drains := fs.Uint("drains", 0, "max concurrent drains")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "maintenance-throttle", "reason")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 
@@ -2801,20 +3069,20 @@ func runMaintenancePause(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("maintenance pause", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	repairs := fs.Bool("repairs", false, "pause repairs")
 	rebalances := fs.Bool("rebalances", false, "pause rebalances")
 	drains := fs.Bool("drains", false, "pause drains")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "maintenance-pause", "reason")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 
@@ -2838,20 +3106,20 @@ func runMaintenanceResume(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("maintenance resume", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	repairs := fs.Bool("repairs", false, "resume repairs")
 	rebalances := fs.Bool("rebalances", false, "resume rebalances")
 	drains := fs.Bool("drains", false, "resume drains")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "maintenance-resume", "reason")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 
@@ -2881,7 +3149,7 @@ func runTestIOOpen(args []string) {
 	attachmentID := fs.String("attachment-id", getenvOrDefault("NAMRBD_ATTACHMENT_ID", "sbsctl-test-attachment"), "attachment id")
 	attachmentGeneration := fs.Uint64("attachment-generation", 1, "attachment generation")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *gatewayID == "" {
 		*gatewayID = "sbsctl-test"
 	}
@@ -2921,7 +3189,7 @@ func runTestIORead(args []string) {
 	attachmentID := fs.String("attachment-id", getenvOrDefault("NAMRBD_ATTACHMENT_ID", "sbsctl-test-attachment"), "attachment id")
 	attachmentGeneration := fs.Uint64("attachment-generation", 1, "attachment generation")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *gatewayID == "" {
 		*gatewayID = "sbsctl-test"
 	}
@@ -2968,7 +3236,7 @@ func runTestIOWrite(args []string) {
 	attachmentID := fs.String("attachment-id", getenvOrDefault("NAMRBD_ATTACHMENT_ID", "sbsctl-test-attachment"), "attachment id")
 	attachmentGeneration := fs.Uint64("attachment-generation", 1, "attachment generation")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *gatewayID == "" {
 		*gatewayID = "sbsctl-test"
 	}
@@ -3020,7 +3288,7 @@ func runTestIOFlush(args []string) {
 	attachmentID := fs.String("attachment-id", getenvOrDefault("NAMRBD_ATTACHMENT_ID", "sbsctl-test-attachment"), "attachment id")
 	attachmentGeneration := fs.Uint64("attachment-generation", 1, "attachment generation")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *gatewayID == "" {
 		*gatewayID = "sbsctl-test"
 	}
@@ -3049,7 +3317,7 @@ func runTestIOFlush(args []string) {
 
 func dialAdmin(endpoint string, timeout time.Duration) (*adminclient.Client, context.Context, context.CancelFunc) {
 	if endpoint == "" {
-		fatalf("admin endpoint is required (use --admin-endpoint or SBS_ADMIN_ENDPOINTS/NAMRBD_SBS_ADMIN_ENDPOINTS)")
+		fatalf("admin endpoint is required (use --sbs-service-endpoint or NAMRBD_SBS_SERVICE_ENDPOINTS)")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	client, err := adminclient.Dial(ctx, endpoint)
@@ -3062,7 +3330,7 @@ func dialAdmin(endpoint string, timeout time.Duration) (*adminclient.Client, con
 
 func dialData(endpoint string, timeout time.Duration) (*sbsdataclient.Client, context.Context, context.CancelFunc) {
 	if endpoint == "" {
-		fatalf("data endpoint is required (use --data-endpoint or SBS_DATA_ENDPOINTS/SBS_GRPC_ADDR/NAMRBD_SBS_GRPC_ADDR)")
+		fatalf("data endpoint is required (use --data-endpoint or NAMRBD_SBS_DATA_ENDPOINTS)")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	client, err := sbsdataclient.Dial(ctx, endpoint)
@@ -3077,32 +3345,27 @@ func clusterRef(clusterID, sbsClusterID string) *adminv1.ClusterRef {
 	return &adminv1.ClusterRef{ClusterId: clusterID, SbsClusterId: sbsClusterID}
 }
 
-func defaultAdminEndpoint() string {
-	for _, key := range []string{"SBS_ADMIN_ENDPOINTS", "NAMRBD_SBS_ADMIN_ENDPOINTS"} {
-		if raw := os.Getenv(key); raw != "" {
-			parts := strings.Split(raw, ",")
-			if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
-				return strings.TrimSpace(parts[0])
-			}
+func parseCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if value := strings.TrimSpace(part); value != "" {
+			out = append(out, value)
 		}
 	}
-	return ""
+	return out
+}
+
+func defaultAdminEndpoint() string {
+	return firstEnvListFirst("NAMRBD_SBS_SERVICE_ENDPOINTS")
 }
 
 func defaultDataEndpoint() string {
-	for _, key := range []string{"SBS_DATA_ENDPOINTS", "SBS_GRPC_ADDR", "NAMRBD_SBS_GRPC_ADDR"} {
-		if raw := os.Getenv(key); raw != "" {
-			parts := strings.Split(raw, ",")
-			if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
-				return strings.TrimSpace(parts[0])
-			}
-		}
-	}
-	return ""
+	return firstEnvListFirst("NAMRBD_SBS_DATA_ENDPOINTS")
 }
 
 func defaultTimeout() time.Duration {
-	raw := firstEnvOrDefault("SBS_TIMEOUT", "NAMRBD_TIMEOUT", "10s")
+	raw := firstEnvOrDefault("NAMRBD_SBSCTL_TIMEOUT", "10s")
 	d, err := time.ParseDuration(raw)
 	if err != nil {
 		return 10 * time.Second
@@ -3111,6 +3374,12 @@ func defaultTimeout() time.Duration {
 }
 
 func firstEnv(keys ...string) string {
+	if resolved, ok := resolveSBSCTLCompatEnv(keys...); ok {
+		if resolved.Present {
+			return strings.TrimSpace(resolved.Value)
+		}
+		return ""
+	}
 	for _, key := range keys {
 		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 			return v
@@ -3119,8 +3388,8 @@ func firstEnv(keys ...string) string {
 	return ""
 }
 
-func firstEnvOrDefault(primary, secondary, fallback string) string {
-	if v := firstEnv(primary, secondary); v != "" {
+func firstEnvOrDefault(key, fallback string) string {
+	if v := firstEnv(key); v != "" {
 		return v
 	}
 	return fallback
@@ -3140,12 +3409,18 @@ func writeJSON(v any) {
 }
 
 func fatalf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	message := fmt.Sprintf(format, args...)
+	if globalJSONOutput {
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"result": "error", "error": message})
+	} else {
+		fmt.Fprintln(os.Stderr, message)
+	}
 	os.Exit(1)
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s <command> [args]\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "usage: %s [--json] <command> [args]\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "       %s help <command> [subcommand]\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "commands:")
 	fmt.Fprintln(os.Stderr, "  cluster init|status")
 	fmt.Fprintln(os.Stderr, "  node join|update-topology|status|drain|drain status|remove")
@@ -3165,12 +3440,51 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  version")
 }
 
+func printGroupUsage(group string) bool {
+	switch group {
+	case "cluster":
+		clusterUsage()
+	case "node":
+		nodeUsage()
+	case "topology":
+		topologyUsage()
+	case "store":
+		storeUsage()
+	case "volume":
+		volumeUsage()
+	case "snapshot":
+		snapshotUsage()
+	case "iscsi":
+		iscsiUsage()
+	case "repair":
+		repairUsage()
+	case "rebalance":
+		rebalanceUsage()
+	case "maintenance":
+		maintenanceUsage()
+	case "operations":
+		operationsUsage()
+	case "testio":
+		testIOUsage()
+	default:
+		prefix := group + " "
+		for _, line := range enterpriseUsageLines() {
+			if strings.HasPrefix(strings.TrimSpace(line), prefix) {
+				fmt.Fprintln(os.Stderr, line)
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
 func clusterUsage() {
 	fmt.Fprintln(os.Stderr, "usage: sbsctl cluster init|status ...")
 }
 
 func nodeUsage() {
-	fmt.Fprintln(os.Stderr, "usage: sbsctl node join|update-topology|status|drain|drain status|remove ...")
+	fmt.Fprintln(os.Stderr, "usage: sbsctl node join|update-topology|update-registration|list|status|projection status|projection rebuild|leave|drain|drain status|remove ...")
 }
 
 func storeUsage() {
@@ -3205,13 +3519,13 @@ func runMaintenancePayloadGC(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("maintenance payload-gc", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminHTTP := fs.String("admin-http-endpoint", defaults.fieldValue("sbs_node_admin_http", "SBS_NODE_ADMIN_HTTP", "NAMRBD_SBS_ADMIN_ADDR"), "node-local admin/debug HTTP endpoint")
+	adminHTTP := fs.String("sbs-service-http-endpoint", defaults.fieldValue("sbs_node_admin_http", "NAMRBD_SBS_SERVICE_HTTP_ENDPOINT"), "node-local admin/debug HTTP endpoint")
 	metadataPath := fs.String("metadata-path", getenvOrDefault("NAMRBD_SBS_METADATA_PATH", ""), "path to SBS cluster metadata pebble directory")
 	metadataRoot := fs.String("metadata-root", getenvOrDefault("NAMRBD_SBS_METADATA_ROOT", "sbs/cluster"), "metadata root prefix")
 	payloadRoot := fs.String("payload-root", getenvOrDefault("NAMRBD_SBS_PAYLOAD_ROOT", ""), "path to local replica payload root directory")
 	volumeID := fs.String("volume-id", "", "optional canonical volume id to sweep; when empty sweeps all volumes")
-	output := fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: table|json")
-	fs.Parse(args)
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
+	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
@@ -3219,8 +3533,8 @@ func runMaintenancePayloadGC(args []string) {
 		fatalf("--payload-root is required")
 	}
 	printResolvedSettings(fs,
-		defaults.fieldSetting("sbs_node_admin_http", "admin-http-endpoint", "", "SBS_NODE_ADMIN_HTTP", "NAMRBD_SBS_ADMIN_ADDR"),
-		defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		defaults.fieldSetting("sbs_node_admin_http", "sbs-service-http-endpoint", "", "NAMRBD_SBS_SERVICE_HTTP_ENDPOINT"),
+		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 	)
 
 	var (
@@ -3232,7 +3546,7 @@ func runMaintenancePayloadGC(args []string) {
 		results, err = runMaintenancePayloadGCRemote(context.Background(), adminHTTP, *payloadRoot, *volumeID)
 	default:
 		if strings.TrimSpace(*metadataPath) == "" {
-			fatalf("--metadata-path is required when --admin-http-endpoint is not set")
+			fatalf("--metadata-path is required when --sbs-service-http-endpoint is not set")
 		}
 		results, err = runMaintenancePayloadGCSweep(context.Background(), *metadataPath, *metadataRoot, *payloadRoot, *volumeID)
 	}

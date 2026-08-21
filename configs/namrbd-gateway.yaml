@@ -1,0 +1,93 @@
+# namrbd-gateway service configuration.
+#
+# Replaces the stable subset of the 73 command-line flags this binary accepts
+# today. Volume lists and SBS replica lists are deliberately absent: they come
+# from sbs-service, and carrying them here would recreate the per-node drift
+# this file exists to remove.
+schema_version: 1
+revision: 1
+profile: large_scale
+process: namrbd-gateway
+
+gateway:
+  gateway_id: gw-01
+
+  listen: 0.0.0.0:8080
+  data_listen: 0.0.0.0:8081
+  advertise_control_address: gw-01.namrbd.internal:8080
+  advertise_data_address: gw-01.namrbd.internal:8081
+  data_disable: false
+
+  tls:
+    enable: true
+    cert_file: /etc/namrbd/tls/gateway.crt
+    key:
+      file: /etc/namrbd/tls/gateway.key
+    server_name: gw-01.namrbd.internal
+
+  # Gateway fleet membership and liveness. Never SBS node/store membership.
+  etcd:
+    endpoints:
+      - https://etcd-01.namrbd.internal:2379
+      - https://etcd-02.namrbd.internal:2379
+      - https://etcd-03.namrbd.internal:2379
+    root: /namrbd/prod
+    tls:
+      enable: true
+      cert_file: /etc/namrbd/tls/etcd-client.crt
+      key:
+        file: /etc/namrbd/tls/etcd-client.key
+
+  sbs_admin_endpoint: sbs-service.namrbd.internal:9090
+  # The gateway's own metadata backend: memory or etcd. SBS metadata lives in
+  # TiKV behind sbs-service and is not addressed from here.
+  metadata_backend: etcd
+  data_backend_mode: sbs
+
+  cache:
+    volume_ttl_seconds: 30
+    zero_evidence_ttl_seconds: 30
+    open_reuse_ttl_seconds: 60
+    # Phase X accepted 256 and left the write-plan TTL disabled.
+    chunk_id_allocation_cache_size: 256
+    write_plan_ttl_seconds: 0
+    begin_write_volume_state_ttl_seconds: 0
+
+  reconcile:
+    path_plan_interval_seconds: 15
+    lease_ttl_seconds: 15
+    status_refresh_interval_seconds: 5
+    chunk_gc_interval_seconds: 300
+    chunk_gc_batch_size: 256
+
+  dataplane:
+    max_inflight_requests: 512
+    max_inflight_bytes: 268435456
+    max_io_size: 4194304
+    # These are literal values on the command line today, visible in ps output
+    # on every node. Here they are references.
+    token_key:
+      file: /etc/namrbd/secrets/dataplane-token.key
+    session_key:
+      env: NAMRBD_DATAPLANE_SESSION_KEY
+    token_ttl_seconds: 300
+
+  # Dependency availability thresholds. See docs/phase-aa-entry-plan.md
+  # Section 4: dependency loss is fail-open for already-admitted serving and
+  # fail-closed for every promotion, admission, and membership change.
+  #
+  # Raising a grace window delays the point at which this process calls itself
+  # degraded. It does not delay any refusal: promotion and membership change
+  # are refused from the first failed probe, because the fleet view stopped
+  # being trustworthy then and not five minutes later.
+  dependency:
+    etcd_unavailable_grace_seconds: 300
+    tikv_unavailable_grace_seconds: 300
+    projection_stale_degraded_ms: 5000
+    projection_stale_blocked_ms: 15000
+
+  observability:
+    # No listen field: namrbd-gateway serves observability on its control
+    # listener. Setting one here is rejected rather than ignored.
+    trace: false
+    debug_endpoints: false

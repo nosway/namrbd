@@ -11,12 +11,14 @@ import (
 )
 
 type cliContextProfile struct {
-	ClusterID  string   `yaml:"cluster_id"`
-	GatewayEPs []string `yaml:"gateway_endpoints"`
-	GatewayCA  string   `yaml:"gateway_ca_file"`
-	HostID     string   `yaml:"host_id"`
-	Output     string   `yaml:"output"`
-	Timeout    string   `yaml:"timeout"`
+	ClusterID     string   `yaml:"cluster_id"`
+	GatewayEPs    []string `yaml:"gateway_endpoints"`
+	GatewayCA     string   `yaml:"gateway_ca_file"`
+	EtcdEndpoints []string `yaml:"etcd_endpoints"`
+	EtcdRoot      string   `yaml:"etcd_root"`
+	HostID        string   `yaml:"host_id"`
+	Output        string   `yaml:"output"`
+	Timeout       string   `yaml:"timeout"`
 }
 
 type cliContextFile struct {
@@ -120,6 +122,29 @@ func registerContextFlags(fs *flag.FlagSet, defaults cliDefaults) {
 	fs.String("context-file", defaults.contextFile, "path to context file")
 	fs.String("context", defaults.contextName, "context name inside context file")
 	fs.Bool("show-config-sources", false, "print resolved config values and their sources")
+	fs.String("etcd-endpoints", defaults.etcdEndpoints(), "comma-separated etcd endpoints used for gateway discovery")
+	fs.String("etcd-root", defaults.etcdRoot(), "etcd metadata root used for gateway discovery")
+	fs.Int("gateway-discovery-limit", 128, "maximum gateway fleet records examined during endpoint discovery (1-512)")
+}
+
+func (d cliDefaults) etcdEndpoints() string {
+	if value := firstEnv("NAMRBD_ETCD_ENDPOINTS"); value != "" {
+		return value
+	}
+	if len(d.profile.EtcdEndpoints) > 0 {
+		return strings.Join(d.profile.EtcdEndpoints, ",")
+	}
+	return "127.0.0.1:2379"
+}
+
+func (d cliDefaults) etcdRoot() string {
+	if value := firstEnv("NAMRBD_ETCD_ROOT"); value != "" {
+		return value
+	}
+	if value := strings.TrimSpace(d.profile.EtcdRoot); value != "" {
+		return value
+	}
+	return "/namrbd"
 }
 
 func (d cliDefaults) gatewayEndpoint() string {
@@ -221,6 +246,7 @@ func sourceForFlag(fs *flag.FlagSet, defaults resolvedSetting, flagName string) 
 }
 
 func printResolvedSettings(fs *flag.FlagSet, settings ...resolvedSetting) {
+	resolveDefaultGatewayFlag(fs, settings)
 	show := fs.Lookup("show-config-sources")
 	if show == nil || show.Value.String() != "true" {
 		return

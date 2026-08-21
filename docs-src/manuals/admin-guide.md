@@ -112,7 +112,7 @@ sbsctl cluster status --output json
 sbsctl topology zone list
 sbsctl node status --node-id data-01 --output json
 sbsctl volume status --volume-id <volume_id> --output json
-sbsctl volume transitions --volume-id <volume_id> --admin-http-endpoint http://service-01.example.com:9081
+sbsctl volume transitions --volume-id <volume_id> --sbs-service-http-endpoint http://service-01.example.com:9081
 ```
 
 `sbs-service` owns:
@@ -130,7 +130,7 @@ Use:
 
 ``` bash
 curl -fsS http://data-01.example.com:9082/healthz
-sbsctl store status --admin-http-endpoint http://data-01.example.com:9082
+sbsctl store status --sbs-service-http-endpoint http://data-01.example.com:9082
 ```
 
 Watch:
@@ -414,7 +414,7 @@ namrbd-iscsi-gateway \
   --backend=sbs \
   --portal <gateway_ip>:3260 \
   --serve \
-  --sbs-endpoint <sbs_volume_service_host>:9460 \
+  --sbs-endpoint <sbs_volume_service_host>:9444 \
   --volume-id <volume_id> \
   --export-id <export_id> \
   --target-iqn <target_iqn> \

@@ -111,34 +111,51 @@ func (c *Controller) GetVolume(ctx context.Context, volumeID string) (VolumeSnap
 }
 
 func (c *Controller) SetNodeHealth(ctx context.Context, nodeID string, next metadata.NodeHealthState) (metadata.NodeMembershipRecord, int, int, error) {
+	rec, err := c.SetNodeHealthOnly(ctx, nodeID, next)
+	if err != nil {
+		return metadata.NodeMembershipRecord{}, 0, 0, err
+	}
+	failovers, enqueued, err := c.ReconcileNodeHealthTransitions(ctx)
+	return rec, failovers, enqueued, err
+}
+
+// SetNodeHealthOnly changes one node without scanning every volume. The
+// sharded health reconciler batches these short authority commits and invokes
+// ReconcileNodeHealthTransitions once after all state changes in the run.
+func (c *Controller) SetNodeHealthOnly(ctx context.Context, nodeID string, next metadata.NodeHealthState) (metadata.NodeMembershipRecord, error) {
 	rec, err := c.store.GetNodeMembership(ctx, nodeID)
 	if err != nil {
-		return metadata.NodeMembershipRecord{}, 0, 0, err
+		return metadata.NodeMembershipRecord{}, err
 	}
 	rec.HealthState = next
+	rec.ObservedState = string(next)
 	rec.LastHeartbeatUnix = c.now().Unix()
 	if err := c.store.PutNodeMembership(ctx, rec); err != nil {
-		return metadata.NodeMembershipRecord{}, 0, 0, err
+		return metadata.NodeMembershipRecord{}, err
 	}
+	return rec, nil
+}
+
+func (c *Controller) ReconcileNodeHealthTransitions(ctx context.Context) (int, int, error) {
 	volumes, err := c.store.ListVolumeStates(ctx)
 	if err != nil {
-		return metadata.NodeMembershipRecord{}, 0, 0, err
+		return 0, 0, err
 	}
 	failovers := 0
 	enqueued := 0
 	for _, volume := range volumes {
 		failoverCount, err := c.repairs.ScanAndFailoverPrimaries(ctx, volume.VolumeID)
 		if err != nil {
-			return metadata.NodeMembershipRecord{}, failovers, enqueued, err
+			return failovers, enqueued, err
 		}
 		failovers += failoverCount
 		count, err := c.repairs.ScanAndEnqueueRepairs(ctx, volume.VolumeID)
 		if err != nil {
-			return metadata.NodeMembershipRecord{}, failovers, enqueued, err
+			return failovers, enqueued, err
 		}
 		enqueued += count
 	}
-	return rec, failovers, enqueued, nil
+	return failovers, enqueued, nil
 }
 
 func (c *Controller) GetMetrics(ctx context.Context) (MetricsSnapshot, error) {

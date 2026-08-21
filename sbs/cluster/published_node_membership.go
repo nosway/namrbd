@@ -78,7 +78,7 @@ func (r *publishedNodeMembershipResolver) listNodeMembershipsFromAdmin(ctx conte
 		return nil, err
 	}
 	defer client.Close()
-	resp, err := client.Admin.ListNodes(ctx, &adminv1.ListNodesRequest{Cluster: r.clusterRef})
+	resp, err := adminclient.ListAllNodes(ctx, client.Admin, r.clusterRef, false)
 	if err != nil {
 		return nil, err
 	}
@@ -94,13 +94,29 @@ func (r *publishedNodeMembershipResolver) listNodeMembershipsFromAdmin(ctx conte
 
 func NodeMembershipRecordFromAdmin(node *adminv1.NodeSummary) metadata.NodeMembershipRecord {
 	rec := metadata.NodeMembershipRecord{
-		NodeID:            strings.TrimSpace(node.GetNodeId()),
-		ReplicaID:         strings.TrimSpace(node.GetNodeId()),
-		LifecycleState:    nodeLifecycleStateFromAdmin(node.GetLifecycle()),
-		HealthState:       nodeHealthStateFromAdmin(node.GetHealth()),
-		Zone:              strings.TrimSpace(node.GetZone()),
-		AdminHTTPEndpoint: strings.TrimSpace(node.GetAdminHttpEndpoint()),
-		LastHeartbeatUnix: node.GetLastHeartbeatTime().GetSeconds(),
+		ClusterID:          strings.TrimSpace(node.GetClusterId()),
+		SBSClusterID:       strings.TrimSpace(node.GetSbsClusterId()),
+		NodeID:             strings.TrimSpace(node.GetNodeId()),
+		ReplicaID:          strings.TrimSpace(node.GetReplicaId()),
+		StoreIDs:           append([]string(nil), node.GetStoreIds()...),
+		Roles:              append([]string(nil), node.GetRoles()...),
+		LifecycleState:     nodeLifecycleStateFromAdmin(node.GetLifecycle()),
+		HealthState:        nodeHealthStateFromAdmin(node.GetHealth()),
+		DesiredState:       strings.TrimSpace(node.GetDesiredState()),
+		ObservedState:      strings.TrimSpace(node.GetObservedState()),
+		Zone:               strings.TrimSpace(node.GetZone()),
+		AdminHTTPEndpoint:  strings.TrimSpace(node.GetAdminHttpEndpoint()),
+		LastHeartbeatUnix:  node.GetLastHeartbeatTime().GetSeconds(),
+		Generation:         node.GetGeneration(),
+		MembershipRevision: node.GetMembershipRevision(),
+		Tombstone:          node.GetTombstone(),
+		CreatedAtUnix:      node.GetCreatedTime().GetSeconds(),
+		UpdatedAtUnix:      node.GetUpdatedTime().GetSeconds(),
+		UpdatedBy:          strings.TrimSpace(node.GetUpdatedBy()),
+		UpdateReason:       strings.TrimSpace(node.GetUpdateReason()),
+	}
+	if rec.ReplicaID == "" {
+		rec.ReplicaID = rec.NodeID
 	}
 	if endpoint := sbsEndpointFromAdminAddress(node.GetGrpcEndpoint()); endpoint != nil {
 		rec.SBSEndpoints = []metadata.SBSEndpoint{*endpoint}

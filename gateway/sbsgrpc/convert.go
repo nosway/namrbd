@@ -7,15 +7,18 @@ import (
 
 func toProtoRequestContext(ctx service.SBSRequestContext) *sbsv1.RequestContext {
 	return &sbsv1.RequestContext{
-		RequestId:      ctx.RequestID,
-		GatewayId:      ctx.GatewayID,
-		HostId:         ctx.HostID,
-		SessionId:      ctx.SessionID,
-		AttachmentId:   ctx.AttachmentID,
-		Generation:     ctx.Generation,
-		IdempotencyKey: ctx.IdempotencyKey,
-		DeadlineUnixMs: ctx.DeadlineUnixMS,
-		TraceId:        ctx.TraceID,
+		RequestId:          ctx.RequestID,
+		GatewayId:          ctx.GatewayID,
+		HostId:             ctx.HostID,
+		SessionId:          ctx.SessionID,
+		AttachmentId:       ctx.AttachmentID,
+		Generation:         ctx.Generation,
+		IdempotencyKey:     ctx.IdempotencyKey,
+		DeadlineUnixMs:     ctx.DeadlineUnixMS,
+		TraceId:            ctx.TraceID,
+		IscsiExportId:      ctx.ISCSIExportID,
+		IscsiExportLeaseId: ctx.ISCSIExportLeaseID,
+		IscsiExportEpoch:   ctx.ISCSIExportEpoch,
 	}
 }
 
@@ -24,15 +27,18 @@ func fromProtoRequestContext(ctx *sbsv1.RequestContext) service.SBSRequestContex
 		return service.SBSRequestContext{}
 	}
 	return service.SBSRequestContext{
-		RequestID:      ctx.RequestId,
-		GatewayID:      ctx.GatewayId,
-		HostID:         ctx.HostId,
-		SessionID:      ctx.SessionId,
-		AttachmentID:   ctx.AttachmentId,
-		Generation:     ctx.Generation,
-		IdempotencyKey: ctx.IdempotencyKey,
-		DeadlineUnixMS: ctx.DeadlineUnixMs,
-		TraceID:        ctx.TraceId,
+		RequestID:          ctx.RequestId,
+		GatewayID:          ctx.GatewayId,
+		HostID:             ctx.HostId,
+		SessionID:          ctx.SessionId,
+		AttachmentID:       ctx.AttachmentId,
+		Generation:         ctx.Generation,
+		IdempotencyKey:     ctx.IdempotencyKey,
+		DeadlineUnixMS:     ctx.DeadlineUnixMs,
+		TraceID:            ctx.TraceId,
+		ISCSIExportID:      ctx.IscsiExportId,
+		ISCSIExportLeaseID: ctx.IscsiExportLeaseId,
+		ISCSIExportEpoch:   ctx.IscsiExportEpoch,
 	}
 }
 
@@ -123,6 +129,10 @@ func toProtoErrorCode(c service.SBSErrorCode) sbsv1.ErrorCode {
 		return sbsv1.ErrorCode_ERROR_CODE_ATTACHMENT_MISMATCH
 	case service.SBSErrorCodeIdempotencyConflict:
 		return sbsv1.ErrorCode_ERROR_CODE_IDEMPOTENCY_CONFLICT
+	case service.SBSErrorCodeSecurityRejected:
+		return sbsv1.ErrorCode_ERROR_CODE_SECURITY_REJECTED
+	case service.SBSErrorCodeFenced:
+		return sbsv1.ErrorCode_ERROR_CODE_FENCED
 	case service.SBSErrorCodeUnavailable:
 		return sbsv1.ErrorCode_ERROR_CODE_UNAVAILABLE
 	case service.SBSErrorCodeTimeout:
@@ -144,12 +154,33 @@ func fromProtoErrorCode(c sbsv1.ErrorCode) service.SBSErrorCode {
 		return service.SBSErrorCodeAttachmentMismatch
 	case sbsv1.ErrorCode_ERROR_CODE_IDEMPOTENCY_CONFLICT:
 		return service.SBSErrorCodeIdempotencyConflict
+	case sbsv1.ErrorCode_ERROR_CODE_SECURITY_REJECTED:
+		return service.SBSErrorCodeSecurityRejected
+	case sbsv1.ErrorCode_ERROR_CODE_FENCED:
+		return service.SBSErrorCodeFenced
 	case sbsv1.ErrorCode_ERROR_CODE_UNAVAILABLE:
 		return service.SBSErrorCodeUnavailable
 	case sbsv1.ErrorCode_ERROR_CODE_TIMEOUT:
 		return service.SBSErrorCodeTimeout
 	default:
 		return service.SBSErrorCodeInternal
+	}
+}
+
+func toProtoISCSIWriterFence(f service.ISCSIWriterFence) *sbsv1.ISCSIWriterFence {
+	return &sbsv1.ISCSIWriterFence{
+		VolumeId: f.VolumeID, ExportId: f.ExportID, ExportLeaseId: f.ExportLeaseID,
+		ExportEpoch: f.ExportEpoch, ActiveGatewayId: f.ActiveGatewayID, RegistryRevision: f.RegistryRevision,
+	}
+}
+
+func fromProtoISCSIWriterFence(f *sbsv1.ISCSIWriterFence) service.ISCSIWriterFence {
+	if f == nil {
+		return service.ISCSIWriterFence{}
+	}
+	return service.ISCSIWriterFence{
+		VolumeID: f.GetVolumeId(), ExportID: f.GetExportId(), ExportLeaseID: f.GetExportLeaseId(),
+		ExportEpoch: f.GetExportEpoch(), ActiveGatewayID: f.GetActiveGatewayId(), RegistryRevision: f.GetRegistryRevision(),
 	}
 }
 

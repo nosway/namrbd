@@ -93,6 +93,38 @@ const (
 	GatewayStateDetached GatewayConnectionState = "detached"
 )
 
+type GatewayProduct string
+
+const (
+	GatewayProductNAMRBD GatewayProduct = "namrbd"
+	GatewayProductNAMROS GatewayProduct = "namros"
+	GatewayProductISCSI  GatewayProduct = "namrbd-iscsi"
+)
+
+type GatewayRole string
+
+const (
+	GatewayRoleBlock  GatewayRole = "block"
+	GatewayRoleObject GatewayRole = "object"
+	GatewayRoleISCSI  GatewayRole = "iscsi"
+)
+
+type GatewayReadiness string
+
+const (
+	GatewayReadinessReady    GatewayReadiness = "ready"
+	GatewayReadinessDegraded GatewayReadiness = "degraded"
+	GatewayReadinessBlocked  GatewayReadiness = "blocked"
+)
+
+type GatewayDrainState string
+
+const (
+	GatewayDrainActive   GatewayDrainState = "active"
+	GatewayDrainDraining GatewayDrainState = "draining"
+	GatewayDrainDrained  GatewayDrainState = "drained"
+)
+
 // HexVolumeID is a volume id marshaled as an eight-digit lowercase hex string in JSON.
 type HexVolumeID uint64
 
@@ -216,10 +248,15 @@ type EndpointSpec struct {
 }
 
 type GatewayRecord struct {
+	SchemaVersion             int                    `json:"schema_version,omitempty"`
 	GatewayID                 string                 `json:"gateway_id"`
+	Product                   GatewayProduct         `json:"product,omitempty"`
+	Role                      GatewayRole            `json:"role,omitempty"`
 	ClusterID                 string                 `json:"cluster_id,omitempty"`
 	SBSClusterID              string                 `json:"sbs_cluster_id,omitempty"`
 	ConnectionState           GatewayConnectionState `json:"connection_state"`
+	Readiness                 GatewayReadiness       `json:"readiness,omitempty"`
+	DrainState                GatewayDrainState      `json:"drain_state,omitempty"`
 	LastSeenUnix              int64                  `json:"last_seen_unix"`
 	LeaseID                   string                 `json:"lease_id"`
 	LeaseExpiresAtUnix        int64                  `json:"lease_expires_at_unix,omitempty"`
@@ -230,9 +267,13 @@ type GatewayRecord struct {
 	SBSClusterMetadataBackend string                 `json:"sbs_cluster_metadata_backend,omitempty"`
 	SBSClusterMetadataRoot    string                 `json:"sbs_cluster_metadata_root,omitempty"`
 	FailureDomain             string                 `json:"failure_domain,omitempty"`
+	AdvertisedAddresses       []string               `json:"advertised_addresses,omitempty"`
 	Capabilities              []string               `json:"capabilities,omitempty"`
 	ControlEndpoints          []EndpointSpec         `json:"control_endpoints"`
 	DataplaneEndpoints        []EndpointSpec         `json:"dataplane_endpoints"`
+	FirstError                string                 `json:"first_error,omitempty"`
+	LastError                 string                 `json:"last_error,omitempty"`
+	RegistryRevision          int64                  `json:"registry_revision,omitempty"`
 }
 
 type AllocationChunkKind string
@@ -644,8 +685,13 @@ func BuildVolumePrefix(name string, volumeID uint64) string {
 func NewGatewayRecord(gatewayID, buildVersion string, controlEndpoints, dataplaneEndpoints []EndpointSpec) GatewayRecord {
 	now := time.Now().Unix()
 	return GatewayRecord{
+		SchemaVersion:      1,
 		GatewayID:          gatewayID,
+		Product:            GatewayProductNAMRBD,
+		Role:               GatewayRoleBlock,
 		ConnectionState:    GatewayStateUp,
+		Readiness:          GatewayReadinessReady,
+		DrainState:         GatewayDrainActive,
 		LastSeenUnix:       now,
 		StartedAtUnix:      now,
 		BuildVersion:       buildVersion,

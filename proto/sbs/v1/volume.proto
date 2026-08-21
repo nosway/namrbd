@@ -20,6 +20,7 @@ service VolumeService {
   rpc Flush(FlushRequest) returns (FlushResponse);
   rpc Discard(DiscardRequest) returns (DiscardResponse);
   rpc Zero(ZeroRequest) returns (ZeroResponse);
+  rpc ApplyISCSIWriterFence(ApplyISCSIWriterFenceRequest) returns (ApplyISCSIWriterFenceResponse);
 }
 
 message RequestContext {
@@ -32,6 +33,9 @@ message RequestContext {
   string idempotency_key = 7;
   int64 deadline_unix_ms = 8;
   string trace_id = 9;
+  string iscsi_export_id = 10;
+  string iscsi_export_lease_id = 11;
+  uint64 iscsi_export_epoch = 12;
 }
 
 message VolumeProfile {
@@ -67,6 +71,28 @@ enum ErrorCode {
   ERROR_CODE_UNAVAILABLE = 6;
   ERROR_CODE_TIMEOUT = 7;
   ERROR_CODE_INTERNAL = 8;
+  ERROR_CODE_SECURITY_REJECTED = 9;
+  ERROR_CODE_FENCED = 10;
+}
+
+message ISCSIWriterFence {
+  string volume_id = 1;
+  string export_id = 2;
+  string export_lease_id = 3;
+  uint64 export_epoch = 4;
+  string active_gateway_id = 5;
+  uint64 registry_revision = 6;
+}
+
+message ApplyISCSIWriterFenceRequest {
+  ISCSIWriterFence fence = 1;
+}
+
+message ApplyISCSIWriterFenceResponse {
+  string status = 1;
+  bool applied = 2;
+  ISCSIWriterFence fence = 3;
+  uint64 stale_writer_rejected_count = 4;
 }
 
 message ErrorDetail {

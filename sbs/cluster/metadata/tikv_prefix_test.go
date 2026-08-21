@@ -2,6 +2,8 @@ package metadata
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -178,6 +180,48 @@ func TestPrefixedKVTransactionBatchGetPreservesBackendBatcher(t *testing.T) {
 	}
 }
 
+func TestPrefixedKVReadSnapshotTranslatesKeysAndCursor(t *testing.T) {
+	ctx := context.Background()
+	base := &snapshotPrefixKV{batchablePrefixKV: newBatchablePrefixKV()}
+	for _, key := range []string{
+		"keyspaces/phaseaa-snapshot/sbs/cluster/projection/nodes/node-a",
+		"keyspaces/phaseaa-snapshot/sbs/cluster/projection/nodes/node-b",
+	} {
+		if err := base.Set(ctx, key, []byte(key)); err != nil {
+			t.Fatalf("base.Set(%s): %v", key, err)
+		}
+	}
+	kv := newPrefixedKV(base, "phaseaa-snapshot")
+	runner, ok := kv.(consistentSnapshotKV)
+	if !ok {
+		t.Fatalf("prefixed kv does not expose consistentSnapshotKV")
+	}
+
+	err := runner.RunInReadSnapshot(ctx, func(snapshot kvReadSnapshot) error {
+		keys, next, err := snapshot.List(ctx, "sbs/cluster/projection/nodes/", "", 1)
+		if err != nil {
+			return err
+		}
+		if len(keys) != 1 || keys[0] != "sbs/cluster/projection/nodes/node-a" || next != keys[0] {
+			t.Fatalf("snapshot.List keys=%v next=%q", keys, next)
+		}
+		values, err := snapshot.BatchGet(ctx, keys)
+		if err != nil {
+			return err
+		}
+		if _, found := values[keys[0]]; !found {
+			t.Fatalf("snapshot.BatchGet did not return logical key %q", keys[0])
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("RunInReadSnapshot: %v", err)
+	}
+	if base.snapshotCalls != 1 {
+		t.Fatalf("snapshot calls=%d want 1", base.snapshotCalls)
+	}
+}
+
 type batchablePrefixKV struct {
 	values          map[string][]byte
 	getCalls        int
@@ -186,6 +230,15 @@ type batchablePrefixKV struct {
 	txGetCalls      int
 	txBatchGetCalls int
 	lastTxBatchKeys []string
+}
+
+type snapshotPrefixKV struct {
+	*batchablePrefixKV
+	snapshotCalls int
+}
+
+type prefixReadSnapshot struct {
+	base *batchablePrefixKV
 }
 
 func newBatchablePrefixKV() *batchablePrefixKV {
@@ -221,6 +274,11 @@ func (kv *batchablePrefixKV) RunInTransaction(_ context.Context, fn func(tx kvRe
 	return fn(batchablePrefixTxn{base: kv})
 }
 
+func (kv *snapshotPrefixKV) RunInReadSnapshot(_ context.Context, fn func(snapshot kvReadSnapshot) error) error {
+	kv.snapshotCalls++
+	return fn(prefixReadSnapshot{base: kv.batchablePrefixKV})
+}
+
 func (kv *batchablePrefixKV) get(key string) ([]byte, bool, error) {
 	value, ok := kv.values[key]
 	if !ok {
@@ -237,6 +295,29 @@ func (kv *batchablePrefixKV) batchGet(keys []string) map[string][]byte {
 		}
 	}
 	return out
+}
+
+func (snapshot prefixReadSnapshot) Get(_ context.Context, key string) ([]byte, bool, error) {
+	return snapshot.base.get(key)
+}
+
+func (snapshot prefixReadSnapshot) BatchGet(_ context.Context, keys []string) (map[string][]byte, error) {
+	return snapshot.base.batchGet(keys), nil
+}
+
+func (snapshot prefixReadSnapshot) List(_ context.Context, prefix, cursor string, limit int) ([]string, string, error) {
+	keys := make([]string, 0)
+	for key := range snapshot.base.values {
+		if strings.HasPrefix(key, prefix) && key > cursor {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+	if limit > 0 && len(keys) > limit {
+		keys = keys[:limit]
+		return keys, keys[len(keys)-1], nil
+	}
+	return keys, "", nil
 }
 
 type batchablePrefixTxn struct {

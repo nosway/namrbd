@@ -1867,4 +1867,5 @@ module_exit(namrbd_ctrl_exit);
 
 MODULE_DESCRIPTION("NAMRBD control path module");
 MODULE_AUTHOR("Taewoong Kim (taewoong.kim@gmail.com)");
+MODULE_VERSION("1.0.0");
 MODULE_LICENSE("GPL");

@@ -239,13 +239,13 @@ NAMRBD 클라이언트는 `host:port` 형식을 사용한다 (`http://` 접두�
 ``` bash
 ./namrbd-gateway \
   --gateway-id gw-gw01 \
-  --listen 0.0.0.0:9899 \
+  --control-http-listen 0.0.0.0:9899 \
   --metadata-backend etcd \
   --etcd-endpoints "$NAMRBD_ETCD_ENDPOINTS" \
   --etcd-root "$NAMRBD_ETCD_ROOT" \
   --gateway-lease-ttl 30s \
-  --data-backend-mode sbs-cluster \
-  --sbs-admin-endpoint "$NAMRBD_SBS_ADMIN_ENDPOINT"
+  --data-backend-mode sbs \
+  --sbs-service-endpoint "$NAMRBD_SBS_SERVICE_ENDPOINT"
 ```
 
 운영 규칙:

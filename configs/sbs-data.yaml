@@ -1,0 +1,22 @@
+# sbs-data configuration.
+#
+# The existing --store-config file stays a separate included document rather
+# than being absorbed here, so its reload path is unchanged.
+schema_version: 1
+revision: 1
+profile: large_scale
+process: sbs-data
+
+sbs_data:
+  cluster_id: namrbd-prod
+  sbs_cluster_id: sbs-prod
+  node_id: sbs-data-01
+  data_path: /var/lib/namrbd/sbs-data
+  store_config_path: /etc/namrbd/store-config.yaml
+  grpc_listen: 0.0.0.0:9091
+  http_listen: 127.0.0.1:9093
+
+  observability:
+    listen: 127.0.0.1:9103
+    trace: false
+    debug_endpoints: false

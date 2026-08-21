@@ -198,7 +198,7 @@ func (c *LeaderAwareAdminClient) endpointForLeaderID(leaderID string) string {
 }
 
 func (c *LeaderAwareAdminClient) discoverLeaderEndpoint(ctx context.Context, cluster *adminv1.ClusterRef, client adminv1.AdminServiceClient, leaderID string) string {
-	resp, err := client.ListNodes(ctx, &adminv1.ListNodesRequest{Cluster: cluster})
+	resp, err := ListAllNodes(ctx, client, cluster, false)
 	if err != nil {
 		return ""
 	}

@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +26,9 @@ import (
 
 	"github.com/nosway/namrbd/gateway/sbsgrpc"
 	"github.com/nosway/namrbd/gateway/service"
+	"github.com/nosway/namrbd/internal/cliux"
+	"github.com/nosway/namrbd/internal/depavail"
+	"github.com/nosway/namrbd/internal/envcompat"
 	"github.com/nosway/namrbd/internal/structuredlog"
 	"github.com/nosway/namrbd/internal/tikvopts"
 	adminv1 "github.com/nosway/namrbd/sbs/admin/v1"
@@ -113,24 +117,68 @@ type volumeSpecRecord struct {
 }
 
 type storedOperation struct {
-	OperationID      string `json:"operation_id"`
-	Kind             string `json:"kind"`
-	State            string `json:"state"`
-	TargetNodeID     string `json:"target_node_id,omitempty"`
-	TargetVolumeID   string `json:"target_volume_id,omitempty"`
-	ExtentsRemaining uint64 `json:"extents_remaining,omitempty"`
-	BytesRemaining   uint64 `json:"bytes_remaining,omitempty"`
-	Phase            string `json:"phase,omitempty"`
-	BlockingReason   string `json:"blocking_reason,omitempty"`
-	StartedAtUnix    int64  `json:"started_at_unix,omitempty"`
-	LastProgressUnix int64  `json:"last_progress_unix,omitempty"`
-	ErrorMessage     string `json:"error_message,omitempty"`
+	OperationID            string `json:"operation_id"`
+	Kind                   string `json:"kind"`
+	State                  string `json:"state"`
+	TargetNodeID           string `json:"target_node_id,omitempty"`
+	TargetVolumeID         string `json:"target_volume_id,omitempty"`
+	ExtentsRemaining       uint64 `json:"extents_remaining,omitempty"`
+	BytesRemaining         uint64 `json:"bytes_remaining,omitempty"`
+	Phase                  string `json:"phase,omitempty"`
+	BlockingReason         string `json:"blocking_reason,omitempty"`
+	StartedAtUnix          int64  `json:"started_at_unix,omitempty"`
+	LastProgressUnix       int64  `json:"last_progress_unix,omitempty"`
+	ErrorMessage           string `json:"error_message,omitempty"`
+	Actor                  string `json:"actor,omitempty"`
+	Reason                 string `json:"reason,omitempty"`
+	ApprovalID             string `json:"approval_id,omitempty"`
+	RiskAcknowledged       bool   `json:"risk_acknowledged,omitempty"`
+	FollowOnRepairRequired bool   `json:"follow_on_repair_required,omitempty"`
+}
+
+type operationAudit struct {
+	Actor                  string
+	Reason                 string
+	ApprovalID             string
+	RiskAcknowledged       bool
+	FollowOnRepairRequired bool
+}
+
+func operationAuditFromMeta(meta *adminv1.RequestMeta, defaultReason string) operationAudit {
+	actor := strings.TrimSpace(meta.GetActor())
+	if actor == "" {
+		actor = "unknown"
+	}
+	reason := strings.TrimSpace(meta.GetReason())
+	if reason == "" {
+		reason = defaultReason
+	}
+	return operationAudit{Actor: actor, Reason: reason}
 }
 
 type operationStore struct {
 	mu   sync.RWMutex
 	kv   clustermeta.KV
 	root string
+}
+
+const (
+	nodeHealthShardSize        = 25
+	nodeHealthShardConcurrency = 16
+)
+
+type nodeHealthReconcilerStatus struct {
+	ShardCount           int
+	QueueDepth           int
+	PeakQueueDepth       int
+	InFlight             int
+	MaxInFlight          int
+	ProbeCount           int
+	TransitionCount      int
+	VolumeReconcileCount int
+	FirstError           string
+	LastError            string
+	LastRunUnix          int64
 }
 
 func newReplicaClientCache() *replicaClientCache {
@@ -153,20 +201,29 @@ func newOperationStore(kv clustermeta.KV, root string) *operationStore {
 }
 
 func (s *operationStore) create(kind, nodeID, volumeID, phase string, state adminv1.OperationState) (*adminv1.OperationStatus, error) {
+	return s.createAudited(kind, nodeID, volumeID, phase, state, operationAudit{})
+}
+
+func (s *operationStore) createAudited(kind, nodeID, volumeID, phase string, state adminv1.OperationState, audit operationAudit) (*adminv1.OperationStatus, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	nextSeq := s.nextSequenceLocked(context.Background())
 	opID := fmt.Sprintf("op-%06d", nextSeq)
 	now := time.Now().UTC().Unix()
 	record := storedOperation{
-		OperationID:      opID,
-		Kind:             kind,
-		State:            state.String(),
-		TargetNodeID:     nodeID,
-		TargetVolumeID:   volumeID,
-		Phase:            phase,
-		StartedAtUnix:    now,
-		LastProgressUnix: now,
+		OperationID:            opID,
+		Kind:                   kind,
+		State:                  state.String(),
+		TargetNodeID:           nodeID,
+		TargetVolumeID:         volumeID,
+		Phase:                  phase,
+		StartedAtUnix:          now,
+		LastProgressUnix:       now,
+		Actor:                  strings.TrimSpace(audit.Actor),
+		Reason:                 strings.TrimSpace(audit.Reason),
+		ApprovalID:             strings.TrimSpace(audit.ApprovalID),
+		RiskAcknowledged:       audit.RiskAcknowledged,
+		FollowOnRepairRequired: audit.FollowOnRepairRequired,
 	}
 	if err := s.putLocked(context.Background(), record); err != nil {
 		return nil, fmt.Errorf("persist operation %s: %w", opID, err)
@@ -272,16 +329,21 @@ func (s *operationStore) getByKeyLocked(ctx context.Context, key string) (stored
 
 func storedOperationFromProto(op *adminv1.OperationStatus) storedOperation {
 	record := storedOperation{
-		OperationID:      op.GetOperationId(),
-		Kind:             op.GetKind(),
-		State:            op.GetState().String(),
-		TargetNodeID:     op.GetTargetNodeId(),
-		TargetVolumeID:   op.GetTargetVolumeId(),
-		ExtentsRemaining: op.GetExtentsRemaining(),
-		BytesRemaining:   op.GetBytesRemaining(),
-		Phase:            op.GetPhase(),
-		BlockingReason:   op.GetBlockingReason(),
-		ErrorMessage:     op.GetErrorMessage(),
+		OperationID:            op.GetOperationId(),
+		Kind:                   op.GetKind(),
+		State:                  op.GetState().String(),
+		TargetNodeID:           op.GetTargetNodeId(),
+		TargetVolumeID:         op.GetTargetVolumeId(),
+		ExtentsRemaining:       op.GetExtentsRemaining(),
+		BytesRemaining:         op.GetBytesRemaining(),
+		Phase:                  op.GetPhase(),
+		BlockingReason:         op.GetBlockingReason(),
+		ErrorMessage:           op.GetErrorMessage(),
+		Actor:                  op.GetActor(),
+		Reason:                 op.GetReason(),
+		ApprovalID:             op.GetApprovalId(),
+		RiskAcknowledged:       op.GetRiskAcknowledged(),
+		FollowOnRepairRequired: op.GetFollowOnRepairRequired(),
 	}
 	if ts := op.GetStartedAt(); ts != nil {
 		record.StartedAtUnix = ts.AsTime().Unix()
@@ -294,18 +356,23 @@ func storedOperationFromProto(op *adminv1.OperationStatus) storedOperation {
 
 func (o storedOperation) toProto() *adminv1.OperationStatus {
 	return &adminv1.OperationStatus{
-		OperationId:      o.OperationID,
-		Kind:             o.Kind,
-		State:            operationStateFromString(o.State),
-		TargetNodeId:     o.TargetNodeID,
-		TargetVolumeId:   o.TargetVolumeID,
-		ExtentsRemaining: o.ExtentsRemaining,
-		BytesRemaining:   o.BytesRemaining,
-		Phase:            o.Phase,
-		BlockingReason:   o.BlockingReason,
-		StartedAt:        unixTimestamp(o.StartedAtUnix),
-		LastProgressAt:   unixTimestamp(o.LastProgressUnix),
-		ErrorMessage:     o.ErrorMessage,
+		OperationId:            o.OperationID,
+		Kind:                   o.Kind,
+		State:                  operationStateFromString(o.State),
+		TargetNodeId:           o.TargetNodeID,
+		TargetVolumeId:         o.TargetVolumeID,
+		ExtentsRemaining:       o.ExtentsRemaining,
+		BytesRemaining:         o.BytesRemaining,
+		Phase:                  o.Phase,
+		BlockingReason:         o.BlockingReason,
+		StartedAt:              unixTimestamp(o.StartedAtUnix),
+		LastProgressAt:         unixTimestamp(o.LastProgressUnix),
+		ErrorMessage:           o.ErrorMessage,
+		Actor:                  o.Actor,
+		Reason:                 o.Reason,
+		ApprovalId:             o.ApprovalID,
+		RiskAcknowledged:       o.RiskAcknowledged,
+		FollowOnRepairRequired: o.FollowOnRepairRequired,
 	}
 }
 
@@ -360,16 +427,21 @@ type server struct {
 	budgetLeaseMu                         sync.Mutex
 	securityAuditMu                       sync.Mutex
 	iscsiMu                               sync.Mutex
+	iscsiWriterFenceProjector             func(context.Context, service.ISCSIWriterFence) error
 	lastMaintenanceRunByVolume            map[string]int64
 	maintenanceVolumeCooldown             time.Duration
 	autoRebalanceMinVolumeAge             time.Duration
 	autoRebalanceForegroundWriteSettleAge time.Duration
 	healthCheckInterval                   time.Duration
 	healthCheckTimeout                    time.Duration
+	healthMinimumShardCount               int
+	healthConcurrencyPerShard             int
 	healthSuspectAfter                    uint32
 	healthDownAfter                       uint32
 	healthRecoverAfter                    uint32
 	healthRecoveryCooldown                time.Duration
+	healthStatusMu                        sync.RWMutex
+	healthStatus                          nodeHealthReconcilerStatus
 	probeNodeHealth                       func(ctx context.Context, node clustermeta.NodeMembershipRecord) error
 	beforeMaintenanceVolume               func(ctx context.Context, volumeID string)
 }
@@ -817,6 +889,7 @@ func (s *server) GetClusterStatus(ctx context.Context, req *adminv1.GetClusterSt
 			leaderNodeID = record.NodeID
 		}
 	}
+	healthStatus := s.nodeHealthStatusSnapshot()
 
 	return &adminv1.GetClusterStatusResponse{
 		Cluster:                     cluster,
@@ -849,6 +922,21 @@ func (s *server) GetClusterStatus(ctx context.Context, req *adminv1.GetClusterSt
 		TransitionRetryWindowChunks:               snapshot.TransitionRetryWindowChunks,
 		MaintenanceCooldownVolumes:                snapshot.MaintenanceCooldownVolumes,
 		MaintenanceCooldownMaxRemainingSeconds:    snapshot.MaintenanceCooldownMaxSec,
+		HealthProbeSharded:                        true,
+		HealthProbeShardCount:                     uint32(healthStatus.ShardCount),
+		HealthProbeQueueDepth:                     uint32(healthStatus.QueueDepth),
+		HealthProbePeakQueueDepth:                 uint32(healthStatus.PeakQueueDepth),
+		HealthProbeMaxConcurrency:                 uint32(healthStatus.MaxInFlight),
+		HealthProbeIntervalSeconds:                uint32(s.nodeHealthCheckInterval().Seconds()),
+		HealthProbeTimeoutSeconds:                 uint32(s.nodeHealthCheckTimeout().Seconds()),
+		HealthProbeSuspectAfter:                   s.nodeHealthSuspectAfter(),
+		HealthProbeDownAfter:                      s.nodeHealthDownAfter(),
+		HealthProbeRecoveryCooldownSeconds:        uint32(s.nodeHealthRecoveryCooldown().Seconds()),
+		HealthProbeFirstError:                     healthStatus.FirstError,
+		HealthProbeLastError:                      healthStatus.LastError,
+		HealthProbeCount:                          uint64(healthStatus.ProbeCount),
+		HealthTransitionCount:                     uint64(healthStatus.TransitionCount),
+		HealthVolumeReconcileCount:                uint64(healthStatus.VolumeReconcileCount),
 	}, nil
 }
 
@@ -886,16 +974,79 @@ func (s *server) GetLeader(ctx context.Context, req *adminv1.GetLeaderRequest) (
 }
 
 func (s *server) ListNodes(ctx context.Context, req *adminv1.ListNodesRequest) (*adminv1.ListNodesResponse, error) {
-	cluster, _ := s.clusterRef(req.GetCluster())
-	nodes, err := s.repo.ListNodeMemberships(ctx)
+	cluster, err := s.clusterRef(req.GetCluster())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "list node memberships: %v", err)
+		return nil, err
 	}
-	resp := &adminv1.ListNodesResponse{Cluster: cluster}
-	for _, node := range nodes {
+	page, err := s.repo.ListMembershipProjectionPage(ctx, req.GetPageToken(), int(req.GetPageSize()), req.GetIncludeTombstones())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list node membership projection: %v", err)
+	}
+	s.observeMembershipProjection(page.Status)
+	if page.Status.Stale {
+		return nil, status.Errorf(codes.FailedPrecondition, "SBS membership projection is %s: authority revision=%d projection revision=%d lag=%dms", page.Status.ProjectionHealth, page.Status.MembershipRevision, page.Status.MembershipProjectionRevision, page.Status.ProjectionLagMS)
+	}
+	resp := &adminv1.ListNodesResponse{
+		Cluster:                      cluster,
+		MembershipRevision:           page.Status.MembershipRevision,
+		MembershipProjectionRevision: page.Status.MembershipProjectionRevision,
+		ProjectionLagMs:              page.Status.ProjectionLagMS,
+		ProjectionHealth:             page.Status.ProjectionHealth,
+		ProjectionStale:              page.Status.Stale,
+		NextPageToken:                page.NextCursor,
+		ProjectionRebuildCount:       page.Status.ProjectionRebuildCount,
+		ProjectionResyncCount:        page.Status.ProjectionResyncCount,
+	}
+	for _, node := range page.Records {
 		resp.Nodes = append(resp.Nodes, s.nodeToProto(ctx, node))
 	}
 	return resp, nil
+}
+
+func (s *server) GetMembershipProjectionStatus(ctx context.Context, req *adminv1.GetMembershipProjectionStatusRequest) (*adminv1.GetMembershipProjectionStatusResponse, error) {
+	cluster, err := s.clusterRef(req.GetCluster())
+	if err != nil {
+		return nil, err
+	}
+	projection, err := s.repo.GetMembershipProjectionStatus(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get node membership projection status: %v", err)
+	}
+	s.observeMembershipProjection(projection)
+	return &adminv1.GetMembershipProjectionStatusResponse{
+		Cluster: cluster,
+		Status:  membershipProjectionStatusToProto(projection),
+	}, nil
+}
+
+func (s *server) RebuildMembershipProjection(ctx context.Context, req *adminv1.RebuildMembershipProjectionRequest) (*adminv1.RebuildMembershipProjectionResponse, error) {
+	if err := s.requireLeader(ctx); err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	cluster, err := s.clusterRef(req.GetCluster())
+	if err != nil {
+		return nil, err
+	}
+	if err := enforceDependencyMembershipChange(); err != nil {
+		return nil, err
+	}
+	projection, err := s.repo.RebuildMembershipProjection(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "rebuild node membership projection: %v", err)
+	}
+	s.observeMembershipProjection(projection)
+	return &adminv1.RebuildMembershipProjectionResponse{
+		Cluster: cluster,
+		Status:  membershipProjectionStatusToProto(projection),
+	}, nil
+}
+
+func (s *server) observeMembershipProjection(projection clustermeta.MembershipProjectionStatus) {
+	if dependencyTracker == nil {
+		return
+	}
+	dependencyTracker.SetProjectionLag(time.Duration(projection.ProjectionLagMS) * time.Millisecond)
+	dependencyTracker.Refresh()
 }
 
 func (s *server) GetNode(ctx context.Context, req *adminv1.GetNodeRequest) (*adminv1.GetNodeResponse, error) {
@@ -925,17 +1076,25 @@ func (s *server) JoinNode(ctx context.Context, req *adminv1.JoinNodeRequest) (*a
 		return nil, status.Error(codes.InvalidArgument, "node_id and grpc_endpoint are required")
 	}
 	zoneID := strings.TrimSpace(req.GetZone())
+	if err := enforceDependencyMembershipChange(); err != nil {
+		return nil, err
+	}
 	if err := s.ensureJoinZoneAllowed(ctx, zoneID, req.GetAutoCreateZone()); err != nil {
 		return nil, err
 	}
 
-	op, err := s.ops.create("node.join", req.GetNodeId(), "", "validating", adminv1.OperationState_OPERATION_STATE_RUNNING)
+	audit := operationAuditFromMeta(req.GetMeta(), "join")
+	op, err := s.ops.createAudited("node.join", req.GetNodeId(), "", "validating", adminv1.OperationState_OPERATION_STATE_RUNNING, audit)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create operation: %v", err)
 	}
 
 	lifecycle := clustermeta.NodeLifecycleActive
+	expectedGeneration := uint64(0)
+	rec := clustermeta.NodeMembershipRecord{}
 	if existing, err := s.repo.GetNodeMembership(ctx, req.GetNodeId()); err == nil {
+		rec = existing
+		expectedGeneration = existing.Generation
 		if existing.LifecycleState == clustermeta.NodeLifecycleDraining {
 			lifecycle = clustermeta.NodeLifecycleDraining
 		}
@@ -944,18 +1103,27 @@ func (s *server) JoinNode(ctx context.Context, req *adminv1.JoinNodeRequest) (*a
 		return nil, status.Errorf(codes.Internal, "get existing node membership: %v", err)
 	}
 
-	rec := clustermeta.NodeMembershipRecord{
-		NodeID:            req.GetNodeId(),
-		LifecycleState:    lifecycle,
-		HealthState:       clustermeta.NodeHealthHealthy,
-		Zone:              zoneID,
-		Capabilities:      []string{"sbs-grpc", "admin-http"},
-		LastHeartbeatUnix: time.Now().Unix(),
-		AdminHTTPEndpoint: req.GetAdminHttpEndpoint(),
-		SBSEndpoints:      []clustermeta.SBSEndpoint{parseEndpoint(req.GetGrpcEndpoint())},
-	}
-	if err := s.repo.PutNodeMembership(ctx, rec); err != nil {
+	rec.ClusterID = cluster.GetClusterId()
+	rec.SBSClusterID = cluster.GetSbsClusterId()
+	rec.NodeID = req.GetNodeId()
+	rec.LifecycleState = lifecycle
+	rec.HealthState = clustermeta.NodeHealthHealthy
+	rec.DesiredState = string(lifecycle)
+	rec.ObservedState = string(clustermeta.NodeHealthHealthy)
+	rec.Zone = zoneID
+	rec.Roles = []string{"sbs-data"}
+	rec.Capabilities = []string{"sbs-grpc", "admin-http"}
+	rec.LastHeartbeatUnix = time.Now().Unix()
+	rec.AdminHTTPEndpoint = req.GetAdminHttpEndpoint()
+	rec.SBSEndpoints = []clustermeta.SBSEndpoint{parseEndpoint(req.GetGrpcEndpoint())}
+	rec.Tombstone = false
+	rec.UpdatedBy = audit.Actor
+	rec.UpdateReason = audit.Reason
+	if _, _, err := s.repo.CompareAndSetNodeMembership(ctx, rec, expectedGeneration); err != nil {
 		s.failOperation(op.GetOperationId(), err)
+		if errors.Is(err, clustermeta.ErrCASConflict) {
+			return nil, status.Errorf(codes.Aborted, "node membership changed concurrently: %v", err)
+		}
 		return nil, status.Errorf(codes.Internal, "put node membership: %v", err)
 	}
 	op, _ = s.ops.update(op.GetOperationId(), func(op *adminv1.OperationStatus) {
@@ -989,6 +1157,9 @@ func (s *server) UpdateNodeTopology(ctx context.Context, req *adminv1.UpdateNode
 	if nodeID == "" || zoneID == "" {
 		return nil, status.Error(codes.InvalidArgument, "node_id and zone are required")
 	}
+	if err := enforceDependencyMembershipChange(); err != nil {
+		return nil, err
+	}
 	if err := s.ensureJoinZoneAllowed(ctx, zoneID, req.GetAutoCreateZone()); err != nil {
 		return nil, err
 	}
@@ -1006,15 +1177,23 @@ func (s *server) UpdateNodeTopology(ctx context.Context, req *adminv1.UpdateNode
 			return nil, status.Errorf(codes.FailedPrecondition, "node %q has active placements; drain or migrate placements before changing zone", nodeID)
 		}
 	}
-	op, err := s.ops.create("node.update-topology", nodeID, "", "updating", adminv1.OperationState_OPERATION_STATE_RUNNING)
+	audit := operationAuditFromMeta(req.GetMeta(), "update topology")
+	op, err := s.ops.createAudited("node.update-topology", nodeID, "", "updating", adminv1.OperationState_OPERATION_STATE_RUNNING, audit)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create operation: %v", err)
 	}
 	node.Zone = zoneID
-	if err := s.repo.PutNodeMembership(ctx, node); err != nil {
+	node.UpdatedBy = audit.Actor
+	node.UpdateReason = audit.Reason
+	updated, _, err := s.repo.CompareAndSetNodeMembership(ctx, node, node.Generation)
+	if err != nil {
 		s.failOperation(op.GetOperationId(), err)
+		if errors.Is(err, clustermeta.ErrCASConflict) {
+			return nil, status.Errorf(codes.Aborted, "node membership changed concurrently: %v", err)
+		}
 		return nil, status.Errorf(codes.Internal, "put node membership: %v", err)
 	}
+	node = updated
 	op, _ = s.ops.update(op.GetOperationId(), func(op *adminv1.OperationStatus) {
 		op.State = adminv1.OperationState_OPERATION_STATE_COMPLETED
 		op.Phase = "updated"
@@ -1024,6 +1203,89 @@ func (s *server) UpdateNodeTopology(ctx context.Context, req *adminv1.UpdateNode
 		Operation: acceptedOperation(op, "node topology updated"),
 		Node:      s.nodeToProto(ctx, node),
 	}, nil
+}
+
+func (s *server) UpdateNodeRegistration(ctx context.Context, req *adminv1.UpdateNodeRegistrationRequest) (*adminv1.UpdateNodeRegistrationResponse, error) {
+	if err := s.requireLeader(ctx); err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	cluster, err := s.clusterRef(req.GetCluster())
+	if err != nil {
+		return nil, err
+	}
+	nodeID := strings.TrimSpace(req.GetNodeId())
+	if nodeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "node_id is required")
+	}
+	if req.GrpcEndpoint == nil && req.AdminHttpEndpoint == nil && len(req.GetStoreIds()) == 0 && len(req.GetRoles()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one endpoint, store_id, or role update is required")
+	}
+	if req.GrpcEndpoint != nil && strings.TrimSpace(req.GetGrpcEndpoint()) == "" {
+		return nil, status.Error(codes.InvalidArgument, "grpc_endpoint cannot be empty")
+	}
+	if err := enforceDependencyMembershipChange(); err != nil {
+		return nil, err
+	}
+	rec, err := s.repo.GetNodeMembership(ctx, nodeID)
+	if err != nil {
+		if errors.Is(err, clustermeta.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "node %q not found", nodeID)
+		}
+		return nil, status.Errorf(codes.Internal, "get node membership: %v", err)
+	}
+	audit := operationAuditFromMeta(req.GetMeta(), "update node registration")
+	op, err := s.ops.createAudited("node.update-registration", nodeID, "", "updating", adminv1.OperationState_OPERATION_STATE_RUNNING, audit)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "create operation: %v", err)
+	}
+	if req.GrpcEndpoint != nil {
+		endpoint := strings.TrimSpace(req.GetGrpcEndpoint())
+		rec.SBSEndpoints = []clustermeta.SBSEndpoint{parseEndpoint(endpoint)}
+	}
+	if req.AdminHttpEndpoint != nil {
+		rec.AdminHTTPEndpoint = strings.TrimSpace(req.GetAdminHttpEndpoint())
+	}
+	if len(req.GetStoreIds()) > 0 {
+		rec.StoreIDs = normalizeMembershipStrings(req.GetStoreIds())
+	}
+	if len(req.GetRoles()) > 0 {
+		rec.Roles = normalizeMembershipStrings(req.GetRoles())
+	}
+	rec.UpdatedBy = audit.Actor
+	rec.UpdateReason = audit.Reason
+	updated, _, err := s.repo.CompareAndSetNodeMembership(ctx, rec, rec.Generation)
+	if err != nil {
+		s.failOperation(op.GetOperationId(), err)
+		if errors.Is(err, clustermeta.ErrCASConflict) {
+			return nil, status.Errorf(codes.Aborted, "node membership changed concurrently: %v", err)
+		}
+		return nil, status.Errorf(codes.Internal, "put node membership: %v", err)
+	}
+	op, _ = s.ops.update(op.GetOperationId(), func(op *adminv1.OperationStatus) {
+		op.State = adminv1.OperationState_OPERATION_STATE_COMPLETED
+		op.Phase = "updated"
+	})
+	return &adminv1.UpdateNodeRegistrationResponse{
+		Cluster: cluster, Operation: acceptedOperation(op, "node registration updated"), Node: s.nodeToProto(ctx, updated),
+	}, nil
+}
+
+func normalizeMembershipStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (s *server) CreateTopologyZone(ctx context.Context, req *adminv1.CreateTopologyZoneRequest) (*adminv1.CreateTopologyZoneResponse, error) {
@@ -1037,6 +1299,9 @@ func (s *server) CreateTopologyZone(ctx context.Context, req *adminv1.CreateTopo
 	zoneID := strings.TrimSpace(req.GetZoneId())
 	if zoneID == "" {
 		return nil, status.Error(codes.InvalidArgument, "zone_id is required")
+	}
+	if err := enforceDependencyMembershipChange(); err != nil {
+		return nil, err
 	}
 	op, err := s.ops.create("topology.zone.create", zoneID, "", "creating", adminv1.OperationState_OPERATION_STATE_RUNNING)
 	if err != nil {
@@ -1107,6 +1372,9 @@ func (s *server) UpdateTopologyZone(ctx context.Context, req *adminv1.UpdateTopo
 	if zoneID == "" {
 		return nil, status.Error(codes.InvalidArgument, "zone_id is required")
 	}
+	if err := enforceDependencyMembershipChange(); err != nil {
+		return nil, err
+	}
 	rec, err := s.repo.GetTopologyZone(ctx, zoneID)
 	if err != nil {
 		if errors.Is(err, clustermeta.ErrNotFound) {
@@ -1164,6 +1432,9 @@ func (s *server) DeleteTopologyZone(ctx context.Context, req *adminv1.DeleteTopo
 	zoneID := strings.TrimSpace(req.GetZoneId())
 	if zoneID == "" {
 		return nil, status.Error(codes.InvalidArgument, "zone_id is required")
+	}
+	if err := enforceDependencyMembershipChange(); err != nil {
+		return nil, err
 	}
 	if _, err := s.repo.GetTopologyZone(ctx, zoneID); err != nil {
 		if errors.Is(err, clustermeta.ErrNotFound) {
@@ -1270,31 +1541,10 @@ func (s *server) DrainNode(ctx context.Context, req *adminv1.DrainNodeRequest) (
 	if err != nil {
 		return nil, err
 	}
-	if req.GetNodeId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "node_id is required")
-	}
-	rec, err := s.repo.GetNodeMembership(ctx, req.GetNodeId())
+	op, err := s.beginNodeDrain(ctx, req.GetNodeId(), "node.drain", operationAuditFromMeta(req.GetMeta(), "drain"))
 	if err != nil {
-		if errors.Is(err, clustermeta.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "node %q not found", req.GetNodeId())
-		}
-		return nil, status.Errorf(codes.Internal, "get node membership: %v", err)
+		return nil, err
 	}
-	rec.LifecycleState = clustermeta.NodeLifecycleDraining
-	rec.LastHeartbeatUnix = time.Now().Unix()
-	if err := s.repo.PutNodeMembership(ctx, rec); err != nil {
-		return nil, status.Errorf(codes.Internal, "put node membership: %v", err)
-	}
-
-	op, err := s.ops.create("node.drain", req.GetNodeId(), "", "evacuation_pending", adminv1.OperationState_OPERATION_STATE_RUNNING)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "create operation: %v", err)
-	}
-	if err := s.enqueueDrainTransitions(ctx, req.GetNodeId()); err != nil {
-		s.failOperation(op.GetOperationId(), err)
-		return nil, status.Errorf(codes.Internal, "enqueue drain transitions: %v", err)
-	}
-	op = s.refreshDrainOperation(ctx, op)
 
 	return &adminv1.DrainNodeResponse{
 		Cluster: cluster,
@@ -1304,6 +1554,64 @@ func (s *server) DrainNode(ctx context.Context, req *adminv1.DrainNodeRequest) (
 			Message:     "node marked draining",
 		},
 	}, nil
+}
+
+func (s *server) LeaveNode(ctx context.Context, req *adminv1.LeaveNodeRequest) (*adminv1.LeaveNodeResponse, error) {
+	if err := s.requireLeader(ctx); err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	cluster, err := s.clusterRef(req.GetCluster())
+	if err != nil {
+		return nil, err
+	}
+	op, err := s.beginNodeDrain(ctx, req.GetNodeId(), "node.leave", operationAuditFromMeta(req.GetMeta(), "leave"))
+	if err != nil {
+		return nil, err
+	}
+	return &adminv1.LeaveNodeResponse{
+		Cluster: cluster,
+		Operation: &adminv1.OperationHandle{
+			Accepted: true, OperationId: op.GetOperationId(), Message: "node leave accepted; drain required before remove",
+		},
+	}, nil
+}
+
+func (s *server) beginNodeDrain(ctx context.Context, nodeID, operationKind string, audit operationAudit) (*adminv1.OperationStatus, error) {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "node_id is required")
+	}
+	if err := enforceDependencyMembershipChange(); err != nil {
+		return nil, err
+	}
+	rec, err := s.repo.GetNodeMembership(ctx, nodeID)
+	if err != nil {
+		if errors.Is(err, clustermeta.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "node %q not found", nodeID)
+		}
+		return nil, status.Errorf(codes.Internal, "get node membership: %v", err)
+	}
+	op, err := s.ops.createAudited(operationKind, nodeID, "", "evacuation_pending", adminv1.OperationState_OPERATION_STATE_RUNNING, audit)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "create operation: %v", err)
+	}
+	rec.LifecycleState = clustermeta.NodeLifecycleDraining
+	rec.DesiredState = string(clustermeta.NodeLifecycleDraining)
+	rec.LastHeartbeatUnix = s.currentTime().Unix()
+	rec.UpdatedBy = audit.Actor
+	rec.UpdateReason = audit.Reason
+	if _, _, err := s.repo.CompareAndSetNodeMembership(ctx, rec, rec.Generation); err != nil {
+		s.failOperation(op.GetOperationId(), err)
+		if errors.Is(err, clustermeta.ErrCASConflict) {
+			return nil, status.Errorf(codes.Aborted, "node membership changed concurrently: %v", err)
+		}
+		return nil, status.Errorf(codes.Internal, "put node membership: %v", err)
+	}
+	if err := s.enqueueDrainTransitions(ctx, nodeID); err != nil {
+		s.failOperation(op.GetOperationId(), err)
+		return nil, status.Errorf(codes.Internal, "enqueue drain transitions: %v", err)
+	}
+	return s.refreshDrainOperation(ctx, op), nil
 }
 
 func (s *server) RemoveNode(ctx context.Context, req *adminv1.RemoveNodeRequest) (*adminv1.RemoveNodeResponse, error) {
@@ -1317,7 +1625,7 @@ func (s *server) RemoveNode(ctx context.Context, req *adminv1.RemoveNodeRequest)
 	if req.GetNodeId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "node_id is required")
 	}
-	op, err := s.removeNode(ctx, req.GetNodeId(), false)
+	op, err := s.removeNode(ctx, req.GetNodeId(), false, operationAuditFromMeta(req.GetMeta(), "remove"))
 	if err != nil {
 		return nil, err
 	}
@@ -1342,7 +1650,18 @@ func (s *server) ForceRemoveNode(ctx context.Context, req *adminv1.ForceRemoveNo
 	if req.GetNodeId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "node_id is required")
 	}
-	op, err := s.removeNode(ctx, req.GetNodeId(), true)
+	meta := req.GetMeta()
+	if strings.TrimSpace(meta.GetActor()) == "" || strings.TrimSpace(meta.GetReason()) == "" {
+		return nil, status.Error(codes.InvalidArgument, "force remove requires actor and reason")
+	}
+	if strings.TrimSpace(req.GetApprovalId()) == "" || !req.GetAcknowledgeDataLossRisk() {
+		return nil, status.Error(codes.FailedPrecondition, "force remove requires approval_id and acknowledge_data_loss_risk=true")
+	}
+	audit := operationAuditFromMeta(meta, "force remove")
+	audit.ApprovalID = req.GetApprovalId()
+	audit.RiskAcknowledged = true
+	audit.FollowOnRepairRequired = true
+	op, err := s.removeNode(ctx, req.GetNodeId(), true, audit)
 	if err != nil {
 		return nil, err
 	}
@@ -3463,6 +3782,9 @@ func (s *server) UpdateNodeStoreWeights(ctx context.Context, req *adminv1.Update
 			return nil, status.Error(codes.InvalidArgument, "weight must be zero or greater")
 		}
 	}
+	if err := enforceDependencyMembershipChange(); err != nil {
+		return nil, err
+	}
 	node, err := s.repo.GetNodeMembership(ctx, nodeID)
 	if err != nil {
 		if errors.Is(err, clustermeta.ErrNotFound) {
@@ -3516,6 +3838,9 @@ func (s *server) UpdateNodeStoreTuning(ctx context.Context, req *adminv1.UpdateN
 		if strings.TrimSpace(store.GetAllocationPolicy()) != "" {
 			return nil, status.Error(codes.InvalidArgument, "allocation_policy is deprecated; use weight=0 to stop new allocations")
 		}
+	}
+	if err := enforceDependencyMembershipChange(); err != nil {
+		return nil, err
 	}
 	node, err := s.repo.GetNodeMembership(ctx, nodeID)
 	if err != nil {
@@ -3969,10 +4294,16 @@ func main() {
 			return
 		}
 	}
+	os.Args = append(os.Args[:1], cliux.RewriteDeprecatedFlags(os.Args[1:], []cliux.Alias{
+		{Legacy: "grpc-listen", Canonical: "sbs-service-listen", DeprecatedIn: "post-1.0"},
+		{Legacy: "http-listen", Canonical: "sbs-service-http-listen", DeprecatedIn: "post-1.0"},
+	}, os.Stderr)...)
+	os.Args = append(os.Args[:1], cliux.RewriteCommandArgs(os.Args[1:], false, false)...)
 	fs := flag.NewFlagSet("sbs-service", flag.ExitOnError)
+	configPath := fs.String("config", "", "service config file path (AA-IMPL-001F); when set it supplies stable settings, while environment variables and explicitly typed flags still win")
 	clusterID := fs.String("cluster-id", getenvOrDefault("NAMRBD_CLUSTER_ID", "namrbd-dev"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", getenvOrDefault("NAMRBD_SBS_CLUSTER_ID", "sbs-dev"), "sbs cluster id")
-	nodeID := fs.String("node-id", getenvOrDefault("NAMRBD_NODE_ID", "sbs-svc-1"), "local sbs-service node id")
+	sbsClusterID := fs.String("sbs-cluster-id", getenvOrDefault("NAMRBD_SBS_CLUSTER_ID", ""), "SBS cluster id; defaults to --cluster-id when omitted")
+	nodeID := fs.String("node-id", getenvCompatOrDefault(envcompat.SBSServiceNodeID, "sbs-svc-1"), "local sbs-service node id")
 	metadataBackendName := fs.String("metadata-backend", getenvOrDefault("NAMRBD_SBS_METADATA_BACKEND", "pebble"), "metadata backend: pebble or tikv")
 	metadataPath := fs.String("metadata-path", getenvOrDefault("NAMRBD_SBS_STATE_DIR", "./var/sbs-metadata"), "local metadata path for bootstrap development")
 	leaderLeaseDuration := fs.Duration("leader-lease-duration", getenvDuration("NAMRBD_SBS_LEADER_LEASE_DURATION", 10*time.Second), "leader lease duration")
@@ -3988,16 +4319,82 @@ func main() {
 	tikvOperationTrace := fs.Bool("tikv-operation-trace", getenvBool("NAMRBD_TIKV_OPERATION_TRACE", false), "emit structured TiKV metadata operation latency trace events")
 	tikvAsyncCommit := fs.Bool("tikv-async-commit", getenvBool("NAMRBD_TIKV_ASYNC_COMMIT", false), "enable TiKV async commit for metadata transactions")
 	tikvOnePhaseCommit := fs.Bool("tikv-one-phase-commit", getenvBool("NAMRBD_TIKV_ONE_PHASE_COMMIT", false), "enable TiKV one-phase commit for eligible metadata transactions")
-	grpcListen := fs.String("grpc-listen", getenvOrDefault("NAMRBD_SBS_ADMIN_ADDR", "0.0.0.0:9443"), "listen address for sbs-admin gRPC")
-	httpListen := fs.String("http-listen", getenvOrDefault("NAMRBD_BIND_ADDR", "0.0.0.0:9081"), "listen address for HTTP health/debug")
+	grpcListen := fs.String("sbs-service-listen", getenvCompatOrDefault(envcompat.SBSServiceGRPCListen, "0.0.0.0:9443"), "listen address for sbs-service gRPC")
+	httpListen := fs.String("sbs-service-http-listen", getenvCompatOrDefault(envcompat.SBSServiceHTTPListen, "0.0.0.0:9081"), "listen address for sbs-service HTTP health and observability")
 	payloadRoot := fs.String("payload-root", getenvOrDefault("NAMRBD_SBS_PAYLOAD_ROOT", ""), "local replica payload root for automatic payload GC")
 	serviceOwnedWriteEffects := fs.Bool("service-owned-write-effects", getenvBool("NAMRBD_SBS_SERVICE_OWNED_WRITE_EFFECTS", defaultServiceOwnedWriteEffects), "own the ordered service-side write-effects queue for append-only write metadata mode")
 	nativeAllocationFastPath := fs.Bool("native-allocation-fast-path", getenvBool("NAMRBD_SBS_NATIVE_ALLOCATION_FAST_PATH", defaultNativeAllocationFastPath), "enable native-allocation fast path for already-normalized allocation-backed write effects")
-	writeEffectsBatchMax := fs.Int("write-effects-batch-max", maxInt(getenvInt("NAMRBD_SBS_WRITE_EFFECTS_BATCH_MAX", defaultServiceWriteEffectsBatchMax), 1), "lab only: maximum service-owned write-effects items to commit in one metadata batch")
+	writeEffectsBatchMax := fs.Int("write-effects-batch-max", maxInt(getenvInt("NAMRBD_SBS_WRITE_EFFECTS_BATCH_MAX", defaultServiceWriteEffectsBatchMax), 1), "maximum service-owned write-effects items to commit in one metadata batch")
 	writeEffectsLaneBucketCount := fs.Int("write-effects-lane-bucket-count", maxInt(getenvInt("NAMRBD_SBS_WRITE_EFFECTS_LANE_BUCKET_COUNT", 0), 0), "lab only: group native allocation write-effects page lanes into this many buckets; 0 keeps one lane per page")
 	asyncWriteMutationFinalize := fs.Bool("async-write-mutation-finalize", getenvBool("NAMRBD_SBS_ASYNC_WRITE_MUTATION_FINALIZE", false), "lab only: finalize write mutation operation markers outside the client-visible effects transaction")
 	writeIntentBatchCoalesceWait := fs.Duration("write-intent-batch-coalesce-wait", getenvDuration("NAMRBD_SBS_WRITE_INTENT_BATCH_COALESCE_WAIT", defaultServiceWriteIntentBatchCoalesceWait), "lab only: coalesce write intent records into service-side metadata batches")
+	healthShardCount := maxInt(getenvInt("NAMRBD_SBS_DATA_HEALTH_SHARD_COUNT", 1), 1)
+	healthConcurrency := maxInt(getenvInt("NAMRBD_SBS_DATA_HEALTH_CONCURRENCY", nodeHealthShardConcurrency), 1)
+	healthInterval := getenvDuration("NAMRBD_SBS_DATA_HEALTH_CHECK_INTERVAL", 10*time.Second)
+	healthTimeout := getenvDuration("NAMRBD_SBS_DATA_HEALTH_TIMEOUT", 2*time.Second)
+	healthSuspectAfter := maxInt(getenvInt("NAMRBD_SBS_DATA_SUSPECT_AFTER", 3), 1)
+	healthDownAfter := maxInt(getenvInt("NAMRBD_SBS_DATA_DOWN_AFTER", 6), 1)
+	healthRecoveryCooldown := getenvDuration("NAMRBD_SBS_DATA_RECOVER_COOLDOWN", 30*time.Second)
+	cliux.InstallStructuredUsage(fs, "sbs-service", func(name string) bool {
+		f := fs.Lookup(name)
+		labOnly := f != nil && strings.Contains(strings.ToLower(f.Usage), "lab only")
+		return labOnly || strings.Contains(name, "lab-") || name == "async-write-mutation-finalize" ||
+			name == "write-effects-lane-bucket-count" || name == "write-intent-batch-coalesce-wait"
+	})
 	fs.Parse(os.Args[1:])
+
+	// Without --config sbs-service behaves exactly as before. Adoption is
+	// additive so existing deployments and lab fixtures are unaffected.
+	if strings.TrimSpace(*configPath) != "" {
+		summary, err := applySBSServiceConfig(*configPath, sbsServiceConfigBinding{
+			ClusterID:       clusterID,
+			SBSClusterID:    sbsClusterID,
+			NodeID:          nodeID,
+			MetadataBackend: metadataBackendName,
+
+			GRPCListen:  grpcListen,
+			HTTPListen:  httpListen,
+			PayloadRoot: payloadRoot,
+
+			TiKVPDEndpoints:    tikvPDEndpoints,
+			TiKVKeyspace:       tikvKeyspace,
+			TiKVAPIVersion:     tikvAPIVersion,
+			TiKVTimeout:        tikvTimeout,
+			TiKVTLSEnabled:     tikvTLSEnabled,
+			TiKVCAFile:         tikvCAFile,
+			TiKVCertFile:       tikvCertFile,
+			TiKVKeyFile:        tikvKeyFile,
+			TiKVOperationTrace: tikvOperationTrace,
+
+			LeaderLeaseDuration:    leaderLeaseDuration,
+			LeaderRenewInterval:    leaderRenewInterval,
+			HealthShardCount:       &healthShardCount,
+			HealthConcurrency:      &healthConcurrency,
+			HealthInterval:         &healthInterval,
+			HealthTimeout:          &healthTimeout,
+			HealthSuspectAfter:     &healthSuspectAfter,
+			HealthDownAfter:        &healthDownAfter,
+			HealthRecoveryCooldown: &healthRecoveryCooldown,
+
+			ServiceOwnedWriteEffects:   serviceOwnedWriteEffects,
+			NativeAllocationFastPath:   nativeAllocationFastPath,
+			WriteEffectsBatchMax:       writeEffectsBatchMax,
+			WriteEffectsLaneBuckets:    writeEffectsLaneBucketCount,
+			AsyncWriteMutationFinalize: asyncWriteMutationFinalize,
+		}, explicitlySetFlags(fs), osEnvLookup)
+		// The summary is emitted either way. On the failure path it is the only
+		// record of which config the process tried to start from.
+		if blob, mErr := json.Marshal(summary); mErr == nil {
+			log.Printf("service config summary: %s", blob)
+		}
+		if err != nil {
+			log.Fatalf("service config: %v", err)
+		}
+	}
+	if strings.TrimSpace(*sbsClusterID) == "" {
+		*sbsClusterID = strings.TrimSpace(*clusterID)
+	}
+
 	nativeAllocationFastPathEnabled := *nativeAllocationFastPath
 	pdEndpoints := parseCSV(*tikvPDEndpoints)
 	if err := validateMetadataRuntimeConfig(metadataRuntimeConfig{
@@ -4085,12 +4482,14 @@ func main() {
 		autoRebalanceMinVolumeAge:             getenvDuration("NAMRBD_SBS_AUTO_REBALANCE_MIN_VOLUME_AGE", defaultAutoRebalanceMinVolumeAge),
 		autoRebalanceForegroundWriteSettleAge: getenvDuration("NAMRBD_SBS_AUTO_REBALANCE_FOREGROUND_WRITE_SETTLE_AGE", defaultAutoRebalanceForegroundWriteSettleAge),
 		lastMaintenanceRunByVolume:            make(map[string]int64),
-		healthCheckInterval:                   getenvDuration("NAMRBD_SBS_DATA_HEALTH_CHECK_INTERVAL", 2*time.Second),
-		healthCheckTimeout:                    getenvDuration("NAMRBD_SBS_DATA_HEALTH_TIMEOUT", 1*time.Second),
-		healthSuspectAfter:                    uint32(maxInt(getenvInt("NAMRBD_SBS_DATA_SUSPECT_AFTER", 1), 1)),
-		healthDownAfter:                       uint32(maxInt(getenvInt("NAMRBD_SBS_DATA_DOWN_AFTER", 3), 1)),
+		healthCheckInterval:                   healthInterval,
+		healthCheckTimeout:                    healthTimeout,
+		healthMinimumShardCount:               healthShardCount,
+		healthConcurrencyPerShard:             min(healthConcurrency, nodeHealthShardConcurrency),
+		healthSuspectAfter:                    uint32(healthSuspectAfter),
+		healthDownAfter:                       uint32(healthDownAfter),
 		healthRecoverAfter:                    uint32(maxInt(getenvInt("NAMRBD_SBS_DATA_RECOVER_AFTER", 2), 1)),
-		healthRecoveryCooldown:                getenvDuration("NAMRBD_SBS_DATA_RECOVER_COOLDOWN", 5*time.Second),
+		healthRecoveryCooldown:                healthRecoveryCooldown,
 	}
 	srv.leader.leaseDuration = *leaderLeaseDuration
 	srv.leader.renewInterval = *leaderRenewInterval
@@ -4134,6 +4533,11 @@ func main() {
 	go srv.leader.Run(ctx)
 	go srv.runBackgroundMaintenance(ctx)
 	go srv.runBackgroundECMaintenance(ctx)
+	// AA-IMPL-004B. TiKV reachability is learned from the reads this service
+	// already performs rather than from a probe of its own.
+	clustermeta.SetTiKVOutcomeObserver(func(err error) {
+		dependencyTracker.Report(depavail.DependencyTiKV, err)
+	})
 	go srv.runBackgroundNodeHealthReconciler(ctx)
 	<-ctx.Done()
 
@@ -4150,6 +4554,14 @@ func observabilityMux(s *server) http.Handler {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		// These two 503s stay. They are about this process's own role, not
+		// about a dependency: a service still starting up, or one that is not
+		// the leader, genuinely cannot accept a mutation, and an orchestrator
+		// routing around it is correct.
+		//
+		// Dependency state deliberately does not join them. AA-IMPL-004B
+		// reports it on /dependency with a 200 in every state, because a
+		// dependency outage must not evict a process that is still serving.
 		if !s.ready.Load() {
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
@@ -4161,6 +4573,7 @@ func observabilityMux(s *server) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
+	mux.Handle("/dependency", depavail.ReadinessHandler(dependencyTracker))
 	s.registerPhaseYOperationsAPI(mux)
 	dashboard := opsdashboard.Handler()
 	mux.Handle("/console", dashboard)
@@ -4321,6 +4734,7 @@ func observabilityMux(s *server) http.Handler {
 	})
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		snapshot, _ := s.boundedObservabilitySnapshot()
+		tikvPressure := clustermeta.TiKVPressureSnapshotNow()
 		settings := s.effectiveMaintenanceSettingsSnapshot(r.Context())
 		placementApplyStats := s.placementApplyObservability.snapshot()
 		writeSessionStats := s.writeSessionObservability.snapshot()
@@ -4333,6 +4747,14 @@ func observabilityMux(s *server) http.Handler {
 		_, _ = fmt.Fprintln(w, "# HELP sbs_service_leader Whether this instance currently owns the leader lease.")
 		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_leader gauge")
 		_, _ = fmt.Fprintf(w, "sbs_service_leader %d\n", boolToMetric(snapshot.LocalIsLeader))
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_tikv_operations_total SBS metadata requests to TiKV by operation class.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_tikv_operations_total counter")
+		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"batch_get\"} %d\n", tikvPressure.BatchGetCount)
+		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"batch_get_key\"} %d\n", tikvPressure.BatchGetKeyCount)
+		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"batch_get_chunk\"} %d\n", tikvPressure.BatchGetChunkCount)
+		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"point_get\"} %d\n", tikvPressure.PointGetCount)
+		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"full_scan\"} %d\n", tikvPressure.FullScanCount)
+		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"txn_retry\"} %d\n", tikvPressure.TxnRetryCount)
 		_, _ = fmt.Fprintln(w, "# HELP sbs_service_nodes Number of known nodes by lifecycle and health.")
 		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_nodes gauge")
 		_, _ = fmt.Fprintf(w, "sbs_service_nodes{state=\"known\"} %d\n", snapshot.KnownNodes)
@@ -4538,20 +4960,40 @@ func splitHostPortLoose(addr string) (string, int) {
 
 func (s *server) nodeToProto(ctx context.Context, rec clustermeta.NodeMembershipRecord) *adminv1.NodeSummary {
 	out := &adminv1.NodeSummary{
-		NodeId:            rec.NodeID,
-		Lifecycle:         lifecycleToProto(rec.LifecycleState),
-		Health:            healthToProto(rec.HealthState),
-		GrpcEndpoint:      endpointString(rec.SBSEndpoints),
-		AdminHttpEndpoint: rec.AdminHTTPEndpoint,
-		Zone:              rec.Zone,
-		LastHeartbeatTime: timestamppb.New(time.Unix(rec.LastHeartbeatUnix, 0).UTC()),
+		NodeId:             rec.NodeID,
+		ReplicaId:          rec.ReplicaID,
+		Lifecycle:          lifecycleToProto(rec.LifecycleState),
+		Health:             healthToProto(rec.HealthState),
+		GrpcEndpoint:       endpointString(rec.SBSEndpoints),
+		AdminHttpEndpoint:  rec.AdminHTTPEndpoint,
+		Zone:               rec.Zone,
+		LastHeartbeatTime:  timestamppb.New(time.Unix(rec.LastHeartbeatUnix, 0).UTC()),
+		ClusterId:          rec.ClusterID,
+		SbsClusterId:       rec.SBSClusterID,
+		StoreIds:           slices.Clone(rec.StoreIDs),
+		Roles:              slices.Clone(rec.Roles),
+		DesiredState:       rec.DesiredState,
+		ObservedState:      rec.ObservedState,
+		Generation:         rec.Generation,
+		MembershipRevision: rec.MembershipRevision,
+		Tombstone:          rec.Tombstone,
+		UpdatedBy:          rec.UpdatedBy,
+		UpdateReason:       rec.UpdateReason,
+	}
+	if rec.CreatedAtUnix > 0 {
+		out.CreatedTime = timestamppb.New(time.Unix(rec.CreatedAtUnix, 0).UTC())
+	}
+	if rec.UpdatedAtUnix > 0 {
+		out.UpdatedTime = timestamppb.New(time.Unix(rec.UpdatedAtUnix, 0).UTC())
 	}
 	detail, err := s.repo.GetNodeHealthDetail(ctx, rec.NodeID)
 	if err != nil {
 		return out
 	}
 	if detail.LastProbeUnix > 0 {
-		out.LastProbeTime = timestamppb.New(time.Unix(detail.LastProbeUnix, 0).UTC())
+		probeTime := timestamppb.New(time.Unix(detail.LastProbeUnix, 0).UTC())
+		out.LastProbeTime = probeTime
+		out.LastHeartbeatTime = probeTime
 	}
 	if detail.RecoveryEligibleAtUnix > 0 {
 		out.RecoveryEligibleTime = timestamppb.New(time.Unix(detail.RecoveryEligibleAtUnix, 0).UTC())
@@ -4562,6 +5004,20 @@ func (s *server) nodeToProto(ctx context.Context, rec clustermeta.NodeMembership
 	out.HealthReason = detail.HealthReason
 	out.HealthUpdatedBy = string(detail.HealthUpdatedBy)
 	return out
+}
+
+func membershipProjectionStatusToProto(in clustermeta.MembershipProjectionStatus) *adminv1.MembershipProjectionStatus {
+	return &adminv1.MembershipProjectionStatus{
+		MembershipRevision:           in.MembershipRevision,
+		MembershipProjectionRevision: in.MembershipProjectionRevision,
+		ProjectionLagMs:              in.ProjectionLagMS,
+		ProjectionHealth:             in.ProjectionHealth,
+		ProjectionStale:              in.Stale,
+		ProjectionRebuildCount:       in.ProjectionRebuildCount,
+		ProjectionResyncCount:        in.ProjectionResyncCount,
+		FirstError:                   in.FirstError,
+		LastError:                    in.LastError,
+	}
 }
 
 func topologyZoneToProto(rec clustermeta.TopologyZoneRecord) *adminv1.TopologyZoneSummary {
@@ -4927,7 +5383,10 @@ func (s *server) initializeVolumeAllocationPages(ctx context.Context, spec volum
 	})
 }
 
-func (s *server) removeNode(ctx context.Context, nodeID string, force bool) (*adminv1.OperationStatus, error) {
+func (s *server) removeNode(ctx context.Context, nodeID string, force bool, audit operationAudit) (*adminv1.OperationStatus, error) {
+	if err := enforceDependencyMembershipChange(); err != nil {
+		return nil, err
+	}
 	rec, err := s.repo.GetNodeMembership(ctx, nodeID)
 	if err != nil {
 		if errors.Is(err, clustermeta.ErrNotFound) {
@@ -4952,27 +5411,37 @@ func (s *server) removeNode(ctx context.Context, nodeID string, force bool) (*ad
 	if force {
 		opKind = "node.force_remove"
 	}
-	op, err := s.ops.create(opKind, nodeID, "", "removing", adminv1.OperationState_OPERATION_STATE_RUNNING)
+	op, err := s.ops.createAudited(opKind, nodeID, "", "removing", adminv1.OperationState_OPERATION_STATE_RUNNING, audit)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create operation: %v", err)
 	}
 	rec.LifecycleState = clustermeta.NodeLifecycleRemoved
 	rec.HealthState = clustermeta.NodeHealthDown
-	rec.LastHeartbeatUnix = time.Now().Unix()
-	if err := s.repo.PutNodeMembership(ctx, rec); err != nil {
+	rec.DesiredState = string(clustermeta.NodeLifecycleRemoved)
+	rec.ObservedState = string(clustermeta.NodeHealthDown)
+	rec.Tombstone = true
+	rec.LastHeartbeatUnix = s.currentTime().Unix()
+	rec.UpdatedBy = audit.Actor
+	rec.UpdateReason = audit.Reason
+	if _, _, err := s.repo.CompareAndSetNodeMembership(ctx, rec, rec.Generation); err != nil {
 		s.failOperation(op.GetOperationId(), err)
+		if errors.Is(err, clustermeta.ErrCASConflict) {
+			return nil, status.Errorf(codes.Aborted, "node membership changed concurrently: %v", err)
+		}
 		return nil, status.Errorf(codes.Internal, "put node membership: %v", err)
 	}
 	if force {
-		for _, drain := range s.ops.list("node.drain", adminv1.OperationState_OPERATION_STATE_RUNNING) {
-			if drain.GetTargetNodeId() != nodeID {
-				continue
+		for _, kind := range []string{"node.drain", "node.leave"} {
+			for _, drain := range s.ops.list(kind, adminv1.OperationState_OPERATION_STATE_RUNNING) {
+				if drain.GetTargetNodeId() != nodeID {
+					continue
+				}
+				_, _ = s.ops.update(drain.GetOperationId(), func(op *adminv1.OperationStatus) {
+					op.State = adminv1.OperationState_OPERATION_STATE_CANCELED
+					op.Phase = "force_removed"
+					op.BlockingReason = ""
+				})
 			}
-			_, _ = s.ops.update(drain.GetOperationId(), func(op *adminv1.OperationStatus) {
-				op.State = adminv1.OperationState_OPERATION_STATE_CANCELED
-				op.Phase = "force_removed"
-				op.BlockingReason = ""
-			})
 		}
 	}
 	op, _ = s.ops.update(op.GetOperationId(), func(op *adminv1.OperationStatus) {
@@ -5102,7 +5571,8 @@ func latestDrainForNode(ops []*adminv1.OperationStatus, nodeID string) *adminv1.
 }
 
 func (s *server) ensureLatestDrainOperation(ctx context.Context, nodeID string) *adminv1.OperationStatus {
-	op := latestDrainForNode(s.ops.list("node.drain", adminv1.OperationState_OPERATION_STATE_UNSPECIFIED), nodeID)
+	ops := append(s.ops.list("node.drain", adminv1.OperationState_OPERATION_STATE_UNSPECIFIED), s.ops.list("node.leave", adminv1.OperationState_OPERATION_STATE_UNSPECIFIED)...)
+	op := latestDrainForNode(ops, nodeID)
 	if op == nil {
 		return nil
 	}
@@ -5114,7 +5584,7 @@ func (s *server) refreshOperation(ctx context.Context, op *adminv1.OperationStat
 		return nil
 	}
 	switch op.GetKind() {
-	case "node.drain":
+	case "node.drain", "node.leave":
 		return s.refreshDrainOperation(ctx, op)
 	default:
 		return op
@@ -8293,28 +8763,42 @@ func (s *server) autoRebalanceForegroundWriteSettleLifetime() time.Duration {
 
 func (s *server) nodeHealthCheckInterval() time.Duration {
 	if s == nil || s.healthCheckInterval <= 0 {
-		return 2 * time.Second
+		return 10 * time.Second
 	}
 	return s.healthCheckInterval
 }
 
 func (s *server) nodeHealthCheckTimeout() time.Duration {
 	if s == nil || s.healthCheckTimeout <= 0 {
-		return time.Second
+		return 2 * time.Second
 	}
 	return s.healthCheckTimeout
 }
 
+func (s *server) nodeHealthMinimumShardCount() int {
+	if s == nil || s.healthMinimumShardCount <= 0 {
+		return 1
+	}
+	return s.healthMinimumShardCount
+}
+
+func (s *server) nodeHealthConcurrencyPerShard() int {
+	if s == nil || s.healthConcurrencyPerShard <= 0 {
+		return nodeHealthShardConcurrency
+	}
+	return min(s.healthConcurrencyPerShard, nodeHealthShardConcurrency)
+}
+
 func (s *server) nodeHealthSuspectAfter() uint32 {
 	if s == nil || s.healthSuspectAfter == 0 {
-		return 1
+		return 3
 	}
 	return s.healthSuspectAfter
 }
 
 func (s *server) nodeHealthDownAfter() uint32 {
 	if s == nil || s.healthDownAfter == 0 {
-		return 3
+		return 6
 	}
 	return s.healthDownAfter
 }
@@ -8328,7 +8812,7 @@ func (s *server) nodeHealthRecoverAfter() uint32 {
 
 func (s *server) nodeHealthRecoveryCooldown() time.Duration {
 	if s == nil || s.healthRecoveryCooldown <= 0 {
-		return 5 * time.Second
+		return 30 * time.Second
 	}
 	return s.healthRecoveryCooldown
 }
@@ -8442,6 +8926,12 @@ func (s *server) runBackgroundNodeHealthReconciler(ctx context.Context) {
 	ticker := time.NewTicker(s.nodeHealthCheckInterval())
 	defer ticker.Stop()
 	for {
+		// Classify on a loop this service already runs. Refresh does no I/O.
+		// It is here rather than inside runNodeHealthReconcilerOnce because
+		// that returns early on a follower, and a follower's dependency state
+		// is exactly what an operator needs during a leader-side outage.
+		dependencyTracker.Refresh()
+
 		if err := s.runNodeHealthReconcilerOnce(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("sbs-service node health reconciler error: %v", err)
 		}
@@ -8451,6 +8941,82 @@ func (s *server) runBackgroundNodeHealthReconciler(ctx context.Context) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func (s *server) beginNodeHealthRun(queueDepth, shardCount int) {
+	s.healthStatusMu.Lock()
+	s.healthStatus = nodeHealthReconcilerStatus{
+		ShardCount:     shardCount,
+		QueueDepth:     queueDepth,
+		PeakQueueDepth: queueDepth,
+		LastRunUnix:    s.currentTime().Unix(),
+	}
+	s.healthStatusMu.Unlock()
+}
+
+func (s *server) noteNodeHealthProbeStarted() {
+	s.healthStatusMu.Lock()
+	if s.healthStatus.QueueDepth > 0 {
+		s.healthStatus.QueueDepth--
+	}
+	s.healthStatus.InFlight++
+	if s.healthStatus.InFlight > s.healthStatus.MaxInFlight {
+		s.healthStatus.MaxInFlight = s.healthStatus.InFlight
+	}
+	s.healthStatusMu.Unlock()
+}
+
+func (s *server) noteNodeHealthProbeCompleted(err error) {
+	s.healthStatusMu.Lock()
+	s.healthStatus.ProbeCount++
+	if s.healthStatus.InFlight > 0 {
+		s.healthStatus.InFlight--
+	}
+	if err != nil {
+		message := err.Error()
+		if s.healthStatus.FirstError == "" {
+			s.healthStatus.FirstError = message
+		}
+		s.healthStatus.LastError = message
+	}
+	s.healthStatusMu.Unlock()
+}
+
+func (s *server) noteNodeHealthTransition() {
+	s.healthStatusMu.Lock()
+	s.healthStatus.TransitionCount++
+	s.healthStatusMu.Unlock()
+}
+
+func (s *server) noteNodeHealthVolumeReconcile() {
+	s.healthStatusMu.Lock()
+	s.healthStatus.VolumeReconcileCount++
+	s.healthStatusMu.Unlock()
+}
+
+func (s *server) noteNodeHealthError(err error) {
+	if err == nil {
+		return
+	}
+	s.healthStatusMu.Lock()
+	message := err.Error()
+	if s.healthStatus.FirstError == "" {
+		s.healthStatus.FirstError = message
+	}
+	s.healthStatus.LastError = message
+	s.healthStatusMu.Unlock()
+}
+
+func (s *server) finishNodeHealthRun() {
+	s.healthStatusMu.Lock()
+	s.healthStatus.QueueDepth = 0
+	s.healthStatusMu.Unlock()
+}
+
+func (s *server) nodeHealthStatusSnapshot() nodeHealthReconcilerStatus {
+	s.healthStatusMu.RLock()
+	defer s.healthStatusMu.RUnlock()
+	return s.healthStatus
 }
 
 func (s *server) runNodeHealthReconcilerOnce(ctx context.Context) error {
@@ -8464,32 +9030,114 @@ func (s *server) runNodeHealthReconcilerOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	controller := clustercontrol.NewFromRepository(s.repo)
+	eligible := make([]clustermeta.NodeMembershipRecord, 0, len(nodes))
 	for _, node := range nodes {
-		if node.LifecycleState != clustermeta.NodeLifecycleActive && node.LifecycleState != clustermeta.NodeLifecycleDraining {
-			continue
-		}
-		if err := s.reconcileNodeHealth(ctx, controller, node); err != nil {
-			return err
+		if node.LifecycleState == clustermeta.NodeLifecycleActive || node.LifecycleState == clustermeta.NodeLifecycleDraining {
+			eligible = append(eligible, node)
 		}
 	}
-	return nil
+	shardCount := (len(eligible) + nodeHealthShardSize - 1) / nodeHealthShardSize
+	if len(eligible) > 0 {
+		shardCount = max(shardCount, s.nodeHealthMinimumShardCount())
+		shardCount = min(shardCount, len(eligible))
+	}
+	s.beginNodeHealthRun(len(eligible), shardCount)
+	controller := clustercontrol.NewFromRepository(s.repo)
+	transitioned := false
+	var runErrors []error
+	shardSize := nodeHealthShardSize
+	if shardCount > 0 {
+		shardSize = (len(eligible) + shardCount - 1) / shardCount
+	}
+	for start := 0; start < len(eligible); start += shardSize {
+		end := min(start+shardSize, len(eligible))
+		results := s.probeNodeHealthShard(ctx, eligible[start:end])
+		sort.Slice(results, func(i, j int) bool { return results[i].node.NodeID < results[j].node.NodeID })
+		for _, result := range results {
+			changed, err := s.reconcileNodeHealthResult(ctx, controller, result)
+			if changed {
+				transitioned = true
+				s.noteNodeHealthTransition()
+			}
+			if err != nil {
+				s.noteNodeHealthError(err)
+				runErrors = append(runErrors, fmt.Errorf("node %s: %w", result.node.NodeID, err))
+			}
+		}
+	}
+	if transitioned {
+		if _, _, err := controller.ReconcileNodeHealthTransitions(ctx); err != nil {
+			s.noteNodeHealthError(err)
+			runErrors = append(runErrors, fmt.Errorf("reconcile node health transitions: %w", err))
+		} else {
+			s.noteNodeHealthVolumeReconcile()
+		}
+	}
+	s.finishNodeHealthRun()
+	return errors.Join(runErrors...)
 }
 
 func (s *server) reconcileNodeHealth(ctx context.Context, controller *clustercontrol.Controller, node clustermeta.NodeMembershipRecord) error {
+	storeSummary, probeErr := s.probeSBSDataNode(ctx, node)
+	_, err := s.reconcileNodeHealthResult(ctx, controller, nodeHealthProbeResult{
+		node: node, summary: storeSummary, err: probeErr,
+	})
+	return err
+}
+
+type nodeHealthProbeResult struct {
+	node    clustermeta.NodeMembershipRecord
+	summary nodeStoreHealthSummary
+	err     error
+}
+
+func (s *server) probeNodeHealthShard(ctx context.Context, nodes []clustermeta.NodeMembershipRecord) []nodeHealthProbeResult {
+	results := make(chan nodeHealthProbeResult, len(nodes))
+	semaphore := make(chan struct{}, s.nodeHealthConcurrencyPerShard())
+	var wg sync.WaitGroup
+	for _, node := range nodes {
+		node := node
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case semaphore <- struct{}{}:
+			case <-ctx.Done():
+				results <- nodeHealthProbeResult{node: node, err: ctx.Err()}
+				return
+			}
+			s.noteNodeHealthProbeStarted()
+			summary, err := s.probeSBSDataNode(ctx, node)
+			s.noteNodeHealthProbeCompleted(err)
+			<-semaphore
+			results <- nodeHealthProbeResult{node: node, summary: summary, err: err}
+		}()
+	}
+	wg.Wait()
+	close(results)
+	out := make([]nodeHealthProbeResult, 0, len(nodes))
+	for result := range results {
+		out = append(out, result)
+	}
+	return out
+}
+
+func (s *server) reconcileNodeHealthResult(ctx context.Context, controller *clustercontrol.Controller, result nodeHealthProbeResult) (bool, error) {
+	node := result.node
+	storeSummary := result.summary
+	probeErr := result.err
 	now := s.currentTime().Unix()
 	detail, err := s.repo.GetNodeHealthDetail(ctx, node.NodeID)
 	if err != nil && !errors.Is(err, clustermeta.ErrNotFound) {
-		return err
+		return false, err
 	}
 	if detail.NodeID == "" {
 		detail.NodeID = node.NodeID
 	}
 	if detail.OverrideExpiresAtUnix > now {
-		return nil
+		return false, nil
 	}
-
-	storeSummary, probeErr := s.probeSBSDataNode(ctx, node)
+	transitioned := false
 
 	detail.LastProbeUnix = now
 	detail.HealthUpdatedBy = clustermeta.HealthUpdatedByReconciler
@@ -8510,29 +9158,13 @@ func (s *server) reconcileNodeHealth(ctx context.Context, controller *clustercon
 		detail.HealthReason = "probe_ok"
 		detail.ConsecutiveProbeFailures = 0
 		detail.ConsecutiveProbeSuccesses++
-		membershipChanged := false
-		if storeSummary.StoreCount > 0 {
-			if node.CapacityBytes != storeSummary.CapacityBytes || node.UsedBytes != storeSummary.UsedBytes {
-				node.CapacityBytes = storeSummary.CapacityBytes
-				node.UsedBytes = storeSummary.UsedBytes
-				membershipChanged = true
-			}
-		}
-		if node.LastHeartbeatUnix != now {
-			node.LastHeartbeatUnix = now
-			membershipChanged = true
-		}
-		if membershipChanged {
-			if err := s.repo.PutNodeMembership(ctx, node); err != nil {
-				return err
-			}
-		}
 		if node.HealthState != clustermeta.NodeHealthHealthy && detail.ConsecutiveProbeSuccesses >= s.nodeHealthRecoverAfter() {
-			rec, _, _, err := controller.SetNodeHealth(ctx, node.NodeID, clustermeta.NodeHealthHealthy)
+			rec, err := controller.SetNodeHealthOnly(ctx, node.NodeID, clustermeta.NodeHealthHealthy)
 			if err != nil {
-				return err
+				return false, err
 			}
 			node = rec
+			transitioned = true
 			detail.RecoveryEligibleAtUnix = now + int64(s.nodeHealthRecoveryCooldown().Seconds())
 		}
 	} else {
@@ -8543,17 +9175,19 @@ func (s *server) reconcileNodeHealth(ctx context.Context, controller *clustercon
 		detail.RecoveryEligibleAtUnix = 0
 		switch {
 		case detail.ConsecutiveProbeFailures >= s.nodeHealthDownAfter() && node.HealthState != clustermeta.NodeHealthDown:
-			rec, _, _, err := controller.SetNodeHealth(ctx, node.NodeID, clustermeta.NodeHealthDown)
+			rec, err := controller.SetNodeHealthOnly(ctx, node.NodeID, clustermeta.NodeHealthDown)
 			if err != nil {
-				return err
+				return false, err
 			}
 			node = rec
+			transitioned = true
 		case detail.ConsecutiveProbeFailures >= s.nodeHealthSuspectAfter() && node.HealthState == clustermeta.NodeHealthHealthy:
-			rec, _, _, err := controller.SetNodeHealth(ctx, node.NodeID, clustermeta.NodeHealthSuspect)
+			rec, err := controller.SetNodeHealthOnly(ctx, node.NodeID, clustermeta.NodeHealthSuspect)
 			if err != nil {
-				return err
+				return false, err
 			}
 			node = rec
+			transitioned = true
 		}
 	}
 
@@ -8569,7 +9203,7 @@ func (s *server) reconcileNodeHealth(ctx context.Context, controller *clustercon
 			detail.HealthReason = "probe_down"
 		}
 	}
-	return s.repo.PutNodeHealthDetail(ctx, detail)
+	return transitioned, s.repo.PutNodeHealthDetail(ctx, detail)
 }
 
 func (s *server) probeSBSDataNode(ctx context.Context, node clustermeta.NodeMembershipRecord) (nodeStoreHealthSummary, error) {
@@ -9874,6 +10508,18 @@ func (c *replicaClientCache) Get(endpoint string) (service.SBSClient, error) {
 	return client, nil
 }
 
+func (c *replicaClientCache) GetISCSIWriterFenceClient(endpoint string) (service.ISCSIWriterFenceClient, error) {
+	client, err := c.Get(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	fenceClient, ok := client.(service.ISCSIWriterFenceClient)
+	if !ok {
+		return nil, fmt.Errorf("sbs-data endpoint %s does not implement iSCSI writer fencing", endpoint)
+	}
+	return fenceClient, nil
+}
+
 func (c *replicaClientCache) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -9891,6 +10537,18 @@ func (c *replicaClientCache) Close() {
 func getenvOrDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getenvCompatOrDefault(spec envcompat.Spec, fallback string) string {
+	resolved, err := envcompat.ResolveCurrent(spec, os.LookupEnv)
+	if err != nil {
+		log.Fatalf("environment configuration: %v", err)
+	}
+	envcompat.WriteWarnings(os.Stderr, resolved.Warnings)
+	if resolved.Present {
+		return resolved.Value
 	}
 	return fallback
 }

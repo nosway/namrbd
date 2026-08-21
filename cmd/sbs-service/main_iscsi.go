@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/nosway/namrbd/gateway/service"
 	"github.com/nosway/namrbd/iscsi"
 	adminv1 "github.com/nosway/namrbd/sbs/admin/v1"
 	clustermeta "github.com/nosway/namrbd/sbs/cluster/metadata"
@@ -23,17 +23,19 @@ const (
 )
 
 type iscsiRegistryState struct {
-	Version            int                                 `json:"version"`
-	RegistryRevision   uint64                              `json:"registry_revision"`
-	ConfigGeneration   uint64                              `json:"config_generation"`
-	UpdatedAtUnix      int64                               `json:"updated_at_unix,omitempty"`
-	Portals            map[string]iscsi.Portal             `json:"portals"`
-	Targets            map[string]iscsi.Target             `json:"targets"`
-	LUNs               map[string]iscsi.LUN                `json:"luns"`
-	ACLs               map[string]iscsi.InitiatorACL       `json:"initiator_acls"`
-	Sessions           map[string]iscsi.Session            `json:"sessions"`
-	Failovers          map[string]iscsi.FailoverRuntime    `json:"failovers"`
-	IdempotencyRecords map[string]iscsiRegistryIdempotency `json:"idempotency_records,omitempty"`
+	Version             int                                 `json:"version"`
+	RegistryRevision    uint64                              `json:"registry_revision"`
+	ConfigGeneration    uint64                              `json:"config_generation"`
+	UpdatedAtUnix       int64                               `json:"updated_at_unix,omitempty"`
+	Portals             map[string]iscsi.Portal             `json:"portals"`
+	Targets             map[string]iscsi.Target             `json:"targets"`
+	LUNs                map[string]iscsi.LUN                `json:"luns"`
+	ACLs                map[string]iscsi.InitiatorACL       `json:"initiator_acls"`
+	Sessions            map[string]iscsi.Session            `json:"sessions"`
+	Failovers           map[string]iscsi.FailoverRuntime    `json:"failovers"`
+	IdempotencyRecords  map[string]iscsiRegistryIdempotency `json:"idempotency_records,omitempty"`
+	storageLayout       string                              `json:"-"`
+	changeFloorRevision uint64                              `json:"-"`
 }
 
 type iscsiRegistryIdempotency struct {
@@ -157,55 +159,24 @@ func (r *iscsiRegistryState) controlState() *iscsi.ControlState {
 	}).Normalize()
 }
 
-func (s *server) iscsiRegistryKey() string {
-	root := strings.Trim(strings.TrimSpace(s.root), "/")
-	if root == "" {
-		return iscsiRegistryStateSuffix
-	}
-	return root + "/" + iscsiRegistryStateSuffix
-}
-
-func (s *server) loadISCSIRegistryState(ctx context.Context) (*iscsiRegistryState, error) {
-	raw, found, err := s.kv.Get(ctx, s.iscsiRegistryKey())
-	if err != nil {
-		return nil, err
-	}
-	if !found {
-		return newISCSIRegistryState(), nil
-	}
-	var state iscsiRegistryState
-	if err := json.Unmarshal(raw, &state); err != nil {
-		return nil, err
-	}
-	return state.Normalize(), nil
-}
-
-func (s *server) saveISCSIRegistryState(ctx context.Context, state *iscsiRegistryState) error {
-	if state == nil {
-		return fmt.Errorf("iscsi registry state is nil")
-	}
-	state.Normalize()
-	if state.UpdatedAtUnix == 0 {
-		state.UpdatedAtUnix = time.Now().UTC().Unix()
-	}
-	raw, err := json.Marshal(state)
-	if err != nil {
-		return err
-	}
-	return s.kv.Set(ctx, s.iscsiRegistryKey(), raw)
-}
-
 func (s *server) GetISCSIRegistry(ctx context.Context, req *adminv1.GetISCSIRegistryRequest) (*adminv1.GetISCSIRegistryResponse, error) {
 	cluster, err := s.clusterRef(req.GetCluster())
 	if err != nil {
 		return nil, err
+	}
+	manifest, err := s.loadISCSIRegistrySummary(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "load iscsi registry summary: %v", err)
+	}
+	if req.GetSummaryOnly() {
+		return iscsiRegistrySummaryResponse(cluster, manifest), nil
 	}
 	state, err := s.loadISCSIRegistryState(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "load iscsi registry: %v", err)
 	}
 	control := state.controlState()
-	return &adminv1.GetISCSIRegistryResponse{
+	resp := &adminv1.GetISCSIRegistryResponse{
 		Cluster:               cluster,
 		RegistryRevision:      state.RegistryRevision,
 		ConfigGeneration:      state.ConfigGeneration,
@@ -216,7 +187,33 @@ func (s *server) GetISCSIRegistry(ctx context.Context, req *adminv1.GetISCSIRegi
 		Sessions:              iscsiSessionSummaries(control, "", "", false),
 		Failovers:             iscsiFailoverSummaries(control),
 		ObservabilityCounters: iscsiObservabilityCountersToProto(iscsi.BuildObservabilityCounters(control)),
-	}, nil
+	}
+	applyISCSIRegistryManifest(resp, manifest)
+	return resp, nil
+}
+
+func iscsiRegistrySummaryResponse(cluster *adminv1.ClusterRef, manifest iscsiRegistryManifest) *adminv1.GetISCSIRegistryResponse {
+	resp := &adminv1.GetISCSIRegistryResponse{
+		Cluster:               cluster,
+		RegistryRevision:      manifest.RegistryRevision,
+		ConfigGeneration:      manifest.ConfigGeneration,
+		ObservabilityCounters: iscsiObservabilityCountersToProto(manifest.ObservabilityCounters),
+	}
+	applyISCSIRegistryManifest(resp, manifest)
+	return resp
+}
+
+func applyISCSIRegistryManifest(resp *adminv1.GetISCSIRegistryResponse, manifest iscsiRegistryManifest) {
+	resp.ServingRegistryAuthority = iscsiServingRegistryAuthority
+	resp.StorageLayout = manifest.StorageLayout
+	resp.RegistryEmpty = manifest.empty()
+	resp.PortalCount = manifest.PortalCount
+	resp.TargetCount = manifest.TargetCount
+	resp.LunCount = manifest.LUNCount
+	resp.ExportCount = manifest.ExportCount
+	resp.InitiatorAclCount = manifest.InitiatorACLCount
+	resp.SessionCount = manifest.SessionCount
+	resp.FailoverCount = manifest.FailoverCount
 }
 
 func (s *server) ListISCSIPortals(ctx context.Context, req *adminv1.ListISCSIPortalsRequest) (*adminv1.ListISCSIPortalsResponse, error) {
@@ -349,6 +346,129 @@ func (s *server) GetISCSILUN(ctx context.Context, req *adminv1.GetISCSILUNReques
 		ConfigGeneration: state.ConfigGeneration,
 		Lun:              iscsiLUNToProto(lun),
 	}, nil
+}
+
+func (s *server) ListISCSIExports(ctx context.Context, req *adminv1.ListISCSIExportsRequest) (*adminv1.ListISCSIExportsResponse, error) {
+	cluster, err := s.clusterRef(req.GetCluster())
+	if err != nil {
+		return nil, err
+	}
+	pageSize := int(req.GetPageSize())
+	if pageSize <= 0 {
+		pageSize = iscsiRegistryDefaultPageSize
+	}
+	if pageSize > iscsiRegistryMaxPageSize {
+		return nil, status.Errorf(codes.InvalidArgument, "page_size %d exceeds maximum %d", pageSize, iscsiRegistryMaxPageSize)
+	}
+	records, next, manifest, err := s.listISCSIExportRegistryPage(ctx, pageSize, strings.TrimSpace(req.GetPageToken()), req.GetRegistryRevision())
+	if err != nil {
+		switch {
+		case errors.Is(err, errISCSIRegistryRevisionMismatch):
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		case errors.Is(err, errISCSIRegistryRevisionChanged):
+			return nil, status.Error(codes.Aborted, err.Error())
+		case errors.Is(err, errISCSIRegistryPageToken):
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		default:
+			return nil, status.Errorf(codes.Internal, "list iscsi exports: %v", err)
+		}
+	}
+	exports := make([]*adminv1.ISCSIExportSummary, 0, len(records))
+	for _, record := range records {
+		exports = append(exports, iscsiExportRegistryRecordToProto(record))
+	}
+	return &adminv1.ListISCSIExportsResponse{
+		Cluster: cluster, RegistryRevision: manifest.RegistryRevision,
+		ConfigGeneration: manifest.ConfigGeneration, Exports: exports, NextPageToken: next,
+		ServingRegistryAuthority: iscsiServingRegistryAuthority, StorageLayout: manifest.StorageLayout,
+	}, nil
+}
+
+func (s *server) GetISCSIExport(ctx context.Context, req *adminv1.GetISCSIExportRequest) (*adminv1.GetISCSIExportResponse, error) {
+	cluster, err := s.clusterRef(req.GetCluster())
+	if err != nil {
+		return nil, err
+	}
+	exportID := strings.TrimSpace(req.GetExportId())
+	if exportID == "" {
+		return nil, status.Error(codes.InvalidArgument, "export_id is required")
+	}
+	record, manifest, found, err := s.getISCSIExportRegistryRecord(ctx, exportID)
+	if err != nil {
+		if errors.Is(err, errISCSIRegistryRevisionChanged) {
+			return nil, status.Error(codes.Aborted, err.Error())
+		}
+		return nil, status.Errorf(codes.Internal, "get iscsi export: %v", err)
+	}
+	if !found {
+		return nil, status.Errorf(codes.NotFound, "iscsi export %q not found", exportID)
+	}
+	return &adminv1.GetISCSIExportResponse{
+		Cluster: cluster, RegistryRevision: manifest.RegistryRevision,
+		ConfigGeneration: manifest.ConfigGeneration, Export: iscsiExportRegistryRecordToProto(record),
+		ServingRegistryAuthority: iscsiServingRegistryAuthority, StorageLayout: manifest.StorageLayout,
+	}, nil
+}
+
+func (s *server) GetISCSIRegistryChanges(ctx context.Context, req *adminv1.GetISCSIRegistryChangesRequest) (*adminv1.GetISCSIRegistryChangesResponse, error) {
+	cluster, err := s.clusterRef(req.GetCluster())
+	if err != nil {
+		return nil, err
+	}
+	pageSize := int(req.GetPageSize())
+	if pageSize <= 0 {
+		pageSize = iscsiRegistryDefaultPageSize
+	}
+	if pageSize > iscsiRegistryMaxPageSize {
+		return nil, status.Errorf(codes.InvalidArgument, "page_size %d exceeds maximum %d", pageSize, iscsiRegistryMaxPageSize)
+	}
+	page, err := s.listISCSIRegistryChanges(ctx, req.GetAfterRevision(), pageSize, req.GetPageToken())
+	if err != nil {
+		switch {
+		case errors.Is(err, errISCSIRegistryRevisionMismatch):
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		case errors.Is(err, errISCSIRegistryRevisionChanged):
+			return nil, status.Error(codes.Aborted, err.Error())
+		case errors.Is(err, errISCSIRegistryPageToken):
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		default:
+			return nil, status.Errorf(codes.Internal, "get iscsi registry changes: %v", err)
+		}
+	}
+	changes := make([]*adminv1.ISCSIRegistryExportChange, 0, len(page.Changes))
+	for _, change := range page.Changes {
+		item := &adminv1.ISCSIRegistryExportChange{
+			RegistryRevision: change.RegistryRevision, ConfigGeneration: change.ConfigGeneration,
+			Operation: change.Operation, ExportId: change.ExportID,
+		}
+		if change.Export != nil {
+			item.Export = iscsiExportRegistryRecordToProto(*change.Export)
+		}
+		changes = append(changes, item)
+	}
+	return &adminv1.GetISCSIRegistryChangesResponse{
+		Cluster: cluster, FromRevision: page.FromRevision, ToRevision: page.ToRevision,
+		ConfigGeneration: page.Manifest.ConfigGeneration, Changes: changes,
+		NextPageToken: page.NextPageToken, CheckpointRevision: page.CheckpointRevision,
+		ResyncRequired: page.ResyncRequired, ResyncReason: page.ResyncReason,
+		ChangeFloorRevision:      page.Manifest.ChangeFloorRevision,
+		ServingRegistryAuthority: iscsiServingRegistryAuthority, StorageLayout: page.Manifest.StorageLayout,
+	}, nil
+}
+
+func iscsiExportRegistryRecordToProto(record iscsiExportRegistryRecord) *adminv1.ISCSIExportSummary {
+	return &adminv1.ISCSIExportSummary{
+		ExportId: record.ExportID, TargetIqn: record.TargetIQN, LunId: record.LUNID,
+		LunWwn: record.LUNWWN, VolumeId: record.VolumeID, ExportMode: record.ExportMode,
+		LogicalBlockSizeBytes: record.LogicalBlockSizeBytes, Enabled: record.Enabled,
+		PortalIds: append([]string(nil), record.PortalIDs...), ActiveIscsiGatewayId: record.ActiveISCSIGatewayID,
+		StandbyIscsiGatewayIds: append([]string(nil), record.StandbyISCSIGatewayIDs...),
+		ExportLeaseId:          record.ExportLeaseID, ExportEpoch: record.ExportEpoch,
+		FailoverState: record.FailoverState, WriterPolicy: record.WriterPolicy,
+		HaFailoverMode: record.HAFailoverMode, ReadWriteAllowed: record.ReadWriteAllowed,
+		LastWriteRejectionReason:   record.LastWriteRejectionReason,
+		LastRejectedIscsiGatewayId: record.LastRejectedISCSIGatewayID,
+	}
 }
 
 func (s *server) ListISCSIInitiatorACLs(ctx context.Context, req *adminv1.ListISCSIInitiatorACLsRequest) (*adminv1.ListISCSIInitiatorACLsResponse, error) {
@@ -555,7 +675,8 @@ func (s *server) PromoteISCSIFailover(ctx context.Context, req *adminv1.PromoteI
 	}
 	resourceKey := "failover/" + exportID
 	var runtime iscsi.FailoverRuntime
-	op, state, err := s.mutateISCSIRegistry(ctx, req.GetMeta(), req.GetIdempotencyKey(), req.GetExpectedRegistryRevision(), "iscsi.failover.promote", resourceKey, "", "iscsi failover gateway promoted", func(state *iscsiRegistryState) error {
+	volumeID := ""
+	op, state, err := s.mutateISCSIRegistryWithPrecommit(ctx, req.GetMeta(), req.GetIdempotencyKey(), req.GetExpectedRegistryRevision(), "iscsi.failover.promote", resourceKey, "", "iscsi failover gateway promoted", func(state *iscsiRegistryState) error {
 		if !iscsiRegistryExportExists(state, exportID) {
 			return status.Errorf(codes.NotFound, "iscsi export %q not found", exportID)
 		}
@@ -572,11 +693,28 @@ func (s *server) PromoteISCSIFailover(ctx context.Context, req *adminv1.PromoteI
 		if exportLeaseID := strings.TrimSpace(req.GetExportLeaseId()); exportLeaseID != "" {
 			runtime.ExportLeaseID = exportLeaseID
 		}
+		if runtime.ExportLeaseID == "" {
+			return status.Errorf(codes.FailedPrecondition, "iscsi export %q has no export lease", exportID)
+		}
+		volumeID = iscsiRegistryVolumeIDForExport(state, exportID)
+		if volumeID == "" {
+			return status.Errorf(codes.FailedPrecondition, "iscsi export %q has no volume mapping", exportID)
+		}
 		runtime.ExportEpoch = nextISCSIExportEpoch(runtime.ExportEpoch)
 		runtime.State = "active"
 		runtime.FailoverTrigger = firstNonEmptyISCSIString(strings.TrimSpace(req.GetTrigger()), "manual_promote")
 		runtime.FailoverCompleted = true
 		state.Failovers[exportID] = iscsi.NormalizeFailoverRuntime(runtime)
+		return nil
+	}, func(state *iscsiRegistryState) error {
+		fence := service.ISCSIWriterFence{
+			VolumeID: volumeID, ExportID: exportID, ExportLeaseID: runtime.ExportLeaseID,
+			ExportEpoch: runtime.ExportEpoch, ActiveGatewayID: runtime.ActiveISCSIGatewayID,
+			RegistryRevision: state.RegistryRevision,
+		}
+		if err := s.projectISCSIWriterFence(ctx, fence); err != nil {
+			return status.Errorf(codes.FailedPrecondition, "project receiver writer fence: %v", err)
+		}
 		return nil
 	})
 	if err != nil {
@@ -1302,6 +1440,10 @@ func (s *server) SetISCSIInitiatorAuth(ctx context.Context, req *adminv1.SetISCS
 }
 
 func (s *server) mutateISCSIRegistry(ctx context.Context, meta *adminv1.RequestMeta, idempotencyKey string, expectedRevision uint64, kind, resourceKey, volumeID, message string, mutate func(*iscsiRegistryState) error) (*adminv1.OperationHandle, *iscsiRegistryState, error) {
+	return s.mutateISCSIRegistryWithPrecommit(ctx, meta, idempotencyKey, expectedRevision, kind, resourceKey, volumeID, message, mutate, nil)
+}
+
+func (s *server) mutateISCSIRegistryWithPrecommit(ctx context.Context, meta *adminv1.RequestMeta, idempotencyKey string, expectedRevision uint64, kind, resourceKey, volumeID, message string, mutate func(*iscsiRegistryState) error, precommit func(*iscsiRegistryState) error) (*adminv1.OperationHandle, *iscsiRegistryState, error) {
 	actor := strings.TrimSpace(meta.GetActor())
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	kind = strings.TrimSpace(kind)
@@ -1314,6 +1456,9 @@ func (s *server) mutateISCSIRegistry(ctx context.Context, meta *adminv1.RequestM
 	}
 	if kind == "" || resourceKey == "" {
 		return nil, nil, status.Error(codes.Internal, "iscsi mutation kind and resource key are required")
+	}
+	if err := enforceDependencyISCSIRegistryMutation(kind); err != nil {
+		return nil, nil, err
 	}
 
 	s.iscsiMu.Lock()
@@ -1336,16 +1481,25 @@ func (s *server) mutateISCSIRegistry(ctx context.Context, meta *adminv1.RequestM
 	if expectedRevision != 0 && expectedRevision != state.RegistryRevision {
 		return nil, nil, status.Errorf(codes.FailedPrecondition, "registry revision %d does not match expected %d", state.RegistryRevision, expectedRevision)
 	}
-	if err := mutate(state); err != nil {
-		return nil, nil, err
-	}
-	op, err := s.createISCSIRegistryOperation(kind, volumeID)
+	before, err := cloneISCSIRegistryState(state)
 	if err != nil {
+		return nil, nil, status.Errorf(codes.Internal, "snapshot iscsi registry before mutation: %v", err)
+	}
+	if err := mutate(state); err != nil {
 		return nil, nil, err
 	}
 	state.RegistryRevision++
 	state.ConfigGeneration++
 	state.UpdatedAtUnix = time.Now().UTC().Unix()
+	if precommit != nil {
+		if err := precommit(state); err != nil {
+			return nil, nil, err
+		}
+	}
+	op, err := s.createISCSIRegistryOperation(kind, volumeID)
+	if err != nil {
+		return nil, nil, err
+	}
 	state.IdempotencyRecords[idempotencyKey] = iscsiRegistryIdempotency{
 		Kind:             kind,
 		ResourceKey:      resourceKey,
@@ -1354,10 +1508,19 @@ func (s *server) mutateISCSIRegistry(ctx context.Context, meta *adminv1.RequestM
 		ConfigGeneration: state.ConfigGeneration,
 		Message:          message,
 	}
-	if err := s.saveISCSIRegistryState(ctx, state); err != nil {
+	if err := s.saveISCSIRegistryStateDelta(ctx, before, state); err != nil {
 		return nil, nil, status.Errorf(codes.Internal, "save iscsi registry: %v", err)
 	}
 	return acceptedOperation(op, message), state, nil
+}
+
+func iscsiRegistryVolumeIDForExport(state *iscsiRegistryState, exportID string) string {
+	for _, lun := range state.LUNs {
+		if strings.TrimSpace(lun.ExportID) == strings.TrimSpace(exportID) {
+			return strings.TrimSpace(lun.VolumeID)
+		}
+	}
+	return ""
 }
 
 func (s *server) createISCSIRegistryOperation(kind, volumeID string) (*adminv1.OperationStatus, error) {

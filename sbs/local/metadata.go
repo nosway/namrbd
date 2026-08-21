@@ -451,8 +451,26 @@ func (r *metadataRepository) getJSON(key string, out any) error {
 	return json.Unmarshal(raw, out)
 }
 
+func (r *metadataRepository) getISCSIWriterFence(_ context.Context, volumeID string) (service.ISCSIWriterFence, bool, error) {
+	var fence service.ISCSIWriterFence
+	if err := r.getJSON(iscsiWriterFenceKey(volumeID), &fence); err != nil {
+		if errors.Is(err, pebble.ErrNotFound) {
+			return service.ISCSIWriterFence{}, false, nil
+		}
+		return service.ISCSIWriterFence{}, false, err
+	}
+	return fence, true, nil
+}
+
+func (r *metadataRepository) putISCSIWriterFence(_ context.Context, fence service.ISCSIWriterFence) error {
+	return r.putJSON(iscsiWriterFenceKey(fence.VolumeID), fence, pebble.Sync)
+}
+
 func specKey(volumeID string) string  { return fmt.Sprintf("volumes/%s/spec", volumeID) }
 func stateKey(volumeID string) string { return fmt.Sprintf("volumes/%s/state", volumeID) }
+func iscsiWriterFenceKey(volumeID string) string {
+	return fmt.Sprintf("volumes/%s/iscsi-writer-fence", volumeID)
+}
 func extentPagesPrefix(volumeID string) string {
 	return fmt.Sprintf("volumes/%s/extents/pages/", volumeID)
 }

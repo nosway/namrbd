@@ -267,7 +267,7 @@ namrbd-iscsi-gateway \
   --backend=sbs \
   --portal <gateway_ip>:3260 \
   --serve \
-  --sbs-endpoint <sbs_volume_service_host>:9460 \
+  --sbs-endpoint <sbs_volume_service_host>:9444 \
   --volume-id 00000065 \
   --export-id iscsi-00000065 \
   --target-iqn iqn.2026-06.io.namrbd:iscsi.00000065 \
@@ -417,7 +417,7 @@ sbsctl cluster status --output json
 sbsctl volume status --volume-id <volume_id> --output json
 ```
 
-게이트웨이는 기정의된 `--sbs-admin-endpoint`를 통해서만 `sbs-service`에 접근해야 합니다. 게이트웨이가 raw SBS TiKV 메타 플래그를 직접 제어하는 비정형 경로는 역사적 개발 환경 전용이며, 상용 런타임에서 권장되지 않습니다.
+게이트웨이는 기정의된 `--sbs-service-endpoint`를 통해서만 `sbs-service`에 접근해야 합니다. 게이트웨이가 raw SBS TiKV 메타 플래그를 직접 제어하는 비정형 경로는 역사적 개발 환경 전용이며, 상용 런타임에서 권장되지 않습니다.
 
 ### 10.4 Kubernetes
 

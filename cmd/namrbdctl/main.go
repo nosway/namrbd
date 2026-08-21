@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math/bits"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -23,19 +24,29 @@ import (
 	"github.com/nosway/namrbd/control/netlinktlv"
 	"github.com/nosway/namrbd/gateway/metadata"
 	"github.com/nosway/namrbd/gateway/service"
+	"github.com/nosway/namrbd/internal/cliux"
 	namrbdversion "github.com/nosway/namrbd/version"
 	"github.com/nosway/namrbd/volumeid"
 )
 
 func main() {
+	os.Args, globalJSONOutput = normalizeRootArgs(os.Args)
 	if len(os.Args) >= 2 && (os.Args[1] == "--version" || os.Args[1] == "version") {
-		fmt.Println(namrbdversion.BuildSummary())
+		writeCommandResult(map[string]any{"version": namrbdversion.BuildSummary()}, namrbdversion.BuildSummary())
 		return
 	}
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
 	}
+	if os.Args[1] == "--help" || os.Args[1] == "-h" || os.Args[1] == "help" && len(os.Args) == 2 {
+		usage()
+		return
+	}
+	if os.Args[1] == "help" {
+		os.Args = append(append([]string{os.Args[0]}, os.Args[2:]...), "--help")
+	}
+	commandHelpRequested = len(os.Args) > 2 && os.Args[len(os.Args)-1] == "--help"
 
 	switch os.Args[1] {
 	case "create-device":
@@ -124,7 +135,43 @@ func main() {
 	}
 }
 
+var (
+	globalJSONOutput     bool
+	commandHelpRequested bool
+)
+
+func normalizeRootArgs(args []string) ([]string, bool) {
+	if len(args) == 0 {
+		return nil, false
+	}
+	out := []string{args[0]}
+	jsonOutput := false
+	for _, arg := range args[1:] {
+		if arg == "--json" || arg == "-json" {
+			jsonOutput = true
+			continue
+		}
+		out = append(out, arg)
+	}
+	if len(out) > 2 && out[len(out)-1] == "help" {
+		out[len(out)-1] = "--help"
+	}
+	return out, jsonOutput
+}
+
+func writeCommandResult(v any, textOutput string) {
+	if globalJSONOutput {
+		_ = json.NewEncoder(os.Stdout).Encode(v)
+		return
+	}
+	fmt.Println(textOutput)
+}
+
 func withNetlinkClient(run func(netlinkclient.Client)) {
+	if commandHelpRequested {
+		run(nil)
+		return
+	}
 	client, err := netlinkclient.Dial()
 	if err != nil {
 		fatalf("dial netlink: %v", err)
@@ -133,8 +180,14 @@ func withNetlinkClient(run func(netlinkclient.Client)) {
 	run(client)
 }
 
+func newCommandFlagSet(name string, errorHandling flag.ErrorHandling) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, errorHandling)
+	cliux.InstallStructuredUsage(fs, "namrbdctl "+name, nil)
+	return fs
+}
+
 func runCreateDevice(client netlinkclient.Client, args []string) {
-	fs := flag.NewFlagSet("create-device", flag.ExitOnError)
+	fs := newCommandFlagSet("create-device", flag.ExitOnError)
 	fs.Parse(args)
 	resp, err := client.CreateDevice()
 	if err != nil {
@@ -148,17 +201,17 @@ func runCreateDevice(client netlinkclient.Client, args []string) {
 }
 
 func runDestroyDevice(client netlinkclient.Client, args []string) {
-	fs := flag.NewFlagSet("destroy-device", flag.ExitOnError)
+	fs := newCommandFlagSet("destroy-device", flag.ExitOnError)
 	deviceID := fs.Uint("device", 0, "device id")
 	fs.Parse(args)
 	if err := client.DestroyDevice(uint32(*deviceID)); err != nil {
 		fatalf("destroy-device failed: %v", err)
 	}
-	fmt.Println("ok")
+	writeCommandResult(map[string]any{"result": "ok", "device_id": *deviceID}, "ok")
 }
 
 func runConfigREST(client netlinkclient.Client, args []string) {
-	fs := flag.NewFlagSet("config-rest", flag.ExitOnError)
+	fs := newCommandFlagSet("config-rest", flag.ExitOnError)
 	deviceID := fs.Uint("device", 0, "device id")
 	var serverSpecs multiString
 	fs.Var(&serverSpecs, "server", "server spec: id,address,port,tls,api_prefix[,bearer_token]")
@@ -185,12 +238,12 @@ func runConfigREST(client netlinkclient.Client, args []string) {
 	}); err != nil {
 		fatalf("config-rest failed: %v", err)
 	}
-	fmt.Println("ok")
+	writeCommandResult(map[string]any{"result": "ok", "device_id": *deviceID, "server_count": len(servers)}, "ok")
 }
 
 func runAttach(client netlinkclient.Client, args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("attach", flag.ExitOnError)
+	fs := newCommandFlagSet("attach", flag.ExitOnError)
 	deviceID := fs.Uint("device", 0, "device id")
 	registerContextFlags(fs, defaults)
 	hostID := fs.String("host", defaults.hostID(), "host id")
@@ -277,12 +330,12 @@ func runAttach(client netlinkclient.Client, args []string) {
 	}); err != nil {
 		fatalf("attach failed: %v", err)
 	}
-	fmt.Println("ok")
+	writeCommandResult(map[string]any{"result": "ok", "device_id": *deviceID, "volume_id": service.CanonicalVolumeID(volumeID)}, "ok")
 }
 
 func runReconfigureDataPaths(client netlinkclient.Client, args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("reconfigure-data-paths", flag.ExitOnError)
+	fs := newCommandFlagSet("reconfigure-data-paths", flag.ExitOnError)
 	deviceID := fs.Uint("device", 0, "device id")
 	registerContextFlags(fs, defaults)
 	hostID := fs.String("host", defaults.hostID(), "host id")
@@ -366,7 +419,7 @@ func runReconfigureDataPaths(client netlinkclient.Client, args []string) {
 
 func runVolumeReloadSize(client netlinkclient.Client, args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("volume-reload-size", flag.ExitOnError)
+	fs := newCommandFlagSet("volume-reload-size", flag.ExitOnError)
 	deviceID := fs.Uint("device", 0, "device id")
 	registerContextFlags(fs, defaults)
 	hostID := fs.String("host", defaults.hostID(), "host id")
@@ -460,7 +513,7 @@ func runVolumeReloadSize(client netlinkclient.Client, args []string) {
 
 func runDetach(client netlinkclient.Client, args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("detach", flag.ExitOnError)
+	fs := newCommandFlagSet("detach", flag.ExitOnError)
 	deviceID := fs.Uint("device", 0, "device id")
 	registerContextFlags(fs, defaults)
 	hostID := fs.String("host", defaults.hostID(), "host id")
@@ -485,7 +538,7 @@ func runDetach(client netlinkclient.Client, args []string) {
 		}); err != nil {
 			fatalf("detach-local failed: %v", err)
 		}
-		fmt.Println("ok")
+		writeCommandResult(map[string]any{"result": "ok", "device_id": *deviceID, "volume_id": service.CanonicalVolumeID(volumeID), "local_only": true}, "ok")
 		return
 	}
 	if *gateway != "" {
@@ -507,7 +560,7 @@ func runDetach(client netlinkclient.Client, args []string) {
 		}); err != nil {
 			fatalf("detach-local failed: %v", err)
 		}
-		fmt.Println("ok")
+		writeCommandResult(map[string]any{"result": "ok", "device_id": *deviceID, "volume_id": service.CanonicalVolumeID(volumeID)}, "ok")
 		return
 	}
 
@@ -518,12 +571,12 @@ func runDetach(client netlinkclient.Client, args []string) {
 	}); err != nil {
 		fatalf("detach failed: %v", err)
 	}
-	fmt.Println("ok")
+	writeCommandResult(map[string]any{"result": "ok", "device_id": *deviceID, "volume_id": service.CanonicalVolumeID(volumeID)}, "ok")
 }
 
 func runStatus(client netlinkclient.Client, args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("status", flag.ExitOnError)
+	fs := newCommandFlagSet("status", flag.ExitOnError)
 	deviceID := fs.Uint("device", 0, "device id")
 	registerContextFlags(fs, defaults)
 	gateway := fs.String("gateway", defaults.gatewayEndpoint(), "gateway base URL")
@@ -635,7 +688,7 @@ func runStatus(client netlinkclient.Client, args []string) {
 }
 
 func runListDevices(client netlinkclient.Client, args []string) {
-	fs := flag.NewFlagSet("list-devices", flag.ExitOnError)
+	fs := newCommandFlagSet("list-devices", flag.ExitOnError)
 	fs.Parse(args)
 	devices, err := client.ListDevices()
 	if err != nil {
@@ -768,10 +821,11 @@ func (m *multiString) Set(v string) error {
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "usage:\n")
+	fmt.Fprintf(os.Stderr, "  namrbdctl [--json] help COMMAND\n")
 	fmt.Fprintf(os.Stderr, "  namrbdctl create-device\n")
 	fmt.Fprintf(os.Stderr, "  namrbdctl destroy-device --device DEVICE_ID\n")
 	fmt.Fprintf(os.Stderr, "  namrbdctl config-rest --device DEVICE_ID --server id,address,port,tls,api_prefix[,token]\n")
-	fmt.Fprintf(os.Stderr, "  namrbdctl attach --device DEVICE_ID --host HOST --volume VOLUME_ID [--gateway https://HOST:PORT --gateway-ca-file CA.pem --discovery-max-paths N --discovery-prefer-gateway GW]\n")
+	fmt.Fprintf(os.Stderr, "  namrbdctl attach --device DEVICE_ID --host HOST --volume VOLUME_ID [--gateway URL | --etcd-endpoints HOST:PORT[,HOST:PORT...]] [--discovery-max-paths N --discovery-prefer-gateway GW]\n")
 	fmt.Fprintf(os.Stderr, "  namrbdctl reconfigure-data-paths --device DEVICE_ID --host HOST --volume VOLUME_ID [--gateway https://HOST:PORT --gateway-ca-file CA.pem --discovery-max-paths N --discovery-prefer-gateway GW]\n")
 	fmt.Fprintf(os.Stderr, "  namrbdctl volume-reload-size --device DEVICE_ID --host HOST --volume VOLUME_ID --gateway https://HOST:PORT [--gateway-ca-file CA.pem]\n")
 	fmt.Fprintf(os.Stderr, "  namrbdctl detach --device DEVICE_ID --host HOST --volume VOLUME_ID [--gateway https://HOST:PORT --gateway-ca-file CA.pem]\n")
@@ -815,7 +869,12 @@ func hasUintFlag(args []string, name string) bool {
 }
 
 func fatalf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	message := fmt.Sprintf(format, args...)
+	if globalJSONOutput {
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"result": "error", "error": message})
+	} else {
+		fmt.Fprintln(os.Stderr, message)
+	}
 	os.Exit(1)
 }
 
@@ -1056,6 +1115,92 @@ type gatewayClientOptions struct {
 
 var newGatewayClientFunc = newGatewayClient
 var openEtcdMetadataRepositoryFunc = openEtcdMetadataRepository
+var discoverGatewayControlEndpointFunc = discoverGatewayControlEndpoint
+
+type gatewayFleetPageLister interface {
+	ListGatewayFleetPage(context.Context, metadata.GatewayFleetListOptions) (metadata.GatewayFleetPage, error)
+}
+
+func resolveDefaultGatewayFlag(fs *flag.FlagSet, settings []resolvedSetting) {
+	gatewayFlag := fs.Lookup("gateway")
+	if gatewayFlag == nil {
+		return
+	}
+	for _, setting := range settings {
+		if setting.Key != "gateway" || sourceForFlag(fs, setting, "gateway").Source != "default" {
+			continue
+		}
+		endpointsFlag := fs.Lookup("etcd-endpoints")
+		rootFlag := fs.Lookup("etcd-root")
+		limitFlag := fs.Lookup("gateway-discovery-limit")
+		if endpointsFlag == nil || rootFlag == nil || limitFlag == nil {
+			return
+		}
+		limit, err := strconv.ParseInt(limitFlag.Value.String(), 10, 64)
+		if err != nil || limit < 1 || limit > metadata.MaxGatewayFleetPageSize {
+			fatalf("--gateway-discovery-limit must be between 1 and %d", metadata.MaxGatewayFleetPageSize)
+		}
+		timeout := 10 * time.Second
+		if timeoutFlag := fs.Lookup("timeout"); timeoutFlag != nil {
+			if parsed, err := time.ParseDuration(timeoutFlag.Value.String()); err == nil && parsed > 0 {
+				timeout = parsed
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		endpoint, err := discoverGatewayControlEndpointFunc(ctx, &etcdMetadataCLIConfig{
+			etcdEndpoints: endpointsFlag.Value.String(),
+			etcdRoot:      rootFlag.Value.String(),
+		}, limit)
+		cancel()
+		if err != nil {
+			fatalf("discover gateway control endpoint from etcd: %v", err)
+		}
+		if err := gatewayFlag.Value.Set(endpoint); err != nil {
+			fatalf("apply discovered gateway endpoint: %v", err)
+		}
+		fmt.Fprintf(os.Stderr, "gateway=%s (source=etcd-fleet)\n", endpoint)
+		return
+	}
+}
+
+func discoverGatewayControlEndpoint(ctx context.Context, cfg *etcdMetadataCLIConfig, limit int64) (string, error) {
+	repo, closeFn, err := openEtcdMetadataRepositoryFunc(cfg)
+	if err != nil {
+		return "", err
+	}
+	defer closeFn()
+	lister, ok := repo.(gatewayFleetPageLister)
+	if !ok {
+		return "", fmt.Errorf("metadata repository does not support bounded gateway fleet pages")
+	}
+	page, err := lister.ListGatewayFleetPage(ctx, metadata.GatewayFleetListOptions{Limit: limit})
+	if err != nil {
+		return "", err
+	}
+	records := append([]service.GatewayRecord(nil), page.Records...)
+	sort.Slice(records, func(i, j int) bool { return records[i].GatewayID < records[j].GatewayID })
+	now := time.Now().Unix()
+	for _, rec := range records {
+		rec = service.NormalizeGatewayFleetRecord(rec)
+		if rec.Product != service.GatewayProductNAMRBD || rec.Role != service.GatewayRoleBlock ||
+			rec.ConnectionState != service.GatewayStateUp || rec.Readiness != service.GatewayReadinessReady ||
+			rec.DrainState != service.GatewayDrainActive || (rec.LeaseExpiresAtUnix > 0 && rec.LeaseExpiresAtUnix <= now) {
+			continue
+		}
+		for _, endpoint := range rec.ControlEndpoints {
+			address := strings.TrimSpace(endpoint.Address)
+			if address == "" || endpoint.Port == 0 {
+				continue
+			}
+			scheme := "http"
+			if endpoint.UseTLS {
+				scheme = "https"
+			}
+			return scheme + "://" + net.JoinHostPort(address, strconv.Itoa(int(endpoint.Port))), nil
+		}
+	}
+	return "", fmt.Errorf("no ready active NAMRBD gateway with a control endpoint in the first %d fleet records", limit)
+}
 
 func newGatewayClient(baseURL string, opts ...gatewayClientOptions) *gatewayClient {
 	httpClient := &http.Client{}
@@ -1089,7 +1234,7 @@ func newGatewayClient(baseURL string, opts ...gatewayClientOptions) *gatewayClie
 
 func runInfo(args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("info", flag.ExitOnError)
+	fs := newCommandFlagSet("info", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
 	gateway := fs.String("gateway", defaults.gatewayEndpoint(), "gateway base URL")
 	gatewayCAFile := fs.String("gateway-ca-file", defaults.gatewayCAFile(), "PEM CA bundle for gateway TLS")
@@ -1113,7 +1258,7 @@ func runInfo(args []string) {
 
 func runDiscoverGateways(args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("discover-gateways", flag.ExitOnError)
+	fs := newCommandFlagSet("discover-gateways", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
 	gateway := fs.String("gateway", defaults.gatewayEndpoint(), "gateway base URL")
 	gatewayCAFile := fs.String("gateway-ca-file", defaults.gatewayCAFile(), "PEM CA bundle for gateway TLS")
@@ -1133,7 +1278,7 @@ func runDiscoverGateways(args []string) {
 
 func runDiscoverVolume(args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("discover-volume", flag.ExitOnError)
+	fs := newCommandFlagSet("discover-volume", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
 	gateway := fs.String("gateway", defaults.gatewayEndpoint(), "gateway base URL")
 	gatewayCAFile := fs.String("gateway-ca-file", defaults.gatewayCAFile(), "PEM CA bundle for gateway TLS")
@@ -1164,7 +1309,7 @@ func runDiscoverVolume(args []string) {
 
 func runPlanVolumePaths(args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("plan-volume-paths", flag.ExitOnError)
+	fs := newCommandFlagSet("plan-volume-paths", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
 	gateway := fs.String("gateway", defaults.gatewayEndpoint(), "gateway base URL")
 	gatewayCAFile := fs.String("gateway-ca-file", defaults.gatewayCAFile(), "PEM CA bundle for gateway TLS")
@@ -1201,7 +1346,7 @@ func runPlanVolumePaths(args []string) {
 
 func runClusterMetrics(args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("cluster-metrics", flag.ExitOnError)
+	fs := newCommandFlagSet("cluster-metrics", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
 	gateway := fs.String("gateway", defaults.gatewayEndpoint(), "gateway base URL")
 	gatewayCAFile := fs.String("gateway-ca-file", defaults.gatewayCAFile(), "PEM CA bundle for gateway TLS")
@@ -1250,11 +1395,11 @@ type namrbdctlDirectEtcdMetadataRepository interface {
 }
 
 func newEtcdMetadataFlagSet(name string) (*flag.FlagSet, *etcdMetadataCLIConfig) {
-	fs := flag.NewFlagSet(name, flag.ExitOnError)
+	fs := newCommandFlagSet(name, flag.ExitOnError)
 	cfg := &etcdMetadataCLIConfig{}
 	fs.StringVar(&cfg.etcdEndpoints, "etcd-endpoints", "127.0.0.1:2379", "comma-separated etcd endpoints")
 	fs.StringVar(&cfg.etcdRoot, "etcd-root", "/namrbd", "etcd metadata root prefix")
-	fs.BoolVar(&cfg.jsonOutput, "json", false, "emit JSON output")
+	fs.BoolVar(&cfg.jsonOutput, "json", globalJSONOutput, "emit JSON output")
 	return fs, cfg
 }
 
@@ -1659,7 +1804,7 @@ func runValidateAll(args []string) {
 
 func runApplyVolumePathPlan(client netlinkclient.Client, args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("apply-volume-path-plan", flag.ExitOnError)
+	fs := newCommandFlagSet("apply-volume-path-plan", flag.ExitOnError)
 	deviceID := fs.Uint("device", 0, "device id")
 	registerContextFlags(fs, defaults)
 	gateway := fs.String("gateway", defaults.gatewayEndpoint(), "gateway base URL")
@@ -1747,7 +1892,7 @@ func openEtcdMetadataRepository(cfg *etcdMetadataCLIConfig) (namrbdctlDirectEtcd
 
 func runRead(args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("read", flag.ExitOnError)
+	fs := newCommandFlagSet("read", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
 	gateway := fs.String("gateway", defaults.gatewayEndpoint(), "gateway base URL")
 	gatewayCAFile := fs.String("gateway-ca-file", defaults.gatewayCAFile(), "PEM CA bundle for gateway TLS")
@@ -1772,7 +1917,11 @@ func runRead(args []string) {
 		if err := os.WriteFile(*outPath, data, 0o644); err != nil {
 			fatalf("write output file: %v", err)
 		}
-		fmt.Printf("ok (%d bytes written to %s)\n", len(data), *outPath)
+		writeCommandResult(map[string]any{"result": "ok", "bytes": len(data), "output_file": *outPath}, fmt.Sprintf("ok (%d bytes written to %s)", len(data), *outPath))
+		return
+	}
+	if globalJSONOutput {
+		writeCommandResult(map[string]any{"result": "ok", "bytes": len(data), "data_base64": base64.StdEncoding.EncodeToString(data)}, "")
 		return
 	}
 	fmt.Println(base64.StdEncoding.EncodeToString(data))
@@ -1780,7 +1929,7 @@ func runRead(args []string) {
 
 func runWrite(args []string) {
 	defaults := mustResolveCLIDefaults(args)
-	fs := flag.NewFlagSet("write", flag.ExitOnError)
+	fs := newCommandFlagSet("write", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
 	gateway := fs.String("gateway", defaults.gatewayEndpoint(), "gateway base URL")
 	gatewayCAFile := fs.String("gateway-ca-file", defaults.gatewayCAFile(), "PEM CA bundle for gateway TLS")
@@ -1802,7 +1951,7 @@ func runWrite(args []string) {
 	if err := cli.write(volumeID, *offset, data); err != nil {
 		fatalf("write failed: %v", err)
 	}
-	fmt.Printf("ok (%d bytes)\n", len(data))
+	writeCommandResult(map[string]any{"result": "ok", "bytes": len(data)}, fmt.Sprintf("ok (%d bytes)", len(data)))
 }
 
 func parseVolumeID(raw string) (uint64, error) {

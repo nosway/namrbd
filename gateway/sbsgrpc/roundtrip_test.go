@@ -106,6 +106,45 @@ func TestGRPCRoundTripWithInMemorySBSClient(t *testing.T) {
 	}
 }
 
+func TestISCSIWriterFenceGRPCRoundTrip(t *testing.T) {
+	impl := &recordingFenceSBSClient{SBSClient: service.NewInMemorySBSClient(nil)}
+	lis := bufconn.Listen(1024 * 1024)
+	grpcServer := grpc.NewServer()
+	sbsv1.RegisterVolumeServiceServer(grpcServer, NewServer(impl))
+	go func() { _ = grpcServer.Serve(lis) }()
+	defer grpcServer.Stop()
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	defer conn.Close()
+	fence := service.ISCSIWriterFence{
+		VolumeID: "00000065", ExportID: "export-a", ExportLeaseID: "lease-b",
+		ExportEpoch: 8, ActiveGatewayID: "gw-b", RegistryRevision: 42,
+	}
+	resp, err := NewClient(sbsv1.NewVolumeServiceClient(conn)).ApplyISCSIWriterFence(context.Background(), &service.ApplyISCSIWriterFenceRequest{Fence: fence})
+	if err != nil {
+		t.Fatalf("ApplyISCSIWriterFence: %v", err)
+	}
+	if impl.fence != fence || resp.Fence != fence || !resp.Applied || resp.StaleWriterRejectedCount != 3 {
+		t.Fatalf("fence roundtrip impl=%+v resp=%+v", impl.fence, resp)
+	}
+}
+
+type recordingFenceSBSClient struct {
+	service.SBSClient
+	fence service.ISCSIWriterFence
+}
+
+func (c *recordingFenceSBSClient) ApplyISCSIWriterFence(_ context.Context, req *service.ApplyISCSIWriterFenceRequest) (*service.ApplyISCSIWriterFenceResponse, error) {
+	c.fence = req.Fence
+	return &service.ApplyISCSIWriterFenceResponse{
+		Status: "ok", Applied: true, Fence: req.Fence, StaleWriterRejectedCount: 3,
+	}, nil
+}
+
 func TestFromGRPCErrorPreservesStatusWithoutDetail(t *testing.T) {
 	tests := []struct {
 		name          string

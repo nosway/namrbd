@@ -152,6 +152,21 @@ func (s *Server) Zero(ctx context.Context, req *sbsv1.ZeroRequest) (*sbsv1.ZeroR
 	return toProtoZeroResponse(resp), nil
 }
 
+func (s *Server) ApplyISCSIWriterFence(ctx context.Context, req *sbsv1.ApplyISCSIWriterFenceRequest) (*sbsv1.ApplyISCSIWriterFenceResponse, error) {
+	next, ok := s.next.(service.ISCSIWriterFenceClient)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, service.ErrNotSupported.Error())
+	}
+	resp, err := next.ApplyISCSIWriterFence(ctx, &service.ApplyISCSIWriterFenceRequest{Fence: fromProtoISCSIWriterFence(req.GetFence())})
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+	return &sbsv1.ApplyISCSIWriterFenceResponse{
+		Status: resp.Status, Applied: resp.Applied, Fence: toProtoISCSIWriterFence(resp.Fence),
+		StaleWriterRejectedCount: resp.StaleWriterRejectedCount,
+	}, nil
+}
+
 func toGRPCError(err error) error {
 	var sbsErr *service.SBSError
 	if !asSBSError(err, &sbsErr) {
@@ -188,8 +203,10 @@ func toGRPCCode(code service.SBSErrorCode) codes.Code {
 		return codes.NotFound
 	case service.SBSErrorCodeBadRequest:
 		return codes.InvalidArgument
-	case service.SBSErrorCodeStaleGeneration, service.SBSErrorCodeAttachmentMismatch, service.SBSErrorCodeIdempotencyConflict:
+	case service.SBSErrorCodeStaleGeneration, service.SBSErrorCodeAttachmentMismatch, service.SBSErrorCodeIdempotencyConflict, service.SBSErrorCodeFenced:
 		return codes.FailedPrecondition
+	case service.SBSErrorCodeSecurityRejected:
+		return codes.PermissionDenied
 	case service.SBSErrorCodeUnavailable:
 		return codes.Unavailable
 	case service.SBSErrorCodeTimeout:

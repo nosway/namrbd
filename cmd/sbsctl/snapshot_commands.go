@@ -32,19 +32,19 @@ func runSnapshotCreate(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("snapshot create", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	sourceVolumeID := fs.String("source-volume-id", "", "source volume id")
 	idempotencyKey := fs.String("idempotency-key", "", "idempotency key; empty lets the service derive one when implemented")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "create-snapshot", "reason")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *sourceVolumeID == "" {
@@ -70,16 +70,16 @@ func runSnapshotGet(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("snapshot get", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	snapshotID := fs.String("snapshot-id", "", "snapshot id")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if *snapshotID == "" {
@@ -103,17 +103,17 @@ func runSnapshotList(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("snapshot list", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	sourceVolumeID := fs.String("source-volume-id", "", "source volume id filter")
 	includeDeleted := fs.Bool("include-deleted", false, "include deleted snapshots")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 
@@ -135,19 +135,19 @@ func runSnapshotDelete(args []string) {
 	defaults := mustResolveCLIDefaults(args)
 	fs := flag.NewFlagSet("snapshot delete", flag.ExitOnError)
 	registerContextFlags(fs, defaults)
-	adminEndpoint := fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
-	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	snapshotID := fs.String("snapshot-id", "", "snapshot id")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "delete-snapshot", "reason")
 	yes := fs.Bool("yes", false, "confirm snapshot delete")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
 		defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
+		defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
 		defaults.timeoutSetting(10*time.Second),
 	)
 	if !*yes {

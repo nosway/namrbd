@@ -1070,13 +1070,16 @@ func (a *SBSBackendAdapter) contextFor(op string, offset, length uint64, idempot
 	seq := a.seq
 	a.mu.Unlock()
 	ctx := service.SBSRequestContext{
-		RequestID:    fmt.Sprintf("iscsi-%s-%06d", op, seq),
-		GatewayID:    a.cfg.ISCSIGatewayID,
-		HostID:       a.cfg.SBSHostID,
-		SessionID:    a.cfg.SessionID,
-		AttachmentID: a.cfg.AttachmentID,
-		Generation:   a.cfg.Generation,
-		TraceID:      fmt.Sprintf("trace-iscsi-%s-%06d", op, seq),
+		RequestID:          fmt.Sprintf("iscsi-%s-%06d", op, seq),
+		GatewayID:          a.cfg.ISCSIGatewayID,
+		HostID:             a.cfg.SBSHostID,
+		SessionID:          a.cfg.SessionID,
+		AttachmentID:       a.cfg.AttachmentID,
+		Generation:         a.cfg.Generation,
+		TraceID:            fmt.Sprintf("trace-iscsi-%s-%06d", op, seq),
+		ISCSIExportID:      a.cfg.ExportID,
+		ISCSIExportLeaseID: a.cfg.ExportLeaseID,
+		ISCSIExportEpoch:   a.cfg.ExportEpoch,
 	}
 	if idempotent {
 		ctx.IdempotencyKey = fmt.Sprintf("iscsi:%s:%s:%s:%d:%d:%d", a.cfg.ExportID, a.cfg.SessionID, op, offset, length, seq)
@@ -1309,6 +1312,12 @@ func normalizeSBSAdapterConfig(cfg SBSAdapterConfig) SBSAdapterConfig {
 	}
 	if cfg.ISCSIGatewayID == "" {
 		cfg.ISCSIGatewayID = cfg.ActiveISCSIGatewayID
+	}
+	if cfg.AttachmentID == "" && cfg.ExportLeaseID != "" {
+		cfg.AttachmentID = cfg.ExportLeaseID
+	}
+	if cfg.Generation == 0 && cfg.ExportEpoch != 0 {
+		cfg.Generation = cfg.ExportEpoch
 	}
 	if cfg.SBSHostID == "" {
 		cfg.SBSHostID = "iscsi-export:" + cfg.ExportID

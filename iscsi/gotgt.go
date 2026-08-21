@@ -255,61 +255,165 @@ type gotgtRemoteTargetOptions struct {
 }
 
 func serveGotgtRemoteTarget(ctx context.Context, opts gotgtRemoteTargetOptions) error {
-	port, err := validateGotgtRemoteTargetConfig(opts)
-	if err != nil {
-		return err
+	return serveGotgtRemoteTargets(ctx, []gotgtRemoteTargetOptions{opts})
+}
+
+// MultiExportServeOptions starts every installed export on one gotgt listener.
+// Runtime replacement is deliberately left to the atomic apply layer in
+// AA-IMPL-011B; this function owns one immutable serving generation.
+type MultiExportServeOptions struct {
+	Portal                   string
+	Supervisor               *MultiExportSupervisor
+	AllowGotgtWildcardListen bool
+	RunFor                   time.Duration
+}
+
+func ServeGotgtMultiExport(ctx context.Context, opts MultiExportServeOptions) error {
+	if opts.Supervisor == nil {
+		return fmt.Errorf("multi-export supervisor is required")
 	}
-	if opts.BackingStore == nil {
-		return fmt.Errorf("remote backing store is required")
+	specs := opts.Supervisor.Specs()
+	if len(specs) == 0 {
+		return fmt.Errorf("multi-export supervisor has no installed exports")
 	}
-	tpgt := opts.ALUATargetPortGroupID
-	if tpgt == 0 {
-		tpgt = 1
+	targets := make([]gotgtRemoteTargetOptions, 0, len(specs))
+	for _, spec := range specs {
+		runtime, ok := opts.Supervisor.Runtime(spec.ExportID)
+		if !ok {
+			return fmt.Errorf("installed export %q has no runtime", spec.ExportID)
+		}
+		accessState := ALUAAccessStateStandby
+		preferred := false
+		if spec.WriteAdmissionState == "read_write" || spec.WriteAdmissionState == "active" {
+			accessState = ALUAAccessStateActiveOptimized
+			preferred = true
+		}
+		targets = append(targets, gotgtRemoteTargetOptions{
+			Portal:                   opts.Portal,
+			TargetIQN:                spec.TargetIQN,
+			LUNID:                    spec.LUNID,
+			DeviceID:                 spec.DeviceID,
+			SCSIIdentity:             SCSIIdentityForLUN(LUN{LUNID: spec.LUNID, ExportID: spec.ExportID, LUNWWN: spec.LUNWWN}),
+			ALUAAccessState:          accessState,
+			ALUAPreferred:            preferred,
+			ALUAImplicitSupported:    true,
+			SizeBytes:                spec.SizeBytes,
+			BackingStore:             runtime.BackingStore(),
+			AllowGotgtWildcardListen: opts.AllowGotgtWildcardListen,
+			RunFor:                   opts.RunFor,
+		})
 	}
-	tpgtText := fmt.Sprint(tpgt)
+	opts.Supervisor.MarkServing()
+	err := serveGotgtRemoteTargets(ctx, targets)
+	opts.Supervisor.MarkStopped()
+	return err
+}
+
+func serveGotgtRemoteTargets(ctx context.Context, opts []gotgtRemoteTargetOptions) error {
+	if len(opts) == 0 {
+		return fmt.Errorf("at least one remote target is required")
+	}
+	port := 0
+	runFor := opts[0].RunFor
+	targetNames := make(map[string]struct{}, len(opts))
+	deviceIDs := make(map[uint64]struct{}, len(opts))
+	portalIDs := make(map[string]uint16, len(opts))
 	cfg := &config.Config{
-		Storages: []config.BackendStorage{},
-		ISCSIPortals: []config.ISCSIPortalInfo{{
-			ID:     0,
-			Portal: opts.Portal,
-		}},
-		ISCSITargets: map[string]config.ISCSITarget{
-			opts.TargetIQN: {
-				TPGTs: map[string][]uint64{tpgtText: {0}},
-				TPGTALUA: map[string]config.ALUATargetPortGroup{
-					tpgtText: {
-						AccessState:       ALUAAccessStateCode(opts.ALUAAccessState),
-						Preferred:         opts.ALUAPreferred,
-						ImplicitSupported: opts.ALUAImplicitSupported,
-						ExplicitSupported: opts.ALUAExplicitSupported,
-					},
+		Storages:     []config.BackendStorage{},
+		ISCSITargets: make(map[string]config.ISCSITarget, len(opts)),
+	}
+	for i := range opts {
+		candidatePort, err := validateGotgtRemoteTargetConfig(opts[i])
+		if err != nil {
+			return fmt.Errorf("target[%d]: %w", i, err)
+		}
+		if opts[i].BackingStore == nil {
+			return fmt.Errorf("target[%d]: remote backing store is required", i)
+		}
+		if i == 0 {
+			port = candidatePort
+		} else {
+			if candidatePort != port {
+				return fmt.Errorf("all targets on one gotgt driver must use port %d, got %d for target %q", port, candidatePort, opts[i].TargetIQN)
+			}
+			if opts[i].RunFor != runFor {
+				return fmt.Errorf("all targets on one gotgt driver must use the same run duration")
+			}
+		}
+		if _, exists := targetNames[opts[i].TargetIQN]; exists {
+			return fmt.Errorf("duplicate target IQN %q", opts[i].TargetIQN)
+		}
+		if _, exists := deviceIDs[opts[i].DeviceID]; exists {
+			return fmt.Errorf("duplicate SCSI device id %d", opts[i].DeviceID)
+		}
+		targetNames[opts[i].TargetIQN] = struct{}{}
+		deviceIDs[opts[i].DeviceID] = struct{}{}
+		portalID, exists := portalIDs[opts[i].Portal]
+		if !exists {
+			portalID = uint16(len(cfg.ISCSIPortals))
+			portalIDs[opts[i].Portal] = portalID
+			cfg.ISCSIPortals = append(cfg.ISCSIPortals, config.ISCSIPortalInfo{ID: portalID, Portal: opts[i].Portal})
+		}
+		tpgt := opts[i].ALUATargetPortGroupID
+		if tpgt == 0 {
+			tpgt = 1
+		}
+		tpgtText := fmt.Sprint(tpgt)
+		cfg.ISCSITargets[opts[i].TargetIQN] = config.ISCSITarget{
+			TPGTs: map[string][]uint64{tpgtText: {uint64(portalID)}},
+			TPGTALUA: map[string]config.ALUATargetPortGroup{
+				tpgtText: {
+					AccessState:       ALUAAccessStateCode(opts[i].ALUAAccessState),
+					Preferred:         opts[i].ALUAPreferred,
+					ImplicitSupported: opts[i].ALUAImplicitSupported,
+					ExplicitSupported: opts[i].ALUAExplicitSupported,
 				},
-				LUNs: map[string]uint64{"0": opts.DeviceID},
 			},
-		},
+			LUNs: map[string]uint64{fmt.Sprint(opts[i].LUNID): opts[i].DeviceID},
+		}
 	}
-	remote.Size = opts.SizeBytes
-	if err := scsi.InitSCSILUMapEx(&config.BackendStorage{
-		DeviceID:         opts.DeviceID,
-		Path:             "RemBs:" + opts.TargetIQN,
-		Online:           true,
-		ThinProvisioning: true,
-		BlockShift:       9,
-		SCSIVendorID:     opts.SCSIIdentity.Vendor,
-		SCSIProductID:    opts.SCSIIdentity.Product,
-		SCSIProductRev:   "001",
-		SCSIID:           opts.SCSIIdentity.LUNWWN,
-		SCSISerial:       opts.SCSIIdentity.Serial,
-	}, opts.TargetIQN, opts.LUNID, opts.BackingStore); err != nil {
-		return err
+
+	installed := make([]scsi.LUNMapping, 0, len(opts))
+	cleanup := func() {
+		for _, mapping := range installed {
+			scsi.DelLUNMapping(mapping)
+			scsi.DelBackendStorage(mapping.DeviceID)
+		}
 	}
+	for i := range opts {
+		// gotgt copies remote.Size into each newly opened RemBs instance. Set it
+		// immediately before registration so different-sized exports retain
+		// independent capacities.
+		remote.Size = opts[i].SizeBytes
+		storage := &config.BackendStorage{
+			DeviceID:         opts[i].DeviceID,
+			Path:             "RemBs:" + opts[i].TargetIQN,
+			Online:           true,
+			ThinProvisioning: true,
+			BlockShift:       9,
+			SCSIVendorID:     opts[i].SCSIIdentity.Vendor,
+			SCSIProductID:    opts[i].SCSIIdentity.Product,
+			SCSIProductRev:   "001",
+			SCSIID:           opts[i].SCSIIdentity.LUNWWN,
+			SCSISerial:       opts[i].SCSIIdentity.Serial,
+		}
+		if err := scsi.InitSCSILUMapEx(storage, opts[i].TargetIQN, opts[i].LUNID, opts[i].BackingStore); err != nil {
+			cleanup()
+			return err
+		}
+		installed = append(installed, scsi.LUNMapping{DeviceID: opts[i].DeviceID, LUN: opts[i].LUNID, TargetName: opts[i].TargetIQN})
+	}
+	defer cleanup()
 	scsiTarget := scsi.NewSCSITargetService()
 	targetDriver, err := scsi.NewTargetDriver("iscsi", scsiTarget)
 	if err != nil {
 		return err
 	}
-	if err := targetDriver.NewTarget(opts.TargetIQN, cfg); err != nil {
-		return err
+	for i := range opts {
+		if err := targetDriver.NewTarget(opts[i].TargetIQN, cfg); err != nil {
+			_ = targetDriver.Close()
+			return err
+		}
 	}
 	runErr := make(chan error, 1)
 	go func() {
@@ -317,8 +421,8 @@ func serveGotgtRemoteTarget(ctx context.Context, opts gotgtRemoteTargetOptions) 
 	}()
 	waitCtx := ctx
 	cancel := func() {}
-	if opts.RunFor > 0 {
-		waitCtx, cancel = context.WithTimeout(ctx, opts.RunFor)
+	if runFor > 0 {
+		waitCtx, cancel = context.WithTimeout(ctx, runFor)
 	}
 	defer cancel()
 	select {
@@ -328,7 +432,7 @@ func serveGotgtRemoteTarget(ctx context.Context, opts gotgtRemoteTargetOptions) 
 		if err := targetDriver.Close(); err != nil {
 			return err
 		}
-		if opts.RunFor == 0 {
+		if runFor == 0 {
 			return ctx.Err()
 		}
 		return nil

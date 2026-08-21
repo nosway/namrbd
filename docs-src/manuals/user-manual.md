@@ -267,7 +267,7 @@ namrbd-iscsi-gateway \
   --backend=sbs \
   --portal <gateway_ip>:3260 \
   --serve \
-  --sbs-endpoint <sbs_volume_service_host>:9460 \
+  --sbs-endpoint <sbs_volume_service_host>:9444 \
   --volume-id 00000065 \
   --export-id iscsi-00000065 \
   --target-iqn iqn.2026-06.io.namrbd:iscsi.00000065 \
@@ -417,7 +417,7 @@ sbsctl cluster status --output json
 sbsctl volume status --volume-id <volume_id> --output json
 ```
 
-The gateway should use `--sbs-admin-endpoint` to reach `sbs-service`. Raw SBS TiKV metadata flags are legacy/dev bootstrap, not the primary runtime path.
+The gateway should use `--sbs-service-endpoint` to reach `sbs-service`. Raw SBS TiKV metadata flags are legacy/dev bootstrap, not the primary runtime path.
 
 ### 10.4 Kubernetes
 

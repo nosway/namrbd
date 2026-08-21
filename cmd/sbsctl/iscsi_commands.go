@@ -224,7 +224,7 @@ func runISCSIStatusGateway(args []string) {
 		if err != nil {
 			return sbsctlISCSIAdminRPCErrorResult(cfg, "status", "gateway", err)
 		}
-		registryResp, err := client.GetISCSIRegistry(ctx, &adminv1.GetISCSIRegistryRequest{Cluster: cfg.clusterRef()})
+		registryResp, err := client.GetISCSIRegistry(ctx, &adminv1.GetISCSIRegistryRequest{Cluster: cfg.clusterRef(), SummaryOnly: true})
 		if err != nil {
 			return sbsctlISCSIAdminRPCErrorResult(cfg, "status", "gateway", err)
 		}
@@ -242,15 +242,19 @@ func runISCSIStatusGateway(args []string) {
 			"repair_backlog":                   statusResp.GetRepairBacklog(),
 			"rebalance_backlog":                statusResp.GetRebalanceBacklog(),
 			"drain_backlog":                    statusResp.GetDrainBacklog(),
-			"target_count":                     len(registryResp.GetTargets()),
-			"lun_count":                        len(registryResp.GetLuns()),
+			"target_count":                     registryResp.GetTargetCount(),
+			"lun_count":                        registryResp.GetLunCount(),
+			"export_count":                     registryResp.GetExportCount(),
 			"session_count":                    counters.GetSessionCount(),
 			"connected_sessions":               counters.GetConnectedSessions(),
-			"portal_count":                     len(registryResp.GetPortals()),
-			"initiator_acl_count":              len(registryResp.GetInitiatorAcls()),
-			"failover_count":                   len(registryResp.GetFailovers()),
+			"portal_count":                     registryResp.GetPortalCount(),
+			"initiator_acl_count":              registryResp.GetInitiatorAclCount(),
+			"failover_count":                   registryResp.GetFailoverCount(),
 			"iscsi_registry_available":         true,
-			"registry_status":                  iscsiRegistryReadyStatus,
+			"iscsi_registry_empty":             registryResp.GetRegistryEmpty(),
+			"registry_status":                  sbsctlISCSIRegistryStatus(registryResp.GetRegistryEmpty()),
+			"iscsi_serving_registry_authority": registryResp.GetServingRegistryAuthority(),
+			"iscsi_registry_storage_layout":    registryResp.GetStorageLayout(),
 			"metrics_runtime_claim":            "sbs_admin_iscsi_registry",
 			"troubleshooting_fields_available": true,
 			"log_json_channel":                 "stdout_json_only",
@@ -1491,11 +1495,11 @@ type sbsctlISCSIMutationFlags struct {
 func addISCSIFlags(fs *flag.FlagSet, defaults cliDefaults) sbsctlISCSIFlags {
 	registerContextFlags(fs, defaults)
 	return sbsctlISCSIFlags{
-		AdminEndpoint: fs.String("admin-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint"),
+		AdminEndpoint: fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint"),
 		DataEndpoint:  fs.String("data-endpoint", defaults.dataEndpoint(), "sbs-data gRPC endpoint for output authority context"),
 		ClusterID:     fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id"),
-		SBSClusterID:  fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id"),
-		Output:        fs.String("output", defaults.fieldValue("output", "SBS_OUTPUT", "NAMRBD_OUTPUT"), "output format: json"),
+		SBSClusterID:  fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id"),
+		Output:        fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: json"),
 		JSON:          fs.Bool("json", false, "emit JSON"),
 		Timeout:       fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout"),
 		Defaults:      defaults,
@@ -1517,7 +1521,7 @@ func addISCSIMutationFlags(fs *flag.FlagSet, defaults cliDefaults) (sbsctlISCSIF
 }
 
 func parseISCSIFlags(fs *flag.FlagSet, args []string, flags sbsctlISCSIFlags) {
-	fs.Parse(args)
+	parseCommandFlags(fs, args)
 	if *flags.JSON {
 		*flags.Output = "json"
 	}
@@ -1531,8 +1535,8 @@ func parseISCSIFlags(fs *flag.FlagSet, args []string, flags sbsctlISCSIFlags) {
 		flags.Defaults.adminEndpointSetting(),
 		flags.Defaults.dataEndpointSetting(),
 		flags.Defaults.fieldSetting("cluster_id", "cluster-id", "", "NAMRBD_CLUSTER_ID"),
-		flags.Defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"),
-		flags.Defaults.fieldSetting("output", "output", "json", "SBS_OUTPUT", "NAMRBD_OUTPUT"),
+		flags.Defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"),
+		flags.Defaults.fieldSetting("output", "output", "json", "NAMRBD_SBSCTL_OUTPUT"),
 		flags.Defaults.timeoutSetting(10*time.Second),
 	)
 }
@@ -1581,7 +1585,7 @@ func (f sbsctlISCSIFlags) config() sbsctlISCSIConfig {
 
 func withISCSIAdmin(cfg sbsctlISCSIConfig, objectType, operation string, read func(context.Context, sbsctlISCSIAdminClient, sbsctlISCSIConfig) map[string]any) (map[string]any, int) {
 	if cfg.AdminEndpoint == "" {
-		return sbsctlISCSIErrorResult(cfg, objectType, operation, "cluster_admin_endpoint_required", "admin endpoint is required (use --admin-endpoint or SBS_ADMIN_ENDPOINTS/NAMRBD_SBS_ADMIN_ENDPOINTS)"), 1
+		return sbsctlISCSIErrorResult(cfg, objectType, operation, "cluster_admin_endpoint_required", "admin endpoint is required (use --sbs-service-endpoint or NAMRBD_SBS_SERVICE_ENDPOINTS)"), 1
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
 	defer cancel()
@@ -1663,8 +1667,17 @@ func sbsctlISCSIAdminRPCErrorResult(cfg sbsctlISCSIConfig, objectType, operation
 		reason = "cluster_iscsi_precondition_failed"
 	case codes.AlreadyExists:
 		reason = "cluster_iscsi_registry_already_exists"
+	case codes.Internal, codes.Unavailable, codes.DeadlineExceeded:
+		reason = "cluster_iscsi_registry_unavailable"
 	}
 	return sbsctlISCSIErrorResult(cfg, objectType, operation, reason, err.Error())
+}
+
+func sbsctlISCSIRegistryStatus(empty bool) string {
+	if empty {
+		return "cluster_iscsi_registry_empty"
+	}
+	return iscsiRegistryReadyStatus
 }
 
 func applySBSCTLISCSIClusterRefFields(fields map[string]any, cluster *adminv1.ClusterRef) {

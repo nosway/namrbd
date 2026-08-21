@@ -120,6 +120,90 @@ func TestClientCreateOpenWriteReadRestart(t *testing.T) {
 	}
 }
 
+func TestISCSIWriterFenceRejectsStaleGatewayAtReceiverAndSurvivesRestart(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "pebble")
+	client, err := Open(Config{Path: dir})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	volumeID := "00000065"
+	if _, err := client.CreateVolume(ctx, service.VolumeSpec{
+		ID: service.HexVolumeID(101), Name: "fenced-volume", SizeBytes: 4096 * 8, BlockSize: 4096,
+	}); err != nil {
+		t.Fatalf("CreateVolume: %v", err)
+	}
+	applyFence := func(fence service.ISCSIWriterFence) {
+		t.Helper()
+		if _, err := client.ApplyISCSIWriterFence(ctx, &service.ApplyISCSIWriterFenceRequest{Fence: fence}); err != nil {
+			t.Fatalf("ApplyISCSIWriterFence(%d): %v", fence.ExportEpoch, err)
+		}
+	}
+	fenceA := service.ISCSIWriterFence{
+		VolumeID: volumeID, ExportID: "export-a", ExportLeaseID: "lease-a",
+		ExportEpoch: 1, ActiveGatewayID: "gw-a", RegistryRevision: 10,
+	}
+	applyFence(fenceA)
+	ctxA := service.SBSRequestContext{
+		RequestID: "open-a", GatewayID: "gw-a", AttachmentID: "lease-a", Generation: 1,
+		ISCSIExportID: "export-a", ISCSIExportLeaseID: "lease-a", ISCSIExportEpoch: 1,
+	}
+	openedA, err := client.OpenVolume(ctx, &service.OpenVolumeRequest{
+		VolumeID: volumeID, AccessMode: service.SBSAccessModeExclusiveWriter, Context: ctxA,
+	})
+	if err != nil {
+		t.Fatalf("OpenVolume gateway A: %v", err)
+	}
+	writeA := &service.WriteRequest{
+		VolumeID: volumeID, VolumeHandle: openedA.VolumeHandle, OffsetBytes: 0, LengthBytes: 4096,
+		Data: make([]byte, 4096), Context: ctxA,
+	}
+	writeA.Context.RequestID = "write-a-1"
+	writeA.Context.IdempotencyKey = "write-a-1"
+	if _, err := client.Write(ctx, writeA); err != nil {
+		t.Fatalf("initial gateway A write: %v", err)
+	}
+
+	fenceB := service.ISCSIWriterFence{
+		VolumeID: volumeID, ExportID: "export-a", ExportLeaseID: "lease-b",
+		ExportEpoch: 2, ActiveGatewayID: "gw-b", RegistryRevision: 11,
+	}
+	applyFence(fenceB)
+	writeA.Context.RequestID = "write-a-stale"
+	writeA.Context.IdempotencyKey = "write-a-stale"
+	_, err = client.Write(ctx, writeA)
+	var sbsErr *service.SBSError
+	if !errors.As(err, &sbsErr) || sbsErr.Code != service.SBSErrorCodeFenced {
+		t.Fatalf("stale gateway write err=%v want fenced", err)
+	}
+	if snapshot, err := client.ObservabilitySnapshot(); err != nil || snapshot.StaleWriterRejectedCount != 1 {
+		t.Fatalf("receiver stale writer counter snapshot=%+v err=%v", snapshot, err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	client, err = Open(Config{Path: dir})
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer client.Close()
+	ctxB := service.SBSRequestContext{
+		RequestID: "open-b", GatewayID: "gw-b", AttachmentID: "lease-b", Generation: 2,
+		ISCSIExportID: "export-a", ISCSIExportLeaseID: "lease-b", ISCSIExportEpoch: 2,
+	}
+	if _, err := client.OpenVolume(ctx, &service.OpenVolumeRequest{
+		VolumeID: volumeID, AccessMode: service.SBSAccessModeExclusiveWriter, Context: ctxB,
+	}); err != nil {
+		t.Fatalf("OpenVolume gateway B after receiver restart: %v", err)
+	}
+	if _, err := client.OpenVolume(ctx, &service.OpenVolumeRequest{
+		VolumeID: volumeID, AccessMode: service.SBSAccessModeExclusiveWriter, Context: ctxA,
+	}); !errors.As(err, &sbsErr) || sbsErr.Code != service.SBSErrorCodeFenced {
+		t.Fatalf("stale gateway open after restart err=%v want fenced", err)
+	}
+}
+
 func TestClientWritePhysicalChunkEmitsStructuredLog(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "pebble")
 	client, err := Open(Config{Path: dir, TraceDataOperations: true})

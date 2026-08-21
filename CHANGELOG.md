@@ -11,13 +11,7 @@ begin.
 
 ### Added
 
-- `v1.0.0-rc` release-candidate version identity is now embedded into Community
-  binaries together with the Git commit, build date, and dirty-state metadata.
-
 ### Changed
-
-- Gateway/SBS runtime version checks now compare the exact product SemVer
-  string instead of a separate Major.Minor compatibility value.
 
 ### Fixed
 
@@ -29,17 +23,54 @@ begin.
 
 ### Edition: Community
 
-- Community Makefile and container builds pass release metadata into built
-  binaries through Go linker flags.
-
 ### Support & Evidence
 
 ### Upgrade & Migration
 
-- NAMRBD `v1.0.0` has not been released yet. Public release readiness is still
-  being completed.
+### Known Limits
+
+
+## [1.0.0] - 2026-08-21
+
+### Added
+
+- Added reviewed config-file authority for all long-running services, bounded
+  etcd/TiKV membership and dependency handling, and enterprise `t2_large`
+  operation at 100 SBS nodes, 32 block gateways, 32 iSCSI gateways, 1,000
+  volumes, and 1,000 exports.
+- Added receiver-enforced iSCSI writer fencing, bounded registry live reload,
+  multi-export serving, and audited membership lifecycle operations.
+- Embedded the `v1.0.0` GA identity, Git commit, build date, and dirty-state
+  metadata into release binaries.
+
+### Changed
+
+- Gateway/SBS runtime version checks compare the exact product SemVer string.
+- Stable daemon settings now come from versioned configuration files; legacy
+  command-line names remain compatibility aliases with deprecation notices.
+
+### Edition: Community
+
+- Community binaries retain the three-distinct-iSCSI-exported-volume limit and
+  fail closed for Enterprise-only EC and `t2_large` export-scale claims.
+- Community Makefile and container builds inject the same GA build identity as
+  the canonical release.
+
+### Support & Evidence
+
+- Phase Z release-readiness evidence and the Phase AA `t2_large` closure are
+  consumed by the `v1.0.0` release package. The support matrix remains the
+  authority for edition, topology, and feature scope.
+
+### Upgrade & Migration
+
+- Upgrade into NAMRBD 1.0 is unsupported. Install cleanly and restore from a
+  reviewed backup; 1.0 becomes the first supported source version for later
+  upgrade work.
 
 ### Known Limits
 
-- Pre-1.0 development continues on `main`. Milestone tags are engineering
-  markers, not product releases.
+- Enterprise `t2_large` evidence does not widen Community export limits.
+- Dependency loss is fail-open for already-admitted serving and fail-closed for
+  membership changes, new export admission, promotion, and failover.
+- No public benchmark claim is made by this release.

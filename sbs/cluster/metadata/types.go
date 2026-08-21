@@ -1,5 +1,7 @@
 package metadata
 
+import "time"
+
 type VolumeStatus string
 
 const (
@@ -281,19 +283,71 @@ type IdempotencyRecord struct {
 }
 
 type NodeMembershipRecord struct {
-	NodeID            string             `json:"node_id"`
-	ReplicaID         string             `json:"replica_id,omitempty"`
-	LifecycleState    NodeLifecycleState `json:"lifecycle_state"`
-	HealthState       NodeHealthState    `json:"health_state"`
-	Zone              string             `json:"zone,omitempty"`
-	Host              string             `json:"host,omitempty"`
-	CapacityBytes     uint64             `json:"capacity_bytes,omitempty"`
-	UsedBytes         uint64             `json:"used_bytes,omitempty"`
-	LastHeartbeatUnix int64              `json:"last_heartbeat_unix,omitempty"`
-	Version           string             `json:"version,omitempty"`
-	Capabilities      []string           `json:"capabilities,omitempty"`
-	AdminHTTPEndpoint string             `json:"admin_http_endpoint,omitempty"`
-	SBSEndpoints      []SBSEndpoint      `json:"sbs_endpoints,omitempty"`
+	SchemaVersion      string             `json:"schema_version,omitempty"`
+	ClusterID          string             `json:"cluster_id,omitempty"`
+	SBSClusterID       string             `json:"sbs_cluster_id,omitempty"`
+	NodeID             string             `json:"node_id"`
+	ReplicaID          string             `json:"replica_id,omitempty"`
+	StoreIDs           []string           `json:"store_ids,omitempty"`
+	Roles              []string           `json:"roles,omitempty"`
+	LifecycleState     NodeLifecycleState `json:"lifecycle_state"`
+	HealthState        NodeHealthState    `json:"health_state"`
+	DesiredState       string             `json:"desired_state,omitempty"`
+	ObservedState      string             `json:"observed_state,omitempty"`
+	Zone               string             `json:"zone,omitempty"`
+	Host               string             `json:"host,omitempty"`
+	CapacityBytes      uint64             `json:"capacity_bytes,omitempty"`
+	UsedBytes          uint64             `json:"used_bytes,omitempty"`
+	LastHeartbeatUnix  int64              `json:"last_heartbeat_unix,omitempty"`
+	Version            string             `json:"version,omitempty"`
+	Capabilities       []string           `json:"capabilities,omitempty"`
+	AdminHTTPEndpoint  string             `json:"admin_http_endpoint,omitempty"`
+	SBSEndpoints       []SBSEndpoint      `json:"sbs_endpoints,omitempty"`
+	Generation         uint64             `json:"generation,omitempty"`
+	MembershipRevision uint64             `json:"membership_revision,omitempty"`
+	Tombstone          bool               `json:"tombstone,omitempty"`
+	CreatedAtUnix      int64              `json:"created_at_unix,omitempty"`
+	UpdatedAtUnix      int64              `json:"updated_at_unix,omitempty"`
+	UpdatedBy          string             `json:"updated_by,omitempty"`
+	UpdateReason       string             `json:"update_reason,omitempty"`
+}
+
+const (
+	MembershipRecordSchemaV1          = "sbs-membership/v1"
+	MembershipProjectionPageDefault   = 128
+	MembershipProjectionPageMaximum   = 512
+	MembershipProjectionDegradedAfter = 5 * time.Second
+	MembershipProjectionBlockedAfter  = 15 * time.Second
+)
+
+type MembershipProjectionState struct {
+	SchemaVersion                string `json:"schema_version"`
+	MembershipRevision           uint64 `json:"membership_revision"`
+	MembershipProjectionRevision uint64 `json:"membership_projection_revision"`
+	MembershipUpdatedAtUnixNano  int64  `json:"membership_updated_at_unix_nano,omitempty"`
+	ProjectionUpdatedAtUnixNano  int64  `json:"projection_updated_at_unix_nano,omitempty"`
+	ProjectionRebuildCount       uint64 `json:"projection_rebuild_count,omitempty"`
+	ProjectionResyncCount        uint64 `json:"projection_resync_count,omitempty"`
+	FirstError                   string `json:"first_error,omitempty"`
+	LastError                    string `json:"last_error,omitempty"`
+}
+
+type MembershipProjectionStatus struct {
+	MembershipRevision           uint64 `json:"membership_revision"`
+	MembershipProjectionRevision uint64 `json:"membership_projection_revision"`
+	ProjectionLagMS              int64  `json:"projection_lag_ms"`
+	ProjectionHealth             string `json:"projection_health"`
+	Stale                        bool   `json:"stale"`
+	ProjectionRebuildCount       uint64 `json:"projection_rebuild_count"`
+	ProjectionResyncCount        uint64 `json:"projection_resync_count"`
+	FirstError                   string `json:"first_error,omitempty"`
+	LastError                    string `json:"last_error,omitempty"`
+}
+
+type MembershipProjectionPage struct {
+	Records    []NodeMembershipRecord     `json:"records"`
+	NextCursor string                     `json:"next_cursor,omitempty"`
+	Status     MembershipProjectionStatus `json:"status"`
 }
 
 type PlacementTransitionRecord struct {

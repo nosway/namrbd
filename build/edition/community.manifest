@@ -40,6 +40,12 @@ include cmd/sbs-data
 include cmd/sbs-service
 include cmd/sbsctl
 
+include configs/namrbd-gateway.yaml
+include configs/namrbd-csi-driver.yaml
+include configs/namrbd-iscsi-gateway.yaml
+include configs/namrbd-mcp.yaml
+include configs/sbs-data.yaml
+include configs/sbs-service.yaml
 include control
 include deploy/kubernetes/csi
 include deploy/observability

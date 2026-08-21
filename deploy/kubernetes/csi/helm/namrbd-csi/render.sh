@@ -25,10 +25,10 @@ set_args=(
 	--set "image.repository=${CSI_DRIVER_IMAGE_REPOSITORY:-ghcr.io/nosway/namrbd-csi-driver}"
 	--set "image.tag=${CSI_DRIVER_IMAGE_TAG:-local}"
 	--set "image.pullPolicy=${IMAGE_PULL_POLICY:-IfNotPresent}"
-	--set "config.clusterID=${CLUSTER_ID:-namrbd-community}"
-	--set "config.sbsClusterID=${SBS_CLUSTER_ID:-sbs-community}"
-	--set "config.adminEndpoint=${ADMIN_ENDPOINT:-namrbd-sbs-service:9897}"
-	--set "config.gatewayURL=${GATEWAY_URL:-http://namrbd-gateway:9701}"
+	--set "config.clusterID=${NAMRBD_CLUSTER_ID:-namrbd-community}"
+	--set "config.sbsClusterID=${NAMRBD_SBS_CLUSTER_ID:-sbs-community}"
+	--set "config.adminEndpoint=${NAMRBD_SBS_SERVICE_ENDPOINT:-namrbd-sbs-service:9897}"
+	--set "config.gatewayURL=${NAMRBD_GATEWAY_URL:-http://namrbd-gateway:9701}"
 	--set "controller.replicas=${CONTROLLER_REPLICAS:-1}"
 	--set "sidecars.csiProvisioner.timeout=${CSI_PROVISIONER_TIMEOUT:-60s}"
 	--set "sidecars.csiAttacher.enabled=${CSI_ATTACHER_ENABLED:-true}"
@@ -41,8 +41,8 @@ set_args=(
 	--set "storageClasses.replicated.discard.validationProfile=${DISCARD_VALIDATION_PROFILE:-operator-validated}"
 )
 
-if [[ -n "${ADMIN_ENDPOINTS:-}" ]]; then
-	set_args+=(--set "config.adminEndpoints=${ADMIN_ENDPOINTS}")
+if [[ -n "${NAMRBD_SBS_SERVICE_ENDPOINTS:-}" ]]; then
+	set_args+=(--set "config.adminEndpoints=${NAMRBD_SBS_SERVICE_ENDPOINTS}")
 fi
 
 if [[ -n "$discard_mount_options" ]]; then

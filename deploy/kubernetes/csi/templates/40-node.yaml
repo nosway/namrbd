@@ -36,8 +36,8 @@ spec:
               memory: 128Mi
           args:
             - "--endpoint=unix:///csi/csi.sock"
-            - "--admin-endpoint=$(NAMRBD_ADMIN_ENDPOINT)"
-            - "--admin-endpoints=$(NAMRBD_ADMIN_ENDPOINTS)"
+            - "--admin-endpoint=$(NAMRBD_SBS_SERVICE_ENDPOINT)"
+            - "--admin-endpoints=$(NAMRBD_SBS_SERVICE_ENDPOINTS)"
             - "--cluster-id=$(NAMRBD_CLUSTER_ID)"
             - "--sbs-cluster-id=$(NAMRBD_SBS_CLUSTER_ID)"
             - "--driver-name=$(NAMRBD_CSI_DRIVER_NAME)"

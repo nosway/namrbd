@@ -75,6 +75,9 @@ func TestSBSCTLISCSIStatusGatewayUsesClusterAuthority(t *testing.T) {
 	if out["iscsi_registry_available"] != true || out["registry_revision"] != float64(12) || out["config_generation"] != float64(3) {
 		t.Fatalf("unexpected registry metadata: %#v", out)
 	}
+	if out["iscsi_serving_registry_authority"] != "sbs_service_tikv" || out["iscsi_registry_storage_layout"] != "split_v2" || out["iscsi_registry_empty"] != false {
+		t.Fatalf("unexpected serving registry evidence: %#v", out)
+	}
 	if out["target_count"] != float64(1) || out["lun_count"] != float64(1) || out["session_count"] != float64(2) || out["connected_sessions"] != float64(1) {
 		t.Fatalf("unexpected registry counts: %#v", out)
 	}
@@ -128,6 +131,17 @@ func TestSBSCTLISCSIAdminRPCErrorClassifiesNotFound(t *testing.T) {
 	}
 	if out["result"] != "error" || out["rejection_reason"] != "cluster_iscsi_registry_not_found" || out["entrypoint"] != "sbsctl iscsi lun get" {
 		t.Fatalf("unexpected structured error: %#v", out)
+	}
+}
+
+func TestSBSCTLISCSIRegistryStateDistinguishesEmptyAndUnavailable(t *testing.T) {
+	if got := sbsctlISCSIRegistryStatus(true); got != "cluster_iscsi_registry_empty" {
+		t.Fatalf("empty status=%q", got)
+	}
+	cfg := sbsctlISCSIConfig{}
+	out := sbsctlISCSIAdminRPCErrorResult(cfg, "status", "gateway", status.Error(codes.Unavailable, "tikv unavailable"))
+	if out["rejection_reason"] != "cluster_iscsi_registry_unavailable" {
+		t.Fatalf("unavailable classification=%#v", out)
 	}
 }
 
@@ -477,6 +491,25 @@ func (f *fakeSBSCTLISCSIAdminServer) GetISCSIRegistry(_ context.Context, req *ad
 		resp := proto.Clone(f.registry).(*adminv1.GetISCSIRegistryResponse)
 		if resp.Cluster == nil {
 			resp.Cluster = req.GetCluster()
+		}
+		if req.GetSummaryOnly() {
+			resp.PortalCount = uint64(len(resp.GetPortals()))
+			resp.TargetCount = uint64(len(resp.GetTargets()))
+			resp.LunCount = uint64(len(resp.GetLuns()))
+			resp.ExportCount = uint64(len(resp.GetLuns()))
+			resp.InitiatorAclCount = uint64(len(resp.GetInitiatorAcls()))
+			resp.SessionCount = uint64(len(resp.GetSessions()))
+			resp.FailoverCount = uint64(len(resp.GetFailovers()))
+			resp.RegistryEmpty = resp.PortalCount+resp.TargetCount+resp.LunCount+
+				resp.InitiatorAclCount+resp.SessionCount+resp.FailoverCount == 0
+			resp.ServingRegistryAuthority = "sbs_service_tikv"
+			resp.StorageLayout = "split_v2"
+			resp.Portals = nil
+			resp.Targets = nil
+			resp.Luns = nil
+			resp.InitiatorAcls = nil
+			resp.Sessions = nil
+			resp.Failovers = nil
 		}
 		return resp, nil
 	}

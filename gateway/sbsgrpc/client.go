@@ -130,6 +130,17 @@ func (c *Client) Zero(ctx context.Context, req *service.ZeroRequest) (*service.Z
 	return fromProtoZeroResponse(resp), nil
 }
 
+func (c *Client) ApplyISCSIWriterFence(ctx context.Context, req *service.ApplyISCSIWriterFenceRequest) (*service.ApplyISCSIWriterFenceResponse, error) {
+	resp, err := c.next.ApplyISCSIWriterFence(ctx, &sbsv1.ApplyISCSIWriterFenceRequest{Fence: toProtoISCSIWriterFence(req.Fence)})
+	if err != nil {
+		return nil, fromGRPCError(err)
+	}
+	return &service.ApplyISCSIWriterFenceResponse{
+		Status: resp.GetStatus(), Applied: resp.GetApplied(), Fence: fromProtoISCSIWriterFence(resp.GetFence()),
+		StaleWriterRejectedCount: resp.GetStaleWriterRejectedCount(),
+	}, nil
+}
+
 func fromGRPCError(err error) error {
 	st, ok := status.FromError(err)
 	if !ok {

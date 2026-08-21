@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/nosway/namrbd/internal/cliux"
+	"github.com/nosway/namrbd/internal/envcompat"
 	"gopkg.in/yaml.v3"
 )
 
@@ -40,6 +43,85 @@ type resolvedSetting struct {
 	Key    string
 	Value  string
 	Source string
+}
+
+var sbsctlCompatEnvSpecs = []envcompat.Spec{
+	envcompat.SBSClusterID,
+	envcompat.SBSCTLServiceEndpoints,
+	envcompat.SBSCTLDataEndpoints,
+	envcompat.SBSCTLTimeout,
+	envcompat.SBSCTLOutput,
+	envcompat.SBSCTLNodeID,
+	envcompat.SBSCTLZone,
+	envcompat.SBSCTLServiceHTTPEndpoint,
+}
+
+var emittedCompatEnvWarnings = map[string]bool{}
+var emittedCompatEnvWarningsMu sync.Mutex
+
+func resolveSBSCTLCompatEnv(keys ...string) (envcompat.Resolution, bool) {
+	for _, spec := range sbsctlCompatEnvSpecs {
+		matched := false
+		for _, key := range keys {
+			if spec.Matches(key) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		resolved, err := envcompat.ResolveCurrent(spec, os.LookupEnv)
+		if err != nil {
+			if globalJSONOutput {
+				fmt.Fprintln(os.Stderr, err)
+			}
+			fatalf("environment configuration: %v", err)
+		}
+		for _, warning := range resolved.Warnings {
+			emittedCompatEnvWarningsMu.Lock()
+			if emittedCompatEnvWarnings[warning] {
+				emittedCompatEnvWarningsMu.Unlock()
+				continue
+			}
+			emittedCompatEnvWarnings[warning] = true
+			emittedCompatEnvWarningsMu.Unlock()
+			fmt.Fprintln(os.Stderr, warning)
+		}
+		return resolved, true
+	}
+	return envcompat.Resolution{}, false
+}
+
+func firstListItem(raw string) string {
+	for _, part := range strings.Split(raw, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			return part
+		}
+	}
+	return ""
+}
+
+var sbsctlDeprecatedFlags = []cliux.Alias{
+	{Legacy: "admin-endpoint", Canonical: "sbs-service-endpoint", DeprecatedIn: "post-1.0"},
+	{Legacy: "admin-http-endpoint", Canonical: "sbs-service-http-endpoint", DeprecatedIn: "post-1.0"},
+}
+
+func parseCommandFlags(fs *flag.FlagSet, args []string) {
+	cliux.InstallStructuredUsage(fs, "sbsctl "+fs.Name(), nil)
+	args = cliux.RewriteDeprecatedFlags(args, sbsctlDeprecatedFlags, os.Stderr)
+	args = cliux.RewriteCommandArgs(args, fs.Lookup("output") != nil, fs.Lookup("json") != nil)
+	if globalJSONOutput {
+		if output := fs.Lookup("output"); output != nil {
+			_ = output.Value.Set("json")
+		}
+		if jsonFlag := fs.Lookup("json"); jsonFlag != nil {
+			_ = jsonFlag.Value.Set("true")
+		}
+	}
+	if err := fs.Parse(args); err != nil {
+		fatalf("parse %s flags: %v", fs.Name(), err)
+	}
 }
 
 func mustResolveCLIDefaults(args []string) cliDefaults {
@@ -182,14 +264,14 @@ func (d cliDefaults) firstListValue(values []string, envKeys ...string) string {
 }
 
 func (d cliDefaults) adminEndpoint() string {
-	return d.firstListValue(d.profile.SBSAdminEPs, "SBS_ADMIN_ENDPOINTS", "NAMRBD_SBS_ADMIN_ENDPOINTS")
+	return d.firstListValue(d.profile.SBSAdminEPs, "NAMRBD_SBS_SERVICE_ENDPOINTS")
 }
 
 func (d cliDefaults) dataEndpoint() string {
-	if value := firstEnvListFirst("SBS_DATA_ENDPOINTS"); value != "" {
+	if value := firstEnvListFirst("NAMRBD_SBS_DATA_ENDPOINTS"); value != "" {
 		return value
 	}
-	if value := d.fieldValue("sbs_grpc_addr", "SBS_GRPC_ADDR", "NAMRBD_SBS_GRPC_ADDR"); value != "" {
+	if value := d.fieldValue("sbs_grpc_addr", "NAMRBD_SBS_DATA_ENDPOINTS"); value != "" {
 		return value
 	}
 	if value := d.firstListValue(d.profile.SBSDataEPs); value != "" {
@@ -199,7 +281,7 @@ func (d cliDefaults) dataEndpoint() string {
 }
 
 func (d cliDefaults) timeout(fallback time.Duration) time.Duration {
-	raw := firstEnv("SBS_TIMEOUT", "NAMRBD_TIMEOUT")
+	raw := firstEnv("NAMRBD_SBSCTL_TIMEOUT")
 	if raw == "" {
 		raw = strings.TrimSpace(d.profile.Timeout)
 	}
@@ -221,9 +303,15 @@ func (d cliDefaults) fieldSetting(field, flagName string, fallback string, envKe
 }
 
 func (d cliDefaults) fieldSettingValue(field, fallback string, envKeys ...string) (string, string) {
-	for _, key := range envKeys {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value, "env:" + key
+	if resolved, ok := resolveSBSCTLCompatEnv(envKeys...); ok {
+		if value := strings.TrimSpace(resolved.Value); resolved.Present && value != "" {
+			return value, "env:" + resolved.Source
+		}
+	} else {
+		for _, key := range envKeys {
+			if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+				return value, "env:" + key
+			}
 		}
 	}
 	if value := d.contextFieldValue(field); value != "" {
@@ -233,26 +321,23 @@ func (d cliDefaults) fieldSettingValue(field, fallback string, envKeys ...string
 }
 
 func (d cliDefaults) adminEndpointSetting() resolvedSetting {
-	for _, key := range []string{"SBS_ADMIN_ENDPOINTS", "NAMRBD_SBS_ADMIN_ENDPOINTS"} {
-		if value := firstEnvListFirst(key); value != "" {
-			return resolvedSetting{Key: "admin-endpoint", Value: value, Source: "env:" + key}
+	if resolved, _ := resolveSBSCTLCompatEnv(envcompat.SBSCTLServiceEndpoints.Canonical); resolved.Present {
+		if value := firstListItem(resolved.Value); value != "" {
+			return resolvedSetting{Key: "sbs-service-endpoint", Value: value, Source: "env:" + resolved.Source}
 		}
 	}
 	for _, item := range d.profile.SBSAdminEPs {
 		if item = strings.TrimSpace(item); item != "" {
-			return resolvedSetting{Key: "admin-endpoint", Value: item, Source: d.contextSource("sbs_admin_endpoints")}
+			return resolvedSetting{Key: "sbs-service-endpoint", Value: item, Source: d.contextSource("sbs_admin_endpoints")}
 		}
 	}
-	return resolvedSetting{Key: "admin-endpoint", Value: "", Source: "default"}
+	return resolvedSetting{Key: "sbs-service-endpoint", Value: "", Source: "default"}
 }
 
 func (d cliDefaults) dataEndpointSetting() resolvedSetting {
-	if value := firstEnvListFirst("SBS_DATA_ENDPOINTS"); value != "" {
-		return resolvedSetting{Key: "data-endpoint", Value: value, Source: "env:SBS_DATA_ENDPOINTS"}
-	}
-	for _, key := range []string{"SBS_GRPC_ADDR", "NAMRBD_SBS_GRPC_ADDR"} {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return resolvedSetting{Key: "data-endpoint", Value: value, Source: "env:" + key}
+	if resolved, _ := resolveSBSCTLCompatEnv(envcompat.SBSCTLDataEndpoints.Canonical); resolved.Present {
+		if value := firstListItem(resolved.Value); value != "" {
+			return resolvedSetting{Key: "data-endpoint", Value: value, Source: "env:" + resolved.Source}
 		}
 	}
 	if value := strings.TrimSpace(d.profile.SBSGRPCAddr); value != "" {
@@ -267,9 +352,9 @@ func (d cliDefaults) dataEndpointSetting() resolvedSetting {
 }
 
 func (d cliDefaults) timeoutSetting(fallback time.Duration) resolvedSetting {
-	for _, key := range []string{"SBS_TIMEOUT", "NAMRBD_TIMEOUT"} {
-		if raw := strings.TrimSpace(os.Getenv(key)); raw != "" {
-			return resolvedSetting{Key: "timeout", Value: raw, Source: "env:" + key}
+	if resolved, _ := resolveSBSCTLCompatEnv(envcompat.SBSCTLTimeout.Canonical); resolved.Present {
+		if raw := strings.TrimSpace(resolved.Value); raw != "" {
+			return resolvedSetting{Key: "timeout", Value: raw, Source: "env:" + resolved.Source}
 		}
 	}
 	if raw := strings.TrimSpace(d.profile.Timeout); raw != "" {
@@ -342,6 +427,12 @@ func (d cliDefaults) contextSource(field string) string {
 }
 
 func firstEnvListFirst(keys ...string) string {
+	if resolved, ok := resolveSBSCTLCompatEnv(keys...); ok {
+		if resolved.Present {
+			return firstListItem(resolved.Value)
+		}
+		return ""
+	}
 	for _, key := range keys {
 		if raw := strings.TrimSpace(os.Getenv(key)); raw != "" {
 			parts := strings.Split(raw, ",")
