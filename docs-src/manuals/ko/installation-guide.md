@@ -1,10 +1,14 @@
 Operations Manual
 
-Edition boundary: Community edition 설치 경로와 Enterprise edition only 섹션이 함께 포함되어 있습니다.
+Advanced feature 안내: Enterprise 섹션은 개발·검증 방향을 설명하며 공개
+v1.0 설치 또는 지원 범위가 아닙니다. [기능 상태](../../feature-status.md)를
+확인하십시오.
 
-# NAMRBD 설치 가이드 (Enterprise Service 기준)
+# NAMRBD 설치 가이드
 
-이 문서는 NAMRBD Community 및 Enterprise 배포의 표준 설치, bring-up, 배포 검증 경로를 정리한다. 운영자는 이 문서를 설치 절차의 1차 기준으로 사용하고, 장애 대응과 day-2 운영은 [Admin Guide](admin-guide.md)를 함께 본다.
+이 문서는 공개 소스의 빌드, bring-up, 평가 경로를 정리합니다. 운영자는
+기능 상태에서 검증 범위를 확인하고 day-2 운영은
+[Admin Guide](admin-guide.md)를 함께 참고하십시오.
 
 현재 설치 대상 구성 요소:
 
@@ -33,7 +37,7 @@ Edition boundary: Community edition 설치 경로와 Enterprise edition only 섹
 호스트 시스템 요구 사항:
 
 - `namrbd_blk.ko` 빌드를 위한 커널 헤더/소스 트리가 제공되는 Linux 호스트.
-- Go 1.26.4.
+- Go 1.26.6.
 - `make`, `curl`, `jq`, `sudo`.
 - `etcd` for gateway/control-plane metadata.
 - 기본 다중 노드 런타임에서 `sbs-service` 공속 메타데이터 권한 수립용으로 구성된 `TiKV/PD` 연동 인프라.

@@ -1,9 +1,15 @@
-# NAMRBD Community
+# NAMRBD
 
-NAMRBD Community is the open source edition of NAMRBD for replicated Linux
-block storage. It includes the replicated SBS control/data services, gateway
-forwarding, host control tools, kernel module source, basic iSCSI access, and
-Kubernetes CSI integration.
+NAMRBD is an open-source distributed block storage platform for Linux. The
+public source includes replicated SBS control/data services, gateway
+forwarding, host control tools, kernel module source, basic iSCSI access,
+Kubernetes CSI integration, snapshots and restore building blocks, and public
+operations assets.
+
+Read [Feature Status](feature-status.md) to distinguish source availability
+from the v1.0 release support boundary. Advanced Enterprise capabilities are
+also summarized there as work under development and validation, rather than as
+generally available features.
 
 Start with the local build and quickstart path:
 

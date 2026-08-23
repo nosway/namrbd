@@ -1,6 +1,8 @@
 Chapter 1
 
-Edition boundary: Community edition reading path and Enterprise edition only architecture topics are both present.
+Advanced feature note: Enterprise topics in this manual describe architecture
+under development and validation, not public v1.0 support claims. See
+[Feature Status](../../../feature-status.md).
 
 # Reading Guide
 

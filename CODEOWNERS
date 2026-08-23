@@ -1,7 +1,8 @@
-# Default maintainers for the public Community repository.
-* @nosway/namrbd-maintainers
+# The public repository is owned by the nosway user account, so CODEOWNERS
+# entries must name an existing user rather than organization-only teams.
+* @nosway
 
-/kernel/ @nosway/namrbd-kernel-maintainers
-/deploy/kubernetes/csi/ @nosway/namrbd-csi-maintainers
-/cmd/namrbd-csi-driver/ @nosway/namrbd-csi-maintainers
-/docs/ @nosway/namrbd-docs-maintainers
+/kernel/ @nosway
+/deploy/kubernetes/csi/ @nosway
+/cmd/namrbd-csi-driver/ @nosway
+/docs-src/ @nosway

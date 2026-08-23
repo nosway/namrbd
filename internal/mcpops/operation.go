@@ -56,7 +56,7 @@ func BuildProposalEnvelope(cfg Config, tool, riskClass string, plan map[string]a
 		},
 		Result: map[string]any{
 			"status":  "blocked",
-			"message": "Phase Y MCP tools are read-only/proposal-only until a reviewed NAMRBD API, RBAC rule, audit record, rollback behavior, and human approval gate exist.",
+			"message": "MCP tools are read-only/proposal-only until a reviewed NAMRBD API, RBAC rule, audit record, rollback behavior, and human approval gate exist.",
 		},
 		Verification: map[string]any{"status": "not_run"},
 		Audit: map[string]any{

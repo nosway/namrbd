@@ -1,6 +1,7 @@
-# Community Scope
+# Platform Capabilities
 
-Community Edition includes the replicated storage core:
+The public NAMRBD source tree includes the replicated storage core and its
+operator-facing integrations:
 
 - `namrbd-gateway`
 - `namrbdctl`
@@ -16,7 +17,7 @@ Community Edition includes the replicated storage core:
 - Local SBS quickstart assets under `examples/quickstart`
 - Public observability assets under `deploy/observability`
 
-Enterprise-only behavior is not claimed by the Community source tree. Examples
-include EC-backed product availability, automated Backup/DR, advanced mobility,
-dedupe workflows, security/KMS/encryption product surfaces, performance-tier
-controls, and advanced iSCSI HA/scale operations.
+These entries describe what is present in the public source tree. They do not
+promote every integration to a supported v1.0 release surface. The
+[Feature Status](feature-status.md) page records the current validation and
+support boundary, and summarizes advanced Enterprise work separately.

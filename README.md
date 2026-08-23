@@ -1,11 +1,10 @@
 # ![NAMRBD logo](web/operations-dashboard/static/assets/namrbd-logo.svg) NAMRBD
 
-NAMRBD (Network Attached Multipath Resilient Block Device) is a
-network-attached Linux block storage project. The Community Edition focuses on
-replicated block volumes, host attach through the kernel module, gateway
-forwarding, SBS service/data-plane authority, Kubernetes CSI integration,
-basic snapshot and restore workflows, discard/zero observability, and basic
-iSCSI connectivity.
+NAMRBD (Network Attached Multipath Resilient Block Device) is an open-source
+distributed block storage platform for Linux. The public source tree provides
+the replicated storage core, gateway and SBS services, host and kernel control
+paths, Kubernetes CSI integration, snapshot and restore building blocks,
+discard/zero handling, basic iSCSI connectivity, and operational visibility.
 
 ![NAMRBD platform overview](docs-src/manuals/architecture-manual/assets/diagrams/platform-overview.svg)
 
@@ -15,13 +14,14 @@ two projects is shown below.
 
 ![NAMRBD and NAMROS interface map](docs-src/manuals/architecture-manual/assets/diagrams/namrbd-namros-interface-map.svg)
 
-The public Community Edition source tree is intended to be usable as a normal
-open-source checkout for building, testing, inspecting, and packaging
-Community behavior.
+The public repository is intended to work as a normal open-source checkout for
+building, testing, inspecting, and packaging the platform. Source availability
+does not by itself mean that every integration is a supported v1.0 release
+surface; [Feature Status](docs-src/feature-status.md) records that distinction.
 
-## Community Scope
+## Platform Capabilities
 
-Community Edition includes:
+The open-source platform includes:
 
 - replicated volume lifecycle and placement;
 - `namrbd-gateway`, `namrbdctl`, `sbs-service`, `sbs-data`, `sbsctl`,
@@ -35,13 +35,37 @@ Community Edition includes:
 - manual replicated snapshot and restore-from-snapshot workflows;
 - basic Kubernetes CSI replicated provisioning and snapshot restore surfaces;
 - discard, write-zeroes, and zero/read-view correctness observability;
-- basic iSCSI target and control CLI surfaces with the Community volume export
-  limit.
+- basic iSCSI target and control CLI surfaces with a limit of three distinct
+  exported volumes.
 
-Enterprise-only areas are intentionally not Community product claims. These
-include EC-backed product availability, automated Backup/DR, advanced
-mobility/repack/dedupe workflows, security/KMS/encryption product surfaces,
-performance-tier controls, and advanced iSCSI HA/scale operations.
+Some integrations are available in source but have not yet been validated as
+supported v1.0 release surfaces. See [Feature Status](docs-src/feature-status.md)
+before making deployment or compatibility assumptions.
+
+## Advanced Features
+
+NAMRBD is also developing and validating advanced capabilities for the
+Enterprise edition. These descriptions are development directions, not
+general-availability, compatibility, performance, or support commitments.
+
+- **Erasure-coded storage:** full-stripe userspace EC placement, encoding,
+  rebuild, and maintenance paths.
+- **Automated backup and recovery:** policy-driven backup targets, runs,
+  retention, restore drills, and recovery evidence.
+- **Security and governance:** KMS-backed data keys, encryption, rotation,
+  audit, crypto erase, and scoped governance/WORM controls.
+- **Performance and QoS:** workload classification, rate controls, performance
+  tiers, and scale-oriented observability.
+- **Advanced iSCSI and large-scale operations:** larger export fleets,
+  redundant target paths, MPIO/ALUA, and controlled membership operations.
+- **Remote replication and disaster recovery:** replication links, recovery
+  points, shipping workflows, standby import, and failover orchestration.
+- **Data mobility and repack:** controlled movement between placement or
+  geometry layouts with verification and rollback boundaries.
+- **Deduplication:** scoped replicated-data dedupe and reclaim workflows.
+
+NVMe/TCP remains an exploratory future direction and is not a current platform
+or Enterprise support claim.
 
 ## Quickstart
 
@@ -146,9 +170,13 @@ mkdocs serve
 Internal planning notes, private validation tooling, and generated working directories
 are not part of the public documentation tree.
 
+Release artifact expectations and the source-only status of `v1.0.0` are
+documented in [`RELEASE.md`](RELEASE.md). For issue and support boundaries, see
+[`SUPPORT.md`](SUPPORT.md).
+
 ## License
 
 Unless a file or directory says otherwise, NAMRBD source is licensed under the
 Apache License, Version 2.0. The Linux kernel module under `kernel/module/` is
-licensed under GPL-2.0-only. See `LICENSE`, `NOTICE`,
+licensed under GPL-2.0-only. See `LICENSE`, `LICENSE-POLICY.md`, `NOTICE`,
 `THIRD_PARTY_NOTICES.md`, and the license texts under `LICENSES/`.

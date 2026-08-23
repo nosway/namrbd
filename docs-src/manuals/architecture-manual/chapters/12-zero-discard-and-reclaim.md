@@ -1,6 +1,8 @@
 Chapter 13
 
-Edition boundary: Community edition zero semantics and Enterprise edition only true-reclaim topics are both present.
+Advanced feature note: Enterprise EC reclaim material describes work under
+development and validation, not a public v1.0 support claim. See
+[Feature Status](../../../feature-status.md).
 
 # Zero, Discard, And Reclaim
 

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-const entryPlanPath = "docs/phase-aa-entry-plan.md"
+const dependencyContractPath = "internal/depavail/testdata/dependency-availability-matrix.md"
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
@@ -40,19 +40,19 @@ type docRow struct {
 	raw        string
 }
 
-// section4Rows extracts the availability matrix. It fails rather than returning
-// an empty slice if the section moves, because a silently empty oracle would
-// turn every agreement assertion into a no-op.
-func section4Rows(t *testing.T) []docRow {
+// contractRows extracts the public, package-owned availability matrix. It
+// fails rather than returning an empty slice because a silently empty oracle
+// would turn every agreement assertion into a no-op.
+func contractRows(t *testing.T) []docRow {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(repoRoot(t), entryPlanPath))
+	raw, err := os.ReadFile(filepath.Join(repoRoot(t), dependencyContractPath))
 	if err != nil {
-		t.Fatalf("read %s: %v", entryPlanPath, err)
+		t.Fatalf("read %s: %v", dependencyContractPath, err)
 	}
 	doc := string(raw)
-	start := strings.Index(doc, "## 4. Dependency Availability Matrix")
+	start := strings.Index(doc, "## Dependency Availability Matrix")
 	if start < 0 {
-		t.Fatalf("%s no longer has a Section 4 heading; the matrix oracle is gone", entryPlanPath)
+		t.Fatalf("%s no longer has the matrix heading; the contract oracle is gone", dependencyContractPath)
 	}
 	body := doc[start:]
 	if end := strings.Index(body, "\n## "); end > 0 {
@@ -70,7 +70,7 @@ func section4Rows(t *testing.T) []docRow {
 			cells[i] = strings.TrimSpace(cells[i])
 		}
 		if len(cells) != 7 {
-			t.Fatalf("Section 4 row has %d columns, expected 7: %q", len(cells), line)
+			t.Fatalf("availability row has %d columns, expected 7: %q", len(cells), line)
 		}
 		if cells[0] == "Dependency state" || strings.HasPrefix(cells[0], "---") {
 			continue
@@ -82,7 +82,7 @@ func section4Rows(t *testing.T) []docRow {
 		})
 	}
 	if len(rows) == 0 {
-		t.Fatalf("parsed no rows from %s Section 4; the extraction is broken", entryPlanPath)
+		t.Fatalf("parsed no rows from %s; the extraction is broken", dependencyContractPath)
 	}
 	return rows
 }
@@ -102,9 +102,9 @@ var declaredStates = map[string]State{
 
 // Every declared row must resolve to exactly what it declares.
 func TestResolveAgreesWithEveryDeclaredRow(t *testing.T) {
-	rows := section4Rows(t)
+	rows := contractRows(t)
 	if len(rows) != len(declaredStates) {
-		t.Fatalf("Section 4 declares %d rows but the test knows %d states; a row was added or removed without deciding what state it means",
+		t.Fatalf("the contract declares %d rows but the test knows %d states; a row was added or removed without deciding what state it means",
 			len(rows), len(declaredStates))
 	}
 	for _, row := range rows {
@@ -185,7 +185,7 @@ func viewsFromCell(cell string) (ViewHealth, bool) {
 // default changed in the document but not in the code, or the reverse, is the
 // most likely way this specification goes quietly wrong.
 func TestDocumentedGraceDefaultsMatchTheCode(t *testing.T) {
-	rows := section4Rows(t)
+	rows := contractRows(t)
 	defaults := map[string]int{
 		"etcd_unavailable_grace_seconds": DefaultEtcdUnavailableGraceSeconds,
 		"tikv_unavailable_grace_seconds": DefaultTiKVUnavailableGraceSeconds,
@@ -236,7 +236,7 @@ func itoa(n int) string {
 
 // Observables named in the document must be fields something actually emits.
 func TestDocumentedObservablesAreEmitted(t *testing.T) {
-	rows := section4Rows(t)
+	rows := contractRows(t)
 	emitted := emittedFields(t)
 	named := regexp.MustCompile("`([a-z][a-z0-9_]*)`")
 	seen := 0

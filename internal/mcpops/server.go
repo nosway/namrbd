@@ -151,7 +151,7 @@ func dispatchRPC(ctx context.Context, cfg Config, req rpcRequest) (any, error) {
 
 func PromptDefinitions() []map[string]any {
 	return []map[string]any{
-		{"name": "namrbd-incident-triage", "description": "Classify NAMRBD symptoms using Phase Y source/freshness/error evidence."},
+		{"name": "namrbd-incident-triage", "description": "Classify NAMRBD symptoms using source, freshness, and error evidence."},
 		{"name": "namrbd-membership-plan-review", "description": "Review a proposal-only membership plan before any audited product API exists."},
 		{"name": "namrbd-reclaim-evidence-review", "description": "Check reclaim status without claiming recovered capacity before before/after evidence exists."},
 	}

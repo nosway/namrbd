@@ -1,6 +1,8 @@
 Chapter 5
 
-Edition boundary: Community edition metadata authority and Enterprise edition only metadata records are both present.
+Advanced feature note: Enterprise metadata records describe designs under
+development and validation, not public v1.0 support claims. See
+[Feature Status](../../../feature-status.md).
 
 # Metadata Authority
 

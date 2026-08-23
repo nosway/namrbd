@@ -20,9 +20,12 @@ include tools/check-docs-render.py
 include .gitignore
 include README.md
 include LICENSE
+include LICENSE-POLICY.md
 include NOTICE
 include THIRD_PARTY_NOTICES.md
 include CONTRIBUTING.md
+include SUPPORT.md
+include RELEASE.md
 include CHANGELOG.md
 include SECURITY.md
 include CODE_OF_CONDUCT.md

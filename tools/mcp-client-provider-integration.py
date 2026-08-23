@@ -129,7 +129,7 @@ def main():
         if not all(checks.values()):
             raise RuntimeError(f"integration checks failed: {checks}")
         evidence = {
-            "result": "ok", "entrypoint": "phase-y-mcp-client-provider-integration",
+            "result": "ok", "entrypoint": "mcp-client-provider-integration",
             "schema_version": "namrbd.mcp.integration-evidence.v1",
             "client": "python-stdlib-mcp-client", "provider": "cmd/namrbd-mcp",
             "transport": "stdio-jsonrpc-content-length", "http_provider_fixture": server is not None,
@@ -158,5 +158,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        print(json.dumps({"result":"fail","entrypoint":"phase-y-mcp-client-provider-integration","error_count":1,"first_error":str(error),"last_error":str(error)}, separators=(",", ":")))
+        print(json.dumps({"result":"fail","entrypoint":"mcp-client-provider-integration","error_count":1,"first_error":str(error),"last_error":str(error)}, separators=(",", ":")))
         raise SystemExit(1)

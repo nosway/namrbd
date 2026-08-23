@@ -1,6 +1,8 @@
 Chapter 16
 
-Edition boundary: Community edition validation fields and Enterprise edition only evidence fields are both present.
+Advanced feature note: Enterprise evidence fields describe development and
+validation work, not public v1.0 support claims. See
+[Feature Status](../../../feature-status.md).
 
 # Observability And Validation
 

@@ -64,24 +64,24 @@ type ToolResult struct {
 
 func Resources() []ResourceDefinition {
 	return []ResourceDefinition{
-		{URI: "namrbd://product/edition", Name: "Product edition", Description: "Current NAMRBD edition, build version, and Phase Y support boundaries.", MimeType: "application/json"},
-		{URI: "namrbd://cluster/summary", Name: "Cluster summary", Description: "Phase Y shared SBS observability snapshot.", MimeType: "application/json"},
-		{URI: "namrbd://gateway/status", Name: "Gateway status boundary", Description: "Read-only gateway status source-authority boundary for Phase Y MCP consumers.", MimeType: "application/json"},
+		{URI: "namrbd://product/edition", Name: "Product edition", Description: "Current NAMRBD build identity and public capability boundary.", MimeType: "application/json"},
+		{URI: "namrbd://cluster/summary", Name: "Cluster summary", Description: "Shared SBS observability snapshot.", MimeType: "application/json"},
+		{URI: "namrbd://gateway/status", Name: "Gateway status boundary", Description: "Read-only gateway status source-authority boundary for MCP consumers.", MimeType: "application/json"},
 		{URI: "namrbd://sbs/observability", Name: "SBS observability", Description: "NAMRBD-owned SBS observability snapshot.", MimeType: "application/json"},
 		{URI: "namrbd://membership/status", Name: "Membership status", Description: "Read-only membership status view.", MimeType: "application/json"},
 		{URI: "namrbd://capacity/snapshot", Name: "Capacity snapshot", Description: "Read-only SBS capacity evidence.", MimeType: "application/json"},
 		{URI: "namrbd://reclaim/status", Name: "Reclaim status", Description: "Read-only volume-delete reclaim evidence.", MimeType: "application/json"},
-		{URI: "namrbd://operations/history", Name: "Operations history", Description: "Phase Y operation summary view.", MimeType: "application/json"},
+		{URI: "namrbd://operations/history", Name: "Operations history", Description: "Read-only operation summary view.", MimeType: "application/json"},
 		{URI: "namrbd://runbooks/index", Name: "Runbook index", Description: "Maintained NAMRBD operator runbook suggestions.", MimeType: "application/json"},
 	}
 }
 
 func Tools() []ToolDefinition {
 	return []ToolDefinition{
-		readOnlyTool("namrbd.health.check", "Collect cluster, warning, and MCP readiness evidence from the Phase Y operations query API.", emptySchema()),
+		readOnlyTool("namrbd.health.check", "Collect cluster, warning, and MCP readiness evidence from the operations query API.", emptySchema()),
 		readOnlyTool("namrbd.admin.status", "Return read-only operation and warning status from sbs-service.", emptySchema()),
-		readOnlyTool("namrbd.operations.summary", "Return Phase Y operation progress counters.", emptySchema()),
-		readOnlyTool("namrbd.operations.metrics", "Return Phase Y operation counters using the same read-only query surface.", emptySchema()),
+		readOnlyTool("namrbd.operations.summary", "Return operation progress counters.", emptySchema()),
+		readOnlyTool("namrbd.operations.metrics", "Return operation counters using the same read-only query surface.", emptySchema()),
 		readOnlyTool("namrbd.sbs.status", "Return NAMRBD SBS cluster status from the shared observability snapshot.", emptySchema()),
 		readOnlyTool("namrbd.sbs.observability.snapshot", "Return the full NAMRBD-owned SBS observability snapshot.", emptySchema()),
 		readOnlyTool("namrbd.membership.status", "Return read-only gateway/SBS membership status and source authority.", emptySchema()),
@@ -103,7 +103,7 @@ func Tools() []ToolDefinition {
 		readOnlyTool("namrbd.runbook.suggest", "Suggest maintained runbooks from an observed signal.", objectSchema(map[string]any{
 			"signal": stringSchema("Observed failure signal or incident summary."),
 		}, []string{"signal"})),
-		readOnlyTool("namrbd.phase_y.evidence.latest", "Return Phase Y MCP, workflow, and warning evidence from the query API.", emptySchema()),
+		readOnlyTool("namrbd.evidence.latest", "Return current MCP, workflow, and warning evidence from the query API.", emptySchema()),
 	}
 }
 
@@ -116,9 +116,9 @@ func ReadResource(ctx context.Context, cfg Config, uri string) (any, error) {
 	case "namrbd://gateway/status":
 		return staticEvidence("namrbd.mcp.gateway_status_boundary.v1", map[string]any{
 			"status":           "read_only_boundary",
-			"source_authority": "gateway control-plane membership/liveness state via Phase Y query views",
+			"source_authority": "gateway control-plane membership/liveness state via read-only query views",
 			"limitations": []string{
-				"Phase Y MCP is not gateway mutation authority.",
+				"MCP is not gateway mutation authority.",
 				"Gateway membership changes require reviewed product APIs, synchronization, rollback, audit, and human approval.",
 			},
 		}), nil
@@ -183,7 +183,7 @@ func CallTool(ctx context.Context, cfg Config, name string, args map[string]any)
 			"signal":         stringArg(args, "signal"),
 			"suggestions":    SuggestRunbooks(stringArg(args, "signal")),
 		}, ""), nil
-	case "namrbd.phase_y.evidence.latest":
+	case "namrbd.evidence.latest":
 		return toolResultFromData(name, map[string]any{
 			"mcp":      FetchEndpoint(ctx, cfg, "/api/v1/mcp/tools"),
 			"workflow": FetchEndpoint(ctx, cfg, "/api/v1/workflow/hardening"),
@@ -351,7 +351,7 @@ func toolResultFromData(name string, data any, firstError string) ToolResult {
 		}
 	}
 	if extracted.SourceAuthority == "" {
-		extracted.SourceAuthority = "sbs-service Phase Y operations query API"
+		extracted.SourceAuthority = "sbs-service operations query API"
 	}
 	return ToolResult{
 		SchemaVersion:             "namrbd.mcp.tool_result.v1",
@@ -544,11 +544,11 @@ func stringArg(args map[string]any, key string) string {
 
 func RunbookIndex() []map[string]any {
 	return []map[string]any{
-		{"id": "membership", "title": "Gateway and SBS membership runbook", "doc": "docs/phase-y-gateway-sbs-membership-runbook.md"},
-		{"id": "capacity", "title": "SBS capacity and observability schema", "doc": "docs/phase-y-sbs-observability-capacity-schema.md"},
-		{"id": "reclaim", "title": "Volume-delete reclaim evidence workflow", "doc": "docs/phase-y-volume-delete-reclaim-evidence-workflow.md"},
-		{"id": "operations-query", "title": "Monitoring query API/view", "doc": "docs/phase-y-monitoring-query-api-view.md"},
-		{"id": "mcp", "title": "MCP server support", "doc": "docs/phase-y-mcp-server-support-plan.md"},
+		{"id": "membership", "title": "Gateway and SBS membership operations", "doc": "docs-src/manuals/admin-guide.md"},
+		{"id": "capacity", "title": "SBS capacity and observability", "doc": "docs-src/observability.md"},
+		{"id": "reclaim", "title": "Discard and reclaim operations", "doc": "docs-src/manuals/admin-guide.md"},
+		{"id": "operations-query", "title": "Read-only operations API", "doc": "docs-src/operations.md"},
+		{"id": "mcp", "title": "MCP capability status", "doc": "docs-src/feature-status.md"},
 	}
 }
 
@@ -581,7 +581,7 @@ func SuggestRunbooks(signal string) []map[string]any {
 		add("mcp", "signal mentions MCP, tool registration, or AI operations boundary")
 	}
 	if len(out) == 0 {
-		add("operations-query", "default to the Phase Y query API before proposing an operator action")
+		add("operations-query", "default to the read-only query API before proposing an operator action")
 	}
 	return out
 }

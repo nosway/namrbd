@@ -1,10 +1,16 @@
 Operations Manual
 
-Edition boundary: Community edition 운영 절차와 Enterprise edition only 관리 섹션이 함께 포함되어 있습니다.
+Advanced feature 안내: Enterprise 섹션은 개발·검증 중인 설계 참고이며 공개
+v1.0 관리 또는 지원 범위가 아닙니다. [기능 상태](../../feature-status.md)를
+확인하십시오.
 
-# NAMRBD 관리자 가이드 (Enterprise Service 기준)
+# NAMRBD 관리자 가이드
 
-이 문서는 NAMRBD 운영 표준 경로와 엔터프라이즈 백업 및 원격 재해 복구(DR), 동적 성능 제한(QoS), KMS 연동 암호화 및 보안 통제 회로, Community 기본 iSCSI target access, Enterprise-only iSCSI HA/scale surface 경계를 함께 정리한다. 설치 절차는 [Installation Guide](installation-guide.md), 사용자 quick start는 [User Manual](user-manual.md)을 함께 본다.
+이 문서는 공개 플랫폼의 ownership, observability, 운영 guardrail을
+설명합니다. Enterprise backup/DR, QoS, security/KMS, governance, advanced
+iSCSI, mobility, dedupe 내용은 개발 중인 설계 참고입니다. 설치 절차는
+[Installation Guide](installation-guide.md), 사용자 흐름은
+[User Manual](user-manual.md)을 참고하십시오.
 
 `legacy metadata CLI` active source는 `아카이브로 이관된 코어 레포지토리` 아래 historical archive로 남아 있다. 운영자는 volume lifecycle, storage authority, diagnostics에 `namrbdctl`, `sbsctl`, `namrbd-debug`, admin APIs를 사용한다.
 

@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  linux-amd64:
+    if: ${{ github.repository == 'nosway/namrbd' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test public source
+        run: make test-community
+
+      - name: Build public binaries
+        run: make build-community
+
+      - name: Package Linux AMD64 archive
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          package_dir="dist/namrbd-${RELEASE_TAG}-linux-amd64"
+          mkdir -p "${package_dir}/bin"
+          cp bin/community/* "${package_dir}/bin/"
+          cp README.md CHANGELOG.md LICENSE LICENSE-POLICY.md NOTICE THIRD_PARTY_NOTICES.md "${package_dir}/"
+          tar -C dist -czf "dist/namrbd-${RELEASE_TAG}-linux-amd64.tar.gz" "namrbd-${RELEASE_TAG}-linux-amd64"
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: dist/namrbd-${{ github.ref_name }}-linux-amd64
+          format: spdx-json
+          output-file: dist/namrbd-${{ github.ref_name }}-linux-amd64.spdx.json
+          upload-artifact: false
+
+      - name: Generate checksums
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd dist
+          sha256sum \
+            "namrbd-${RELEASE_TAG}-linux-amd64.tar.gz" \
+            "namrbd-${RELEASE_TAG}-linux-amd64.spdx.json" \
+            > checksums.sha256
+
+      - name: Attest release archive
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: dist/namrbd-${{ github.ref_name }}-linux-amd64.tar.gz
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: namrbd-${{ github.ref_name }}-linux-amd64
+          path: |
+            dist/namrbd-${{ github.ref_name }}-linux-amd64.tar.gz
+            dist/namrbd-${{ github.ref_name }}-linux-amd64.spdx.json
+            dist/checksums.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" \
+              "dist/namrbd-${RELEASE_TAG}-linux-amd64.tar.gz" \
+              "dist/namrbd-${RELEASE_TAG}-linux-amd64.spdx.json" \
+              dist/checksums.sha256 --clobber
+          else
+            gh release create "${RELEASE_TAG}" \
+              "dist/namrbd-${RELEASE_TAG}-linux-amd64.tar.gz" \
+              "dist/namrbd-${RELEASE_TAG}-linux-amd64.spdx.json" \
+              dist/checksums.sha256 \
+              --verify-tag --generate-notes --title "${RELEASE_TAG}"
+          fi

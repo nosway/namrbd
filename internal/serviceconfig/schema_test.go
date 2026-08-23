@@ -257,7 +257,7 @@ func TestLeaderRenewMustBeShorterThanLease(t *testing.T) {
 	}
 }
 
-// Phase Y closed MCP as read-only.
+// The current supported MCP surface is read-only.
 func TestLargeScaleMCPRefusesOperatePosture(t *testing.T) {
 	f := loadFile(t, filepath.Join(configsDir, "namrbd-mcp.yaml"))
 	f.MCP.Mode = MCPModeOperate

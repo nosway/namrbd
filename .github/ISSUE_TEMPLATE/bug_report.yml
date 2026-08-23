@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a reproducible NAMRBD Community issue.
+description: Report a reproducible issue in the public NAMRBD platform.
 title: "[Bug]: "
 labels:
   - bug

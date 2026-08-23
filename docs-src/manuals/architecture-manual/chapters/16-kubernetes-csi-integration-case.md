@@ -1,6 +1,8 @@
 Chapter 17
 
-Edition boundary: Community edition CSI flows and Enterprise edition only EC restore shapes are both present.
+Advanced feature note: Enterprise EC restore shapes describe work under
+development and validation. CSI is available in public source but is not a
+supported v1.0 release claim. See [Feature Status](../../../feature-status.md).
 
 # Kubernetes/CSI Integration Case
 

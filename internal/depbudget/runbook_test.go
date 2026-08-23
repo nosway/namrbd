@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-const runbookPath = "docs/phase-aa-dependency-budget-runbook.md"
+const runbookPath = "internal/depbudget/testdata/dependency-budget-contract.md"
 
 func readRunbook(t *testing.T) string {
 	t.Helper()
@@ -161,7 +161,7 @@ func TestRunbookRecordsTheKnownLimits(t *testing.T) {
 		}
 	}
 	// The document must not imply the evidence is more than it is.
-	if !strings.Contains(doc, "AA-IMPL-013") {
+	if !strings.Contains(doc, "live deployment evidence") {
 		t.Error("the runbook does not point at the live evidence gate, so a reader could take the model for a deployment")
 	}
 	if !strings.Contains(doc, "must not describe large-scale operations as supported") {

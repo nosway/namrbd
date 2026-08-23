@@ -1,14 +1,12 @@
 Distributed Block Storage Docs
 
-Edition boundary: Community edition entry points and Enterprise edition only capability summaries are both present.
-
 # NAMRBD Distributed Block Storage
 
 <div class="summary" markdown="1">
 
-NAMRBD (Network Attached Multipath Resilient Block Device) is a distributed block storage system with native Linux block-device paths, Kubernetes CSI integration, and an optional standard iSCSI target gateway.
+NAMRBD (Network Attached Multipath Resilient Block Device) is an open-source distributed block storage platform with native Linux block-device paths, Kubernetes CSI integration, and an optional standard iSCSI target gateway.
 
-The Community edition includes standard single-path block attachments, Kubernetes CSI integration, basic manual snapshot routines, `namrbd-iscsi-gateway`, `sbsctl iscsi`, and basic LUN export for up to 3 distinct iSCSI-exported volumes. The Enterprise edition adds remote DR orchestration and replication automation, dynamic QoS rate limiting, Vault KMS integration, iSCSI HA/MPIO/ALUA, advanced security/audit, and scale-oriented observability surfaces.
+The public source provides the replicated storage platform and its main host, gateway, SBS, CSI, iSCSI, and operations surfaces. Source availability and v1.0 support validation are distinct; see the [Feature Status](../feature-status.md) page before choosing a deployment shape. Advanced Enterprise capabilities are under development and validation and are not general-availability commitments.
 
 </div>
 
@@ -16,27 +14,25 @@ The Community edition includes standard single-path block attachments, Kubernete
 
 NAMRBD is a low-latency distributed block storage system sharing the SBS storage substrate with the NAMROS object storage engine. Unlike NAMROS, which is optimized for standard S3 API workflows, NAMRBD provisions raw blocks directly via out-of-tree kernel modules (mounting as `/dev/namrbdX`) or via the native Kubernetes CSI provider to act as ultra-resilient container storage volumes.
 
-## 2. Supported Deployment Shapes
+## 2. Deployment And Evaluation Shapes
 
-| Shape | Purpose | Primary Dependencies | Edition Scope |
+| Shape | Purpose | Primary dependencies | Current status |
 |----|----|----|----|
-| Local Single-Node Validation | Developer virtual testing and basic smoke validation | Single `namrbd-gateway`, local memory/Pebble metadata store | <span class="badge">Community</span> |
-| Kubernetes CSI Cluster | Dynamic persistent volume provisioning | TiKV distributed metadata, sbsctl, `namrbd-csi-driver` | <span class="badge">Community</span> |
-| Basic iSCSI Target Access | Standard Linux open-iscsi LUN export through a single target path | `namrbd-iscsi-gateway`, `sbsctl iscsi`, TCP/3260 | <span class="badge">Community</span> capped at 3 distinct exported volumes |
-| Enterprise iSCSI HA/Scale | High-scale redundant target gateway integrations | etcd, `namrbd-iscsi-gateway`, host multipath tooling | <span class="badge enterprise">Enterprise</span> |
-| Remote DR Automation | Cross-region replication, failover planning, and recovery orchestration | Remote gateways, policy automation, SBS-EC storage nodes | <span class="badge enterprise">Enterprise</span> |
+| Local single-node quickstart | Developer evaluation and smoke validation | `namrbd-gateway`, `sbs-service`, `sbs-data`, local metadata | Public development workflow |
+| Replicated userspace gateway | Replicated block-volume service | SBS cluster, metadata authority, `namrbd-gateway` | Validated v1.0 volume path |
+| Kubernetes CSI cluster | Dynamic persistent volume provisioning | SBS cluster, `sbsctl`, `namrbd-csi-driver` | Public integration preview; not validated for v1.0 support |
+| Basic iSCSI target access | Linux open-iscsi LUN export through a single target path | `namrbd-iscsi-gateway`, `sbsctl iscsi`, TCP/3260 | Public integration preview, capped at three distinct exported volumes |
+| Linux kernel block path | Native `/dev/namrbdX` attachment | Matching kernel headers, kernel module, gateways | Source available; kernel I/O is outside the v1.0 support boundary |
 
-## 3. Community And Enterprise Capabilities
+## 3. Advanced Features Under Development
 
-| Capability | Community Edition | Enterprise Edition |
-|----|----|----|
-| Block Volume & Mount (`namrbdctl`) | Included (local dev only) | Included (optimized kernel pathing) |
-| Manual Snapshots & Rollbacks | Included | Included |
-| Kubernetes CSI Provisioning | Basic cluster driver | Advanced StorageClass driver with dynamic QoS metadata |
-| Remote DR & Policy Automation | Not available | <span class="badge enterprise">Enterprise</span> Remote replication, failover workflow, and recovery policy automation |
-| KMS integration & Payload Encryption | Not available | <span class="badge enterprise">Enterprise</span> Vault KMS with hardware fail-closed posture |
-| Basic iSCSI Target Access | Included: `namrbd-iscsi-gateway`, `sbsctl iscsi`, basic LUN export, max 3 distinct exported volumes | Included with larger export scale |
-| iSCSI HA / MPIO / ALUA / Scale Operations | Not available | <span class="badge enterprise">Enterprise</span> HA, MPIO/ALUA, advanced security/audit, and scale observability |
+NAMRBD is developing and validating erasure-coded storage, automated backup
+and recovery, security/KMS and governance workflows, performance/QoS controls,
+advanced iSCSI HA and scale, remote replication/DR, data mobility/repack, and
+deduplication for the Enterprise edition. These are development directions,
+not general-availability, compatibility, performance, or support commitments.
+See [Feature Status](../feature-status.md) for concise capability descriptions
+and current limitations.
 
 ## 4. Persona-Based Navigation
 
@@ -50,7 +46,7 @@ Select the optimal reader path based on your operational goals and responsibilit
 
 Source, Build & Contribution Path
 
-Start with the Community source tree, build the command binaries, run the edition-boundary checks, and use the architecture manual to understand the storage contracts before changing code.
+Start with the public source tree, build the command binaries, run the public validation checks, and use the architecture manual to understand the storage contracts before changing code.
 
 <a href="installation-guide.md#2-developer-build-and-test" class="btn">Open Developer Build Path →</a>
 
@@ -74,7 +70,7 @@ Deploy the NAMRBD CSI driver, fine-tune StorageClass metrics, and master persist
 
 Cluster Platform Engineer Path
 
-Compile out-of-tree linux modules using DKMS automation, manage etcd HA clusters, configure basic iSCSI target access, review Enterprise-only iSCSI HA boundaries, and orchestrate sbsctl volume healing.
+Compile out-of-tree Linux modules using DKMS automation, manage etcd HA clusters, configure basic iSCSI target access, review its current validation boundary, and operate SBS volumes.
 
 <a href="admin-guide.md" class="btn">Open Admin Guide →</a>
 

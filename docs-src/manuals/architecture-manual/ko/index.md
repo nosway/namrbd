@@ -1,6 +1,7 @@
 첫 번째 판
 
-Edition boundary: Community edition 아키텍처와 Enterprise edition only 기능 섹션이 함께 포함되어 있습니다.
+Advanced feature 안내: 이 문서의 Enterprise 기능은 개발·검증 중인 설계이며
+공개 v1.0 지원 범위가 아닙니다. 기능 상태 문서가 공개 경계의 기준입니다.
 
 # NAMRBD 플랫폼 아키텍처
 

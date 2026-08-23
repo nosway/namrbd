@@ -1,10 +1,15 @@
 Operations Manual
 
-Edition boundary: Community edition user flows and Enterprise edition only feature sections are both present.
+Advanced feature note: Enterprise sections summarize designs under development
+and validation. Commands or APIs mentioned there are not public v1.0 support
+claims. See [Feature Status](../feature-status.md).
 
-# NAMRBD Unified User Manual (Production Release Baseline)
+# NAMRBD User Manual
 
-This manual provides comprehensive guidelines for production-grade NAMRBD operations, including Community block access, basic iSCSI target access, and the Enterprise-only boundaries for backup/remote DR policies, performance throttling (QoS), Vault KMS-backed payload encryption, and iSCSI HA/scale features. For installation and bring-up, please refer first to the [Installation Guide](installation-guide.md). For day-2 operations and troubleshooting, refer to the [Admin Guide](admin-guide.md).
+This manual describes the public replicated block-storage workflows and
+evaluation integrations. For installation and bring-up, start with the
+[Installation Guide](installation-guide.md). For day-2 operations and
+troubleshooting, use the [Admin Guide](admin-guide.md).
 
 Current command surface:
 

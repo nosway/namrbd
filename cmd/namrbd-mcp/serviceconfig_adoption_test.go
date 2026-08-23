@@ -49,7 +49,7 @@ func TestMCPConfigSuppliesSettings(t *testing.T) {
 	}
 }
 
-// Phase Y closed MCP support as read-only, so the strict profile refuses the
+// The current supported MCP surface is read-only, so the strict profile refuses the
 // operate posture in the file.
 func TestOperatePostureRefusedInFile(t *testing.T) {
 	path := installedMCPConfig(t, func(b string) string {
@@ -71,7 +71,7 @@ func TestOperatePostureRefusedWhenReintroducedByFlag(t *testing.T) {
 		t.Fatal("a typed --mode operate survived the strict profile")
 	}
 	if !strings.Contains(err.Error(), "read-only") {
-		t.Errorf("failure does not cite the Phase Y boundary: %v", err)
+		t.Errorf("failure does not cite the supported MCP boundary: %v", err)
 	}
 }
 

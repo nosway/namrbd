@@ -1,5 +1,5 @@
-site_name: NAMRBD Community
-site_description: NAMRBD Community source documentation
+site_name: NAMRBD
+site_description: NAMRBD open-source distributed block storage documentation
 site_url: https://nosway.github.io/namrbd/
 repo_url: https://github.com/nosway/namrbd
 docs_dir: docs-src
@@ -45,7 +45,8 @@ extra_css:
 
 nav:
   - Home: index.md
-  - Community Scope: community-scope.md
+  - Platform Capabilities: community-scope.md
+  - Feature Status: feature-status.md
   - Quickstart: quickstart.md
   - Operations: operations.md
   - Observability: observability.md
@@ -76,7 +77,7 @@ nav:
           - Observability And Validation: manuals/architecture-manual/chapters/15-observability-and-validation.md
           - Kubernetes CSI Integration: manuals/architecture-manual/chapters/16-kubernetes-csi-integration-case.md
           - Edition And Release Boundaries: manuals/architecture-manual/chapters/17-edition-and-release-boundaries.md
-          - Extreme I/O Performance: manuals/architecture-manual/chapters/18-extreme-io-performance-engineering.md
+          - Performance Engineering: manuals/architecture-manual/chapters/18-extreme-io-performance-engineering.md
           - Glossary: manuals/architecture-manual/chapters/appendix-glossary.md
           - Interface Specifications: manuals/architecture-manual/chapters/appendix-interface-specifications.md
           - Reference Map: manuals/architecture-manual/chapters/appendix-reference-map.md

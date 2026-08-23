@@ -1,10 +1,14 @@
 사용자 매뉴얼
 
-Edition boundary: Community edition 사용자 흐름과 Enterprise edition only 기능 섹션이 함께 포함되어 있습니다.
+Advanced feature 안내: Enterprise 섹션은 개발·검증 중인 설계를 요약하며
+공개 v1.0 지원 범위가 아닙니다. [기능 상태](../../feature-status.md)를
+확인하십시오.
 
 # NAMRBD 사용자 매뉴얼
 
-이 매뉴얼은 NAMRBD 운영 흐름, Community 블록 접속, 기본 iSCSI 타겟 접속, 그리고 백업/원격 DR 정책, 성능 쓰로틀링(QoS), Vault KMS 페이로드 암호화, iSCSI HA/scale 기능의 Enterprise-only 경계를 안내합니다. 설치와 bring-up은 [Installation Guide](installation-guide.md), day-2 운영과 장애 대응은 [Admin Guide](admin-guide.md)를 우선 참고합니다.
+이 매뉴얼은 공개된 복제 블록 스토리지 워크플로와 평가용 연동을
+설명합니다. 설치와 bring-up은 [Installation Guide](installation-guide.md),
+day-2 운영과 장애 대응은 [Admin Guide](admin-guide.md)를 참고하십시오.
 
 현재 명령 구성:
 

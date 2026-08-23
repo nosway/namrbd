@@ -411,7 +411,7 @@ func validateMCP(r *Result, m *MCPConfig, large bool) {
 	}
 	validateObservability(r, "mcp.observability", m.Observability, large)
 	if large && m.Mode == MCPModeOperate {
-		// Phase Y closed MCP as read-only. Operate posture has no support
+		// The current supported MCP surface is read-only. Operate posture has no support
 		// evidence, so the strict profile refuses it rather than leaving it to
 		// a review step.
 		r.errf("mcp.mode %q is not admissible in the %s profile; MCP support evidence is read-only", MCPModeOperate, ProfileLargeScale)

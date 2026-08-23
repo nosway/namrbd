@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the public NAMRBD Community edition are documented in
+All notable changes to the public NAMRBD source distribution are documented in
 this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -21,7 +21,7 @@ begin.
 
 ### Security
 
-### Edition: Community
+### Public Source Boundary
 
 ### Support & Evidence
 
@@ -34,12 +34,11 @@ begin.
 
 ### Added
 
-- Added reviewed config-file authority for all long-running services, bounded
-  etcd/TiKV membership and dependency handling, and enterprise `t2_large`
-  operation at 100 SBS nodes, 32 block gateways, 32 iSCSI gateways, 1,000
-  volumes, and 1,000 exports.
-- Added receiver-enforced iSCSI writer fencing, bounded registry live reload,
-  multi-export serving, and audited membership lifecycle operations.
+- Added the replicated userspace gateway and SBS volume path, host control
+  tools, kernel module source, Kubernetes CSI assets, basic iSCSI gateway,
+  snapshot/restore building blocks, and public operations assets.
+- Added reviewed config-file authority for long-running public services and
+  bounded etcd/TiKV dependency handling.
 - Embedded the `v1.0.0` GA identity, Git commit, build date, and dirty-state
   metadata into release binaries.
 
@@ -49,18 +48,18 @@ begin.
 - Stable daemon settings now come from versioned configuration files; legacy
   command-line names remain compatibility aliases with deprecation notices.
 
-### Edition: Community
+### Public Source Boundary
 
-- Community binaries retain the three-distinct-iSCSI-exported-volume limit and
-  fail closed for Enterprise-only EC and `t2_large` export-scale claims.
-- Community Makefile and container builds inject the same GA build identity as
-  the canonical release.
+- Public binaries retain the three-distinct-iSCSI-exported-volume limit and do
+  not register advanced Enterprise command surfaces.
+- Public Makefile and container builds inject the v1.0.0 build identity.
 
 ### Support & Evidence
 
-- Phase Z release-readiness evidence and the Phase AA `t2_large` closure are
-  consumed by the `v1.0.0` release package. The support matrix remains the
-  authority for edition, topology, and feature scope.
+- The supported v1.0 volume claim is the replicated userspace gateway path.
+- Snapshot/restore, CSI, kernel datapath I/O, basic iSCSI, and external
+  initiator integrations are available in source but are not validated as
+  supported v1.0 release surfaces.
 
 ### Upgrade & Migration
 
@@ -70,7 +69,8 @@ begin.
 
 ### Known Limits
 
-- Enterprise `t2_large` evidence does not widen Community export limits.
+- The release makes no public benchmark claim.
+- Kernel datapath and larger-than-recorded topology claims remain outside the
+  v1.0 support boundary.
 - Dependency loss is fail-open for already-admitted serving and fail-closed for
   membership changes, new export admission, promotion, and failover.
-- No public benchmark claim is made by this release.

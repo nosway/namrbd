@@ -1,6 +1,6 @@
 # namrbd-mcp configuration.
 #
-# Phase Y closed MCP as read-only, so the large_scale profile refuses the
+# The supported MCP surface is read-only, so the large_scale profile refuses the
 # operate posture. Recording mode and approval policy here means an operator can
 # read the posture without opening the unit file.
 schema_version: 1

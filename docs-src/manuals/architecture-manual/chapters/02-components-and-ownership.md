@@ -1,6 +1,8 @@
 Chapter 3
 
-Edition boundary: Community edition component ownership and Enterprise edition only ownership rows are both present.
+Advanced feature note: Enterprise rows describe ownership designs under
+development and validation, not public v1.0 support claims. See
+[Feature Status](../../../feature-status.md).
 
 # Components And Ownership
 

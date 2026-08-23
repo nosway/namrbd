@@ -24,8 +24,8 @@ func main() {
 	fs := flag.NewFlagSet("namrbd-mcp", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	configPath := fs.String("config", "", "service config file path (AA-IMPL-001H)")
-	fs.StringVar(&cfg.OperationsEndpoint, "operations-endpoint", cfg.OperationsEndpoint, "sbs-service Phase Y operations endpoint")
+	configPath := fs.String("config", "", "service config file path")
+	fs.StringVar(&cfg.OperationsEndpoint, "operations-endpoint", cfg.OperationsEndpoint, "sbs-service read-only operations endpoint")
 	fs.StringVar(&cfg.Mode, "mode", cfg.Mode, "MCP posture: observe or operate")
 	fs.StringVar(&cfg.ApprovalPolicy, "approval-policy", cfg.ApprovalPolicy, "approval policy: dry-run, external-token, or local-confirmation")
 	fs.StringVar(&cfg.OperationOutputDir, "operation-output-dir", cfg.OperationOutputDir, "directory for future MCP operation records")

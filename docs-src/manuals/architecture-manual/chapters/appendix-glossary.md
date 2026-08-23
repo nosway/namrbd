@@ -1,6 +1,8 @@
 Appendix A
 
-Edition boundary: Community edition terms and Enterprise edition only feature terms are both present.
+Advanced feature note: Enterprise terms identify designs under development and
+validation, not public v1.0 support claims. See
+[Feature Status](../../../feature-status.md).
 
 # Glossary
 

@@ -1,10 +1,15 @@
 Operations Manual
 
-Edition boundary: Community edition install paths and Enterprise edition only sections are both present.
+Advanced feature note: Enterprise sections describe development and validation
+directions, not installable or supported public v1.0 capabilities. See
+[Feature Status](../feature-status.md).
 
-# NAMRBD Installation Guide (Enterprise Service Baseline)
+# NAMRBD Installation Guide
 
-This document details the standard installation, bring-up, and deployment verification paths for NAMRBD Community and Enterprise deployments. Operators should use this as the primary reference for installation, and consult the [Admin Guide](admin-guide.md) for day-2 operations and troubleshooting.
+This document describes public source build, bring-up, and evaluation paths.
+Operators should consult the [Admin Guide](admin-guide.md) for day-2 operations
+and verify the feature-status boundary before treating an integration as a
+supported deployment.
 
 Current install surface:
 
@@ -33,7 +38,7 @@ Related Public Documents:
 Host requirements:
 
 - Linux host with kernel headers/build tree for `namrbd_blk.ko`.
-- Go 1.26.4.
+- Go 1.26.6.
 - `make`, `curl`, `jq`, `sudo`.
 - `etcd` for gateway/control-plane metadata.
 - `TiKV/PD` for `sbs-service` authoritative SBS metadata in primary multi-node runtime.

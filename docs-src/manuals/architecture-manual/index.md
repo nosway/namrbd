@@ -1,6 +1,8 @@
 First edition
 
-Edition boundary: Community edition architecture overview and Enterprise edition only capability summaries are both present.
+Advanced feature note: Enterprise capability descriptions in the architecture
+manual are designs under development and validation. They are not public v1.0
+support claims; [Feature Status](../../feature-status.md) is authoritative.
 
 # NAMRBD Platform Architecture
 
@@ -84,7 +86,7 @@ Standalone installation and operations guides for the HA metadata dependencies a
 | Where does iSCSI fit without changing storage authority? | [Interface Specifications](chapters/appendix-interface-specifications.md) and [Edition Boundaries](chapters/17-edition-and-release-boundaries.md) |
 | How does Kubernetes use NAMRBD without owning storage semantics? | [Kubernetes/CSI Integration Case](chapters/16-kubernetes-csi-integration-case.md) |
 | Where are component interface surfaces summarized? | [Interface Specifications](chapters/appendix-interface-specifications.md) |
-| How does NAMRBD resolve tail latency under high concurrent load? | [Extreme I/O Performance Engineering](chapters/18-extreme-io-performance-engineering.md) |
+| How should performance work be measured and reported? | [Performance Engineering And Benchmark Discipline](chapters/18-extreme-io-performance-engineering.md) |
 
 <div class="chapter-nav" markdown="1">
 

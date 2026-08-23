@@ -1,6 +1,8 @@
 Appendix C
 
-Edition boundary: Community edition interfaces and Enterprise edition only interface rows are both present.
+Advanced feature note: Enterprise interface rows describe designs under
+development and validation. They are not public v1.0 API or support claims.
+See [Feature Status](../../../feature-status.md).
 
 # Interface Specifications
 

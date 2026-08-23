@@ -24,30 +24,7 @@ VERSION_LDFLAGS ?= -X $(VERSION_PACKAGE).Current=$(PRODUCT_VERSION) -X $(VERSION
 GO_BUILD_FLAGS_COMMUNITY ?= $(GOFLAGS_BASE) -ldflags '$(VERSION_LDFLAGS)'
 
 COMMUNITY_CMDS := namrbd-gateway namrbdctl sbs-service sbs-data sbsctl namrbd-debug namrbd-iscsi-gateway namrbd-csi-driver namrbd-mcp
-COMMUNITY_TEST_PACKAGES := \
-	./cmd/namrbd-debug \
-	./cmd/namrbd-gateway \
-	./cmd/namrbdctl \
-	./cmd/sbs-data \
-	./cmd/sbs-service \
-	./cmd/sbsctl \
-	./cmd/namrbd-iscsi-gateway \
-	./cmd/namrbd-csi-driver \
-	./cmd/namrbd-mcp \
-	./gateway/service \
-	./internal/csi/driver \
-	./internal/mcpops \
-	./iscsi \
-	./sbs/cluster \
-	./sbs/cluster/control \
-	./sbs/cluster/metadata \
-	./sbs/cluster/payload \
-	./sbs/cluster/placement \
-	./sbs/cluster/replication \
-	./sbs/internalapi/v1 \
-	./sbs/local \
-	./version \
-	./web/operations-dashboard
+COMMUNITY_TEST_PACKAGES := ./...
 
 CONTAINER_DOCKERFILE_SBS ?= packaging/docker/Dockerfile.sbs
 NAMRBD_IMAGE_REGISTRY ?= ghcr.io/nosway
@@ -114,6 +91,9 @@ help:
 	@printf '  make docs-render-check\n'
 	@printf '  make version\n'
 	@printf '  make web-operations-dashboard-test\n'
+	@printf '  make operations-dashboard-browser-qa\n'
+	@printf '  make mcp-client-provider-integration\n'
+	@printf '  make community-release-evidence\n'
 	@printf '  make clean\n'
 
 .PHONY: build-community
@@ -162,21 +142,21 @@ kernel-module:
 web-operations-dashboard-test:
 	$(GO) test $(GOFLAGS_COMMUNITY) ./web/operations-dashboard -run TestOperationsDashboardHandler -count=1
 
-.PHONY: phase-y-browser-qa
-phase-y-browser-qa: $(CACHE_DIR)
+.PHONY: operations-dashboard-browser-qa
+operations-dashboard-browser-qa: $(CACHE_DIR)
 	@bash tools/operations-dashboard-browser-qa.sh
 
-.PHONY: phase-y-mcp-client-provider-integration
-phase-y-mcp-client-provider-integration: $(CACHE_DIR)
-	@mkdir -p "$(CACHE_DIR)/phase-y-mcp-client-provider-integration" "$(GOCACHE)" "$(GOMODCACHE)"
-	@GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) build $(GOFLAGS_COMMUNITY) -o "$(CACHE_DIR)/phase-y-mcp-client-provider-integration/namrbd-mcp" ./cmd/namrbd-mcp
-	@python3 tools/mcp-client-provider-integration.py --provider "$(CACHE_DIR)/phase-y-mcp-client-provider-integration/namrbd-mcp" --evidence "$(CACHE_DIR)/phase-y-mcp-client-provider-integration/evidence.json"
+.PHONY: mcp-client-provider-integration
+mcp-client-provider-integration: $(CACHE_DIR)
+	@mkdir -p "$(CACHE_DIR)/mcp-client-provider-integration" "$(GOCACHE)" "$(GOMODCACHE)"
+	@GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) build $(GOFLAGS_COMMUNITY) -o "$(CACHE_DIR)/mcp-client-provider-integration/namrbd-mcp" ./cmd/namrbd-mcp
+	@python3 tools/mcp-client-provider-integration.py --provider "$(CACHE_DIR)/mcp-client-provider-integration/namrbd-mcp" --evidence "$(CACHE_DIR)/mcp-client-provider-integration/evidence.json"
 
 .PHONY: container-build-community-images
 container-build-community-images: container-build-namrbd-gateway container-build-namrbd-iscsi-gateway container-build-namrbd-csi-driver container-build-sbs
 
-.PHONY: phase-y-release-evidence
-phase-y-release-evidence: $(CACHE_DIR)
+.PHONY: community-release-evidence
+community-release-evidence: $(CACHE_DIR)
 	@bash tools/generate-community-release-evidence.sh
 
 .PHONY: container-build-namrbd-gateway
@@ -356,6 +336,7 @@ docs-source-check:
 	test -f "$(MKDOCS_CONFIG)"
 	test -f "$(DOCS_SOURCE_DIR)/index.md"
 	test -f "$(DOCS_SOURCE_DIR)/community-scope.md"
+	test -f "$(DOCS_SOURCE_DIR)/feature-status.md"
 	test -f "$(DOCS_SOURCE_DIR)/quickstart.md"
 	test -f "$(DOCS_SOURCE_DIR)/operations.md"
 	test -f "$(DOCS_SOURCE_DIR)/observability.md"

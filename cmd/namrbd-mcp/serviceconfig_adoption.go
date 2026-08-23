@@ -23,8 +23,8 @@ func explicitlySetFlags(fs *flag.FlagSet) map[string]string {
 
 // applyMCPConfig loads a config file into the MCP runtime config.
 //
-// The posture rule is the point. Phase Y closed MCP as read-only, so the
-// large_scale profile refuses the operate posture. Config validation already
+// The posture rule is the point. The supported MCP surface is read-only, so
+// the large_scale profile refuses the operate posture. Config validation already
 // rejects it, and this path re-checks after overrides because an environment
 // variable or a typed flag could otherwise reintroduce it after the file
 // validated cleanly.
@@ -64,7 +64,7 @@ func applyMCPConfig(path string, cfg *mcpops.Config, cliSet map[string]string, e
 	// Re-check posture after overrides. Validation ran against the file; a typed
 	// flag or a registry override could still have turned observe into operate.
 	if large && cfg.Mode == mcpops.ModeOperate {
-		e := fmt.Sprintf("mcp.mode %q is not admissible in the %s profile; Phase Y closed MCP support as read-only",
+		e := fmt.Sprintf("mcp.mode %q is not admissible in the %s profile; the supported MCP surface is read-only",
 			mcpops.ModeOperate, serviceconfig.ProfileLargeScale)
 		return res.Summarize([]string{e}), fmt.Errorf("%s", e)
 	}

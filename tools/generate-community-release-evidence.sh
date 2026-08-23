@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="${NAMRBD_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-HANDOFF_DIR="${PHASE_Y_PUBLIC_HANDOFF_OUT_DIR:-$ROOT_DIR/.cache/phase-y-public-handoff}"
-OUT_DIR="${PHASE_Y_RELEASE_EVIDENCE_OUT_DIR:-$ROOT_DIR/.cache/phase-y-release-evidence}"
-IMAGES_JSONL="${PHASE_Y_RELEASE_IMAGES_JSONL:-$HANDOFF_DIR/images.jsonl}"
+HANDOFF_DIR="${NAMRBD_RELEASE_INPUT_DIR:-$ROOT_DIR/.cache/community-release-input}"
+OUT_DIR="${NAMRBD_RELEASE_EVIDENCE_OUT_DIR:-$ROOT_DIR/.cache/community-release-evidence}"
+IMAGES_JSONL="${NAMRBD_RELEASE_IMAGES_JSONL:-$HANDOFF_DIR/images.jsonl}"
 SYFT="${SYFT:-syft}"
 SYFT_IMAGE="${SYFT_IMAGE:-anchore/syft:v1.33.0}"
 SOURCE_REPOSITORY="${NAMRBD_SOURCE_REPOSITORY:-https://github.com/nosway/namrbd}"
@@ -99,8 +99,8 @@ if [[ "$error_count" -eq 0 ]]; then
 			  subject:[{name:$subject,digest:{sha256:$digest}}],
 			  predicateType:"https://slsa.dev/provenance/v1",
 			  predicate:{
-			    buildDefinition:{buildType:"https://github.com/nosway/namrbd/phase-y-community-container@v1",externalParameters:{image:$subject},internalParameters:{},resolvedDependencies:[{uri:$source,digest:{gitCommit:$revision}}]},
-			    runDetails:{builder:{id:$builder},metadata:{invocationId:("phase-y-"+$revision),startedOn:$started,finishedOn:(now|todateiso8601)}}
+			    buildDefinition:{buildType:"https://github.com/nosway/namrbd/community-container@v1",externalParameters:{image:$subject},internalParameters:{},resolvedDependencies:[{uri:$source,digest:{gitCommit:$revision}}]},
+			    runDetails:{builder:{id:$builder},metadata:{invocationId:("community-release-"+$revision),startedOn:$started,finishedOn:(now|todateiso8601)}}
 			  }
 			}' >"$provenance"
 		if jq -e --arg digest "${image_id#sha256:}" '.subject[0].digest.sha256 == $digest and .predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit != ""' "$provenance" >/dev/null; then
@@ -146,6 +146,6 @@ jq -n --arg result "$result" --arg manifest "${MANIFEST#"$ROOT_DIR/"}" --arg che
 	--arg first_error "$first_error" --arg last_error "$last_error" --argjson ok_count "$ok_count" --argjson error_count "$error_count" \
 	--argjson sbom_count "$sbom_count" \
 	--argjson provenance_count "$provenance_count" \
-	'{result:$result,entrypoint:"phase-y-release-evidence",release_manifest_ready:($error_count==0),sbom_recorded:($error_count==0),provenance_recorded:($error_count==0),checksum_verified:($error_count==0),sbom_count:$sbom_count,provenance_count:$provenance_count,ok_count:$ok_count,error_count:$error_count,first_error:$first_error,last_error:$last_error,release_manifest_path:$manifest,checksums_path:$checksums}' | tee "$SUMMARY"
+	'{result:$result,entrypoint:"community-release-evidence",release_manifest_ready:($error_count==0),sbom_recorded:($error_count==0),provenance_recorded:($error_count==0),checksum_verified:($error_count==0),sbom_count:$sbom_count,provenance_count:$provenance_count,ok_count:$ok_count,error_count:$error_count,first_error:$first_error,last_error:$last_error,release_manifest_path:$manifest,checksums_path:$checksums}' | tee "$SUMMARY"
 
 [[ "$error_count" -eq 0 ]]

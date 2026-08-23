@@ -1,13 +1,20 @@
-# Contributing To NAMRBD Community Edition
+# Contributing To NAMRBD
 
-NAMRBD Community Edition welcomes issues, fixes, documentation improvements,
-and compatibility reports that stay within the Community feature boundary.
+NAMRBD welcomes issues, fixes, documentation improvements, and compatibility
+reports for the public open-source platform.
+
+The public GitHub repository is generated from a canonical mixed-edition
+development repository. Public pull requests are reviewed in GitHub as usual.
+After acceptance, maintainers import the reviewed commit range into the
+canonical repository, preserve contributor attribution, run the public
+boundary checks, and re-export the public tree. Contributors do not need access
+to the canonical repository.
 
 ## Contribution Flow
 
 - Keep changes focused on replicated storage, gateway, SBS, kernel module,
   basic CSI, basic iSCSI, MCP, quickstart, and public observability behavior
-  unless maintainers explicitly expand the Community boundary.
+  unless maintainers explicitly expand the public source boundary.
 - Include focused tests or a short validation note with behavior changes.
 - Keep public documentation product-facing and avoid private validation topology,
   internal planning notes, local user paths, or release evidence.
@@ -15,9 +22,9 @@ and compatibility reports that stay within the Community feature boundary.
   `.env` files, bearer tokens, TLS private material, or rendered Secret
   manifests containing live credentials.
 
-## Edition Boundary
+## Public Source Boundary
 
-Community contributions should stay within replicated volume, gateway, SBS
+Public contributions should stay within replicated volume, gateway, SBS
 replicated service/data-plane, kernel module, basic CSI, basic iSCSI, MCP,
 quickstart, and public operations surfaces. Enterprise-only capability requests
 should be tracked as design or product-scope issues unless a maintainer
@@ -38,7 +45,7 @@ the edit scoped.
 
 ## Validation
 
-Run the Community gates before proposing a change:
+Run the public source gates before proposing a change:
 
 ```bash
 make format-community-check
@@ -106,6 +113,6 @@ credential values.
 
 ## DCO And Sign-Off
 
-NAMRBD Community does not require Developer Certificate of Origin sign-off at
+NAMRBD does not require Developer Certificate of Origin sign-off at
 this time. A `Signed-off-by` trailer is accepted but not required unless the
 project maintainers announce a DCO policy change.

@@ -1,10 +1,17 @@
 Operations Manual
 
-Edition boundary: Community edition operations and Enterprise edition only administration sections are both present.
+Advanced feature note: Enterprise sections summarize designs under development
+and validation. They are not public v1.0 administration or support claims. See
+[Feature Status](../feature-status.md).
 
-# NAMRBD Administrator Guide (Enterprise Service Baseline)
+# NAMRBD Administrator Guide
 
-This document establishes the standard operational paths for NAMRBD, including the boundaries of Enterprise Backup & Remote Disaster Recovery, Dynamic Performance Provisioning & Warmup Tiers, Enterprise Security & Vault KMS, Community basic iSCSI target access, and Enterprise-only iSCSI HA/scale surfaces. For initial deployment, consult the [Installation Guide](installation-guide.md), and for the user quick-start guide, refer to the [User Manual](user-manual.md).
+This document describes public platform ownership, observability, and
+operational guardrails. Enterprise Backup/DR, QoS, security/KMS, governance,
+advanced iSCSI, mobility, and dedupe material is design context for work under
+development. For initial deployment, consult the
+[Installation Guide](installation-guide.md), and for user workflows, refer to
+the [User Manual](user-manual.md).
 
 The legacy metadata command surface is archived. Administrators should use `namrbdctl`, `sbsctl`, `namrbd-debug`, and standard administrative APIs for volume lifecycle management, storage authority, and system diagnostics.
 
