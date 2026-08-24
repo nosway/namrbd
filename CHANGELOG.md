@@ -32,6 +32,8 @@ begin.
 
 - Retained immutable commit pins for all updated GitHub Actions and verified the
   exported Go call graph with `govulncheck`.
+- Updated the root and bundled gotgt module from logrus 1.9.0 to 1.9.3 to
+  resolve GHSA-4f99-4q7p-p3gh / CVE-2025-65637.
 
 ### Public Source Boundary
 
