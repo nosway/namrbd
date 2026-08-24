@@ -1,5 +1,11 @@
 # ![NAMRBD logo](web/operations-dashboard/static/assets/namrbd-logo.svg) NAMRBD
 
+[![Community CI](https://github.com/nosway/namrbd/actions/workflows/community-ci.yml/badge.svg?branch=main)](https://github.com/nosway/namrbd/actions/workflows/community-ci.yml)
+[![Code coverage](https://codecov.io/gh/nosway/namrbd/branch/main/graph/badge.svg)](https://codecov.io/gh/nosway/namrbd)
+[![Go version](https://img.shields.io/github/go-mod/go-version/nosway/namrbd?filename=go.mod&logo=go)](go.mod)
+[![License](https://img.shields.io/badge/license-Apache--2.0%20%7C%20GPL--2.0--only-blue.svg)](LICENSE-POLICY.md)
+[![Govulncheck](https://img.shields.io/github/actions/workflow/status/nosway/namrbd/community-ci.yml?branch=main&event=push&label=govulncheck)](https://github.com/nosway/namrbd/actions/workflows/community-ci.yml)
+
 NAMRBD (Network Attached Multipath Resilient Block Device) is an open-source
 distributed block storage platform for Linux. The public source tree provides
 the replicated storage core, gateway and SBS services, host and kernel control
