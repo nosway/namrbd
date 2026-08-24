@@ -37,6 +37,10 @@ begin.
 
 ### Public Source Boundary
 
+- Assigned root and bundled `gotgt` Go module metadata to each repository
+  independently. Canonical-to-public sync now preserves the public module
+  files, and public-to-canonical import does not copy dependency metadata.
+
 ### Support & Evidence
 
 ### Upgrade & Migration

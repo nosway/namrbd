@@ -8,7 +8,8 @@ development repository. Public pull requests are reviewed in GitHub as usual.
 After acceptance, maintainers import the reviewed commit range into the
 canonical repository, preserve contributor attribution, run the public
 boundary checks, and re-export the public tree. Contributors do not need access
-to the canonical repository.
+to the canonical repository. Go dependency metadata is the exception described
+below: each repository owns and validates its own module graph.
 
 ## Contribution Flow
 
@@ -43,12 +44,29 @@ make format-community-check
 If the gate reports NAMRBD-owned files, run `gofmt -w` on those files and keep
 the edit scoped.
 
+## Dependency Metadata Ownership
+
+The public repository independently owns `go.mod`, `go.sum`,
+`third_party/gotgt/go.mod`, and `third_party/gotgt/go.sum`. Public dependency
+pull requests update these files in GitHub and are not copied automatically
+into the canonical mixed-edition module graph. Maintainers assess and update
+canonical dependencies separately when the private source graph also needs the
+change.
+
+Run the non-mutating tidy gate for both public modules before proposing a
+dependency change:
+
+```bash
+make module-metadata-check
+```
+
 ## Validation
 
 Run the public source gates before proposing a change:
 
 ```bash
 make format-community-check
+make module-metadata-check
 make build-community
 make test-community
 make vet-community

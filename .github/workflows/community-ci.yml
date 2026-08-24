@@ -36,6 +36,9 @@ jobs:
       - name: Format check
         run: make format-community-check
 
+      - name: Dependency metadata check
+        run: make module-metadata-check
+
       - name: Build Community binaries
         run: make build-community
 

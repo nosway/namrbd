@@ -67,6 +67,7 @@ help:
 	@printf 'NAMRBD Community targets:\n'
 	@printf '  make build-community\n'
 	@printf '  make test-community\n'
+	@printf '  make module-metadata-check\n'
 	@printf '  make format-community-check\n'
 	@printf '  make vet-community\n'
 	@printf '  make govulncheck-community\n'
@@ -110,6 +111,13 @@ $(COMMUNITY_BIN_DIR)/%: $(COMMUNITY_BIN_DIR)
 test-community:
 	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
 	GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) test $(GOFLAGS_COMMUNITY) $(COMMUNITY_TEST_PACKAGES)
+
+.PHONY: module-metadata-check
+module-metadata-check:
+	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
+	GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) mod tidy -diff
+	cd third_party/gotgt && \
+		GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) mod tidy -diff
 
 .PHONY: format-community-check
 format-community-check:

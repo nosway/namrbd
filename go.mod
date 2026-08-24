@@ -6,7 +6,6 @@ require (
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/container-storage-interface/spec v1.13.0
 	github.com/gostor/gotgt v0.2.2
-	github.com/klauspost/reedsolomon v1.14.2
 	github.com/pingcap/kvproto v0.0.0-20230403051650-e166ae588106
 	github.com/tikv/client-go/v2 v2.0.7
 	go.etcd.io/etcd/api/v3 v3.7.1
@@ -39,7 +38,6 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect

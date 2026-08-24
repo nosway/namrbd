@@ -12,6 +12,9 @@
 # code, and legacy namrbd-meta surfaces are excluded from future public mirror
 # export.
 
+# These two files keep standalone canonical export fixtures buildable. The
+# durable public-worktree sync excludes them and preserves the public repo's
+# independently owned root module metadata instead.
 include go.mod
 include go.sum
 include Makefile
@@ -61,6 +64,8 @@ include kernel
 include proto
 include protocol
 include sbs
+# The bundled module sources are exported, but the durable sync separately
+# preserves third_party/gotgt/go.mod and third_party/gotgt/go.sum in public.
 include third_party/gotgt
 include version
 include volumeid
