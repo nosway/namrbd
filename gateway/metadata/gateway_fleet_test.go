@@ -49,7 +49,7 @@ func TestGatewayFleetWatchCarriesCheckpointAndLifecycle(t *testing.T) {
 		Readiness: service.GatewayReadinessDegraded, DrainState: service.GatewayDrainDraining,
 	})
 	resp := clientv3.WatchResponse{
-		Header: etcdserverpb.ResponseHeader{Revision: 53},
+		Header: &etcdserverpb.ResponseHeader{Revision: 53},
 		Events: []*clientv3.Event{
 			{Type: clientv3.EventTypePut, Kv: put},
 			{Type: clientv3.EventTypeDelete, Kv: &mvccpb.KeyValue{Key: []byte(prefix + "gw-b/status"), ModRevision: 53}},

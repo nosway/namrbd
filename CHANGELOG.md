@@ -13,13 +13,25 @@ begin.
 
 ### Changed
 
+- Updated CSI spec to 1.13.0, reedsolomon to 1.14.2, etcd client to 3.7.1,
+  gRPC to 1.83.1, and protobuf to 1.36.12 with their resolved transitive
+  dependencies.
+- Updated the pinned setup-go, Helm setup, Pages deployment, dependency review,
+  and build-provenance GitHub Actions revisions.
+
 ### Fixed
+
+- Updated the gateway fleet watch fixture for the etcd 3.7 response-header
+  pointer API.
 
 ### Deprecated
 
 ### Removed
 
 ### Security
+
+- Retained immutable commit pins for all updated GitHub Actions and verified the
+  exported Go call graph with `govulncheck`.
 
 ### Public Source Boundary
 
