@@ -1,0 +1,631 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "SBS Data Operational API",
+    "version": "1.0.0",
+    "description": "Reviewed Community health and read-only operational observations for sbs-data. The summary and store-health handlers encode JSON without explicitly setting Content-Type; clients should accept the net/http text/plain fallback as well as application/json. Other mutation and diagnostic routes are outside this specification."
+  },
+  "servers": [
+    {
+      "url": "http://{host}:{port}",
+      "description": "sbs-data HTTP listener",
+      "variables": {
+        "host": {
+          "default": "127.0.0.1"
+        },
+        "port": {
+          "default": "9082"
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Process and dependency health."
+    },
+    {
+      "name": "Operations",
+      "description": "Read-only local data-store observations."
+    },
+    {
+      "name": "Metrics",
+      "description": "Prometheus text exposition."
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "getSBSDataHealth",
+        "summary": "Check process liveness",
+        "tags": [
+          "Health"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-data process",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "cmd/sbs-data/main.go:mux.HandleFunc(\"/healthz\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HealthOK"
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "getSBSDataReadiness",
+        "summary": "Report dependency-aware readiness",
+        "description": "sbs-data currently has no etcd or TiKV dependency and normally reports the healthy default. The shared readiness contract always returns HTTP 200 and places state in the body.",
+        "tags": [
+          "Health"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "shared dependency availability tracker",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "cmd/sbs-data/main.go:mux.Handle(\"/readyz\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DependencyReadiness"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "getSBSDataMetrics",
+        "summary": "Read Prometheus metrics",
+        "tags": [
+          "Metrics"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-data local metadata and store runtime",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "cmd/sbs-data/main.go:mux.HandleFunc(\"/metrics\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/PrometheusMetrics"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/debug/summary": {
+      "get": {
+        "operationId": "getSBSDataSummary",
+        "summary": "Read the local SBS data summary",
+        "description": "A reviewed read-only operational exception under the historical /debug prefix. Other debug routes are not part of the public surface.",
+        "tags": [
+          "Operations"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-data local metadata and store runtime",
+        "x-namrbd-feature-gate": "always; read-only reviewed /debug exception",
+        "x-namrbd-source": "cmd/sbs-data/main.go:mux.HandleFunc(\"/debug/summary\"",
+        "responses": {
+          "200": {
+            "description": "Current local counts, stores, and collection timings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SBSDataSummary"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "The same JSON serialization when net/http supplies its fallback Content-Type."
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/debug/store-health": {
+      "get": {
+        "operationId": "getSBSDataStoreHealth",
+        "summary": "Read local store health",
+        "description": "A reviewed read-only operational exception under the historical /debug prefix. Other debug routes are not part of the public surface.",
+        "tags": [
+          "Operations"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-data local store runtime",
+        "x-namrbd-feature-gate": "always; read-only reviewed /debug exception",
+        "x-namrbd-source": "cmd/sbs-data/main.go:mux.HandleFunc(\"/debug/store-health\"",
+        "responses": {
+          "200": {
+            "description": "Store capacity, state, and collection timings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreHealthSummary"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "The same JSON serialization when net/http supplies its fallback Content-Type."
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "HealthOK": {
+        "description": "The process is alive.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string",
+              "const": "ok\n"
+            }
+          }
+        }
+      },
+      "DependencyReadiness": {
+        "description": "Dependency state and selected behavior.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DependencyReport"
+            }
+          }
+        }
+      },
+      "PrometheusMetrics": {
+        "description": "Prometheus text exposition for local volumes, sessions, allocation metadata, fences, stores, capacity, and collection timings.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "The local observability snapshot could not be collected.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MethodNotAllowed": {
+        "description": "The shared readiness route supports GET only.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "SBSDataSummary": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Response assembled by cmd/sbs-data from local.ObservabilitySnapshot. Listed fields are always written by the current handler; the open object avoids overstating a closed map contract.",
+        "required": [
+          "cluster_id",
+          "sbs_cluster_id",
+          "node_id",
+          "path",
+          "build_version",
+          "volumes",
+          "open_sessions",
+          "allocation_pages",
+          "extent_pages",
+          "garbage_chunks",
+          "idempotency_records",
+          "iscsi_writer_fences",
+          "stale_writer_rejected_count",
+          "stores",
+          "timings"
+        ],
+        "properties": {
+          "cluster_id": {
+            "type": "string"
+          },
+          "sbs_cluster_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "build_version": {
+            "type": "string"
+          },
+          "volumes": {
+            "type": "integer"
+          },
+          "open_sessions": {
+            "type": "integer"
+          },
+          "allocation_pages": {
+            "type": "integer"
+          },
+          "extent_pages": {
+            "type": "integer",
+            "deprecated": true,
+            "description": "Compatibility alias for allocation_pages."
+          },
+          "garbage_chunks": {
+            "type": "integer"
+          },
+          "idempotency_records": {
+            "type": "integer"
+          },
+          "iscsi_writer_fences": {
+            "type": "integer"
+          },
+          "stale_writer_rejected_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreSnapshot"
+            }
+          },
+          "timings": {
+            "$ref": "#/components/schemas/ObservabilityTimings"
+          }
+        }
+      },
+      "StoreHealthSummary": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Response assembled from local.StoreHealthSnapshot.",
+        "required": [
+          "path",
+          "build_version",
+          "stores",
+          "timings"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "build_version": {
+            "type": "string"
+          },
+          "stores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreSnapshot"
+            }
+          },
+          "timings": {
+            "$ref": "#/components/schemas/StoreHealthTimings"
+          }
+        }
+      },
+      "StoreSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "path",
+          "shards",
+          "weight",
+          "allocation_weight",
+          "state",
+          "capacity_bytes",
+          "available_bytes",
+          "used_bytes",
+          "pebble_disk_usage_bytes",
+          "compaction_pending_bytes",
+          "compaction_in_progress_bytes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "shards": {
+            "type": "integer"
+          },
+          "weight": {
+            "type": "integer"
+          },
+          "allocation_weight": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "degraded",
+              "read_only",
+              "failed",
+              "draining"
+            ]
+          },
+          "capacity_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "available_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "used_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pebble_disk_usage_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "compaction_pending_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "compaction_in_progress_bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ObservabilityTimings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "metadata_scan_ms",
+          "store_runtime_ms",
+          "total_ms"
+        ],
+        "properties": {
+          "metadata_scan_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "store_runtime_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_ms": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "StoreHealthTimings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "store_runtime_ms",
+          "total_ms"
+        ],
+        "properties": {
+          "store_runtime_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_ms": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DependencyReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "behavior"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/DependencyStatus"
+          },
+          "behavior": {
+            "$ref": "#/components/schemas/DependencyBehavior"
+          }
+        }
+      },
+      "DependencyStatus": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "dependency_readiness",
+          "etcd_availability",
+          "tikv_availability",
+          "projection_freshness",
+          "etcd_unavailable_grace_seconds",
+          "tikv_unavailable_grace_seconds",
+          "projection_stale_degraded_ms",
+          "projection_stale_blocked_ms",
+          "projection_lag_ms",
+          "stale_projection_count",
+          "iscsi_gateway_stale_count",
+          "membership_change_rejected_count",
+          "export_admission_blocked_count",
+          "serving_continues_on_dependency_loss",
+          "first_error",
+          "last_error"
+        ],
+        "properties": {
+          "dependency_readiness": {
+            "$ref": "#/components/schemas/Readiness"
+          },
+          "etcd_availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "tikv_availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "projection_freshness": {
+            "$ref": "#/components/schemas/ProjectionFreshness"
+          },
+          "etcd_unavailable_grace_seconds": {
+            "type": "integer"
+          },
+          "tikv_unavailable_grace_seconds": {
+            "type": "integer"
+          },
+          "projection_stale_degraded_ms": {
+            "type": "integer"
+          },
+          "projection_stale_blocked_ms": {
+            "type": "integer"
+          },
+          "projection_lag_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "stale_projection_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "iscsi_gateway_stale_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "membership_change_rejected_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "export_admission_blocked_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serving_continues_on_dependency_loss": {
+            "type": "boolean"
+          },
+          "first_error": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          }
+        }
+      },
+      "DependencyBehavior": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "data_path",
+          "control_path",
+          "views",
+          "membership_change",
+          "export_admission",
+          "readiness",
+          "reasons"
+        ],
+        "properties": {
+          "data_path": {
+            "type": "string",
+            "enum": [
+              "continues",
+              "continues_degraded"
+            ]
+          },
+          "control_path": {
+            "type": "string",
+            "enum": [
+              "read_write",
+              "read_only"
+            ]
+          },
+          "views": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "degraded",
+              "unhealthy"
+            ]
+          },
+          "membership_change": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "export_admission": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/Readiness"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Availability": {
+        "type": "string",
+        "enum": [
+          "available",
+          "unavailable_within_grace",
+          "unavailable_beyond_grace"
+        ]
+      },
+      "ProjectionFreshness": {
+        "type": "string",
+        "enum": [
+          "fresh",
+          "degraded",
+          "blocked"
+        ]
+      },
+      "Readiness": {
+        "type": "string",
+        "enum": [
+          "healthy",
+          "degraded_serving_on_cache",
+          "blocked"
+        ]
+      },
+      "Decision": {
+        "type": "string",
+        "enum": [
+          "allowed",
+          "rejected",
+          "suppressed",
+          "blocked"
+        ]
+      }
+    }
+  }
+}

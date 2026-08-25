@@ -45,5 +45,11 @@ date.
 | Data mobility and repack | Controlled movement between placement or storage geometries with progress, verification, rollback, and recovery boundaries. Broad live migration is not claimed. |
 | Deduplication | Scoped replicated-data dedupe, reference safety, and reclaim workflows. Broad inline dedupe and live EC dedupe are not claimed. |
 
+The [Community and Enterprise Edition Boundary](manuals/edition-boundary.md)
+defines the required `[Enterprise Edition Only]` marker and fail-closed CLI/API
+behavior. Detailed Enterprise manuals describe engineering and operational
+contracts for these development areas without expanding the release support
+boundary.
+
 NVMe/TCP is tracked separately as exploratory future work. It is not a current
 open-source or Enterprise support claim.

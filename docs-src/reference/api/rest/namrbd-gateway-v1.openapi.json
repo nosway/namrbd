@@ -1,0 +1,1623 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "NAMRBD Gateway HTTP API",
+    "version": "1.0.0",
+    "description": "Reviewed Community v1 volume, discovery, health, readiness, and metrics operations implemented by namrbd-gateway. Success bodies assembled from Go maps remain open schemas and list only the current stable fields. Most service errors are plain text because the handlers use http.Error."
+  },
+  "servers": [
+    {
+      "url": "{scheme}://{host}:{port}",
+      "description": "namrbd-gateway control HTTP listener",
+      "variables": {
+        "scheme": {
+          "default": "http",
+          "enum": [
+            "http",
+            "https"
+          ]
+        },
+        "host": {
+          "default": "127.0.0.1"
+        },
+        "port": {
+          "default": "9701"
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Process and dependency health."
+    },
+    {
+      "name": "Volumes",
+      "description": "Stable volume attachment and logical I/O operations."
+    },
+    {
+      "name": "Discovery",
+      "description": "Stable gateway and per-volume endpoint discovery."
+    },
+    {
+      "name": "Metrics",
+      "description": "Prometheus text exposition."
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "getGatewayHealth",
+        "summary": "Check gateway process liveness",
+        "tags": [
+          "Health"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-gateway process",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/healthz\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HealthOK"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "getGatewayReadiness",
+        "summary": "Report dependency-aware gateway readiness",
+        "description": "Returns HTTP 200 in every dependency state. The readiness classification and serving/mutation behavior are carried in the JSON body.",
+        "tags": [
+          "Health"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "shared dependency availability tracker",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/readyz\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DependencyReadiness"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "getGatewayMetrics",
+        "summary": "Read Prometheus metrics",
+        "tags": [
+          "Metrics"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-gateway runtime and I/O metrics",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/metrics\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/PrometheusMetrics"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/volumes/{volume_id}/info": {
+      "get": {
+        "operationId": "getGatewayVolumeInfo",
+        "summary": "Read a volume attachment manifest",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/VolumeID"
+          }
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-gateway volume service with optional cluster discovery enrichment",
+        "x-namrbd-feature-gate": "always registered; cluster enrichment requires a metadata repository",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/api/v1/volumes/\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/VolumeManifest"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/volumes/{volume_id}/attach": {
+      "post": {
+        "operationId": "attachGatewayVolume",
+        "summary": "Attach a volume and return its manifest",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/VolumeID"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachRequest"
+              }
+            }
+          }
+        },
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-gateway attachment state with SBS-backed volume metadata",
+        "x-namrbd-feature-gate": "always registered; cluster enrichment requires a metadata repository",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/api/v1/volumes/\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/VolumeManifest"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/volumes/{volume_id}/reload-size": {
+      "post": {
+        "operationId": "reloadGatewayVolumeSize",
+        "summary": "Reload volume size and data-path geometry",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/VolumeID"
+          }
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-gateway volume service with SBS-backed volume metadata",
+        "x-namrbd-feature-gate": "always registered; cluster enrichment requires a metadata repository",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/api/v1/volumes/\"",
+        "responses": {
+          "200": {
+            "description": "Reloaded manifest. The open manifest object includes reload_result equal to ok.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/VolumeManifest"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "reload_result"
+                      ],
+                      "properties": {
+                        "reload_result": {
+                          "type": "string",
+                          "const": "ok"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/volumes/{volume_id}/detach": {
+      "post": {
+        "operationId": "detachGatewayVolume",
+        "summary": "Detach a volume",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/VolumeID"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DetachRequest"
+              }
+            }
+          }
+        },
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-gateway attachment state",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/api/v1/volumes/\"",
+        "responses": {
+          "200": {
+            "description": "Detached attachment state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetachResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/volumes/{volume_id}/read": {
+      "post": {
+        "operationId": "readGatewayVolume",
+        "summary": "Read a logical byte range",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/VolumeID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeRequest"
+              }
+            }
+          }
+        },
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-gateway logical I/O service backed by SBS",
+        "x-namrbd-feature-gate": "always; configured admission policy can throttle before dispatch",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/api/v1/volumes/\"",
+        "responses": {
+          "200": {
+            "description": "Base64-encoded logical read result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "416": {
+            "$ref": "#/components/responses/RangeNotSatisfiable"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdmissionRejected"
+          },
+          "503": {
+            "$ref": "#/components/responses/AdmissionUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/IOInternalError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/volumes/{volume_id}/write": {
+      "post": {
+        "operationId": "writeGatewayVolume",
+        "summary": "Write a logical byte range",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/VolumeID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteRequest"
+              }
+            }
+          }
+        },
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-gateway logical I/O service backed by SBS",
+        "x-namrbd-feature-gate": "always; configured admission policy can throttle before dispatch",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/api/v1/volumes/\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/RangeAcknowledged"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "416": {
+            "$ref": "#/components/responses/RangeNotSatisfiable"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdmissionRejected"
+          },
+          "503": {
+            "$ref": "#/components/responses/AdmissionUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/IOInternalError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/volumes/{volume_id}/flush": {
+      "post": {
+        "operationId": "flushGatewayVolume",
+        "summary": "Flush pending volume writes",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/VolumeID"
+          }
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-gateway logical I/O service backed by SBS",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/api/v1/volumes/\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/FlushAcknowledged"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/volumes/{volume_id}/discard": {
+      "post": {
+        "operationId": "discardGatewayVolumeRange",
+        "summary": "Discard a logical byte range",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/VolumeID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeRequest"
+              }
+            }
+          }
+        },
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-gateway logical I/O service backed by SBS",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/api/v1/volumes/\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/RangeAcknowledged"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "416": {
+            "$ref": "#/components/responses/RangeNotSatisfiable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/volumes/{volume_id}/zero": {
+      "post": {
+        "operationId": "zeroGatewayVolumeRange",
+        "summary": "Write logical zeroes to a byte range",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/VolumeID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeRequest"
+              }
+            }
+          }
+        },
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-gateway logical I/O service backed by SBS",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/api/v1/volumes/\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/RangeAcknowledged"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "416": {
+            "$ref": "#/components/responses/RangeNotSatisfiable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/discovery/gateways": {
+      "get": {
+        "operationId": "listDiscoveredGateways",
+        "summary": "List registered gateways",
+        "tags": [
+          "Discovery"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "cluster gateway metadata through namrbd-gateway",
+        "x-namrbd-feature-gate": "metadata repository configured; otherwise 404",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/api/v1/discovery/gateways\"",
+        "responses": {
+          "200": {
+            "description": "Registered gateway records.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayList"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/discovery/volumes/{volume_id}": {
+      "get": {
+        "operationId": "getDiscoveredVolume",
+        "summary": "Discover endpoints for one volume",
+        "tags": [
+          "Discovery"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/VolumeID"
+          }
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "cluster volume, attachment, and gateway metadata through namrbd-gateway",
+        "x-namrbd-feature-gate": "metadata repository configured; otherwise 404",
+        "x-namrbd-source": "gateway/httpapi/server.go:mux.HandleFunc(\"/api/v1/discovery/volumes/\"",
+        "responses": {
+          "200": {
+            "description": "Per-volume metadata and usable gateway endpoints. Map-assembled nested objects remain open.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryVolumeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "VolumeID": {
+        "name": "volume_id",
+        "in": "path",
+        "required": true,
+        "description": "Canonical eight-digit lowercase hexadecimal volume identifier.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}$",
+          "examples": [
+            "00000001"
+          ]
+        }
+      }
+    },
+    "responses": {
+      "HealthOK": {
+        "description": "The gateway process is alive.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string",
+              "const": "ok\n"
+            }
+          }
+        }
+      },
+      "DependencyReadiness": {
+        "description": "Dependency state and selected behavior.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DependencyReport"
+            }
+          }
+        }
+      },
+      "PrometheusMetrics": {
+        "description": "Prometheus text exposition for runtime identity, metadata requests, I/O counts, bytes, latency, retries, and logical zero/discard observations.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "VolumeManifest": {
+        "description": "Current gateway volume manifest. Conditional discovery and admission fields may also be present.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/VolumeManifest"
+            }
+          }
+        }
+      },
+      "RangeAcknowledged": {
+        "description": "The byte-range operation completed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RangeAcknowledgement"
+            }
+          }
+        }
+      },
+      "FlushAcknowledged": {
+        "description": "The flush completed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/FlushAcknowledgement"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Malformed JSON, invalid canonical volume ID, invalid base64, alignment failure, or another invalid request.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "The volume or configured metadata surface was not found.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "The volume state does not permit the requested attachment or write operation.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RangeNotSatisfiable": {
+        "description": "The requested byte range lies outside the volume.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AdmissionRejected": {
+        "description": "The configured I/O admission policy rejected the request before dispatch.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdmissionError"
+            }
+          }
+        }
+      },
+      "AdmissionUnavailable": {
+        "description": "The admission decision could not be completed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdmissionError"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "The operation failed internally.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "IOInternalError": {
+        "description": "The operation failed internally. Admission configuration failures use JSON; service failures use plain text.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdmissionError"
+            }
+          },
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MethodNotAllowed": {
+        "description": "The path exists but does not support the requested HTTP method.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "AttachRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Fields consumed from the shared ioRequest. The handler tolerates an absent or undecodable body and the service performs semantic validation.",
+        "properties": {
+          "host_id": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        }
+      },
+      "DetachRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Fields consumed from the shared ioRequest. The handler tolerates an absent or undecodable body and the service performs semantic validation.",
+        "properties": {
+          "host_id": {
+            "type": "string"
+          },
+          "attachment_id": {
+            "type": "string"
+          }
+        }
+      },
+      "RangeRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "The JSON body must decode successfully. Missing numeric fields decode as zero and are validated by the service call.",
+        "properties": {
+          "offset_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "length_bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "WriteRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "The JSON body must decode successfully; data_base64 must decode and its byte length must match length_bytes.",
+        "properties": {
+          "offset_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "length_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "data_base64": {
+            "type": "string",
+            "contentEncoding": "base64"
+          }
+        }
+      },
+      "VolumeManifest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Map-assembled manifest. Required properties are written by volumeManifest; additional conditional discovery, runtime, and admission observations may appear.",
+        "required": [
+          "volume_id",
+          "generation",
+          "size_bytes",
+          "block_size",
+          "chunk_size_bytes",
+          "extent_page_bytes",
+          "attachment_id",
+          "attached_host_id",
+          "attached_device_id",
+          "control_endpoints",
+          "dataplane_endpoints",
+          "max_inflight_requests",
+          "max_inflight_bytes",
+          "max_io_size",
+          "max_zero_like_io_size",
+          "gateway_retry_summary"
+        ],
+        "properties": {
+          "volume_id": {
+            "$ref": "#/components/schemas/VolumeID"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "block_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "chunk_size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extent_page_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "allocation_chunk_size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "allocation_page_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "attachment_id": {
+            "type": "string"
+          },
+          "attached_host_id": {
+            "type": "string"
+          },
+          "attached_device_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "control_endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Endpoint"
+            }
+          },
+          "dataplane_endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Endpoint"
+            }
+          },
+          "max_inflight_requests": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_inflight_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_io_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_zero_like_io_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "gateway_retry_summary": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "total_retries": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "open_unavailable_retries": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reopen_retries": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      },
+      "Endpoint": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "path_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "gateway_id": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "use_tls": {
+            "type": "boolean"
+          },
+          "server_name": {
+            "type": "string"
+          },
+          "auth_mode": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "DetachResponse": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "status",
+          "volume_id",
+          "generation",
+          "attached_host_id",
+          "attachment_id",
+          "attached_device_id"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "detached"
+          },
+          "volume_id": {
+            "$ref": "#/components/schemas/VolumeID"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "attached_host_id": {
+            "type": "string"
+          },
+          "attachment_id": {
+            "type": "string"
+          },
+          "attached_device_id": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ReadResponse": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "volume_id",
+          "offset_bytes",
+          "length_bytes",
+          "data_base64"
+        ],
+        "properties": {
+          "volume_id": {
+            "$ref": "#/components/schemas/VolumeID"
+          },
+          "offset_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "length_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "data_base64": {
+            "type": "string",
+            "contentEncoding": "base64"
+          }
+        }
+      },
+      "RangeAcknowledgement": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "status",
+          "volume_id",
+          "offset_bytes",
+          "length_bytes"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok"
+          },
+          "volume_id": {
+            "$ref": "#/components/schemas/VolumeID"
+          },
+          "offset_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "length_bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "FlushAcknowledgement": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "status",
+          "volume_id"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok"
+          },
+          "volume_id": {
+            "$ref": "#/components/schemas/VolumeID"
+          }
+        }
+      },
+      "AdmissionError": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "rejection_reason": {
+            "type": "string"
+          },
+          "before_dispatch": {
+            "type": "boolean"
+          },
+          "cluster_wide_scope": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GatewayList": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "gateways"
+        ],
+        "properties": {
+          "gateways": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GatewayRecord"
+            }
+          }
+        }
+      },
+      "GatewayRecord": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "gateway_id",
+          "connection_state",
+          "last_seen_unix",
+          "lease_id",
+          "control_endpoints",
+          "dataplane_endpoints"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "integer"
+          },
+          "gateway_id": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "cluster_id": {
+            "type": "string"
+          },
+          "sbs_cluster_id": {
+            "type": "string"
+          },
+          "connection_state": {
+            "type": "string"
+          },
+          "readiness": {
+            "type": "string"
+          },
+          "last_seen_unix": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lease_id": {
+            "type": "string"
+          },
+          "lease_expires_at_unix": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "started_at_unix": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "build_version": {
+            "type": "string"
+          },
+          "failure_domain": {
+            "type": "string"
+          },
+          "advertised_addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "control_endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Endpoint"
+            }
+          },
+          "dataplane_endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Endpoint"
+            }
+          },
+          "first_error": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "registry_revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DiscoveryVolumeResponse": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Map-assembled discovery response. Only Community endpoint and geometry fields are enumerated; other implementation observations remain untyped additional properties.",
+        "required": [
+          "volume",
+          "gateways",
+          "dataplane_paths"
+        ],
+        "properties": {
+          "volume": {
+            "$ref": "#/components/schemas/DiscoveredVolume"
+          },
+          "gateways": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GatewayRecord"
+            }
+          },
+          "dataplane_paths": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredPath"
+            }
+          }
+        }
+      },
+      "DiscoveredVolume": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "volume_id",
+          "volume_name",
+          "size_bytes",
+          "block_size",
+          "chunk_size_bytes",
+          "extent_page_bytes",
+          "allocation_chunk_size_bytes",
+          "allocation_page_bytes",
+          "generation",
+          "attachment_id",
+          "attached_host_id",
+          "attached_device_id",
+          "active_gateway_count"
+        ],
+        "properties": {
+          "volume_id": {
+            "$ref": "#/components/schemas/VolumeID"
+          },
+          "volume_name": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "block_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "chunk_size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extent_page_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "allocation_chunk_size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "allocation_page_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "attachment_id": {
+            "type": "string"
+          },
+          "attached_host_id": {
+            "type": "string"
+          },
+          "attached_device_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "active_gateway_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "DiscoveredPath": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "path_id",
+          "gateway_path_id",
+          "gateway_id",
+          "connection_state",
+          "path_state",
+          "address",
+          "port",
+          "use_tls",
+          "server_name",
+          "auth_mode",
+          "priority",
+          "discovery_priority"
+        ],
+        "properties": {
+          "path_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "gateway_path_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "gateway_id": {
+            "type": "string"
+          },
+          "connection_state": {
+            "type": "string"
+          },
+          "path_state": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "use_tls": {
+            "type": "boolean"
+          },
+          "server_name": {
+            "type": "string"
+          },
+          "auth_mode": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "discovery_priority": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "VolumeID": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{8}$"
+      },
+      "DependencyReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "behavior"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/DependencyStatus"
+          },
+          "behavior": {
+            "$ref": "#/components/schemas/DependencyBehavior"
+          }
+        }
+      },
+      "DependencyStatus": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "dependency_readiness",
+          "etcd_availability",
+          "tikv_availability",
+          "projection_freshness"
+        ],
+        "properties": {
+          "dependency_readiness": {
+            "$ref": "#/components/schemas/Readiness"
+          },
+          "etcd_availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "tikv_availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "projection_freshness": {
+            "$ref": "#/components/schemas/ProjectionFreshness"
+          },
+          "etcd_unavailable_grace_seconds": {
+            "type": "integer"
+          },
+          "tikv_unavailable_grace_seconds": {
+            "type": "integer"
+          },
+          "projection_stale_degraded_ms": {
+            "type": "integer"
+          },
+          "projection_stale_blocked_ms": {
+            "type": "integer"
+          },
+          "projection_lag_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "stale_projection_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "iscsi_gateway_stale_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "membership_change_rejected_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "export_admission_blocked_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serving_continues_on_dependency_loss": {
+            "type": "boolean"
+          },
+          "first_error": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          }
+        }
+      },
+      "DependencyBehavior": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "data_path",
+          "control_path",
+          "views",
+          "membership_change",
+          "export_admission",
+          "readiness",
+          "reasons"
+        ],
+        "properties": {
+          "data_path": {
+            "type": "string",
+            "enum": [
+              "continues",
+              "continues_degraded"
+            ]
+          },
+          "control_path": {
+            "type": "string",
+            "enum": [
+              "read_write",
+              "read_only"
+            ]
+          },
+          "views": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "degraded",
+              "unhealthy"
+            ]
+          },
+          "membership_change": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "export_admission": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/Readiness"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Availability": {
+        "type": "string",
+        "enum": [
+          "available",
+          "unavailable_within_grace",
+          "unavailable_beyond_grace"
+        ]
+      },
+      "ProjectionFreshness": {
+        "type": "string",
+        "enum": [
+          "fresh",
+          "degraded",
+          "blocked"
+        ]
+      },
+      "Readiness": {
+        "type": "string",
+        "enum": [
+          "healthy",
+          "degraded_serving_on_cache",
+          "blocked"
+        ]
+      },
+      "Decision": {
+        "type": "string",
+        "enum": [
+          "allowed",
+          "rejected",
+          "suppressed",
+          "blocked"
+        ]
+      }
+    }
+  }
+}

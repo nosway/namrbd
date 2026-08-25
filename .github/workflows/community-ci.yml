@@ -33,6 +33,11 @@ jobs:
       - name: Install MkDocs
         run: python -m pip install -r docs-src/requirements.txt
 
+      - name: Install Protobuf compiler
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y --no-install-recommends protobuf-compiler
+
       - name: Format check
         run: make format-community-check
 
@@ -51,6 +56,9 @@ jobs:
       - name: Public operations and docs gates
         run: |
           make observability-assets-check
+          make cli-reference-check
+          make api-reference-check
+          make config-reference-check
           make docs-source-check
           make docs-render-check
           make web-operations-dashboard-test

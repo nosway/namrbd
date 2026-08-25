@@ -1,0 +1,2009 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "SBS Service Observability API",
+    "version": "1.0.0",
+    "description": "Reviewed Community read-only Phase-Y views and operational health surfaces served by sbs-service. Collection failures are normally represented inside the versioned view envelope rather than as a non-2xx transport status."
+  },
+  "servers": [
+    {
+      "url": "http://{host}:{port}",
+      "description": "sbs-service HTTP listener",
+      "variables": {
+        "host": {
+          "default": "127.0.0.1"
+        },
+        "port": {
+          "default": "9081"
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Process, leader, and dependency readiness."
+    },
+    {
+      "name": "SBS views",
+      "description": "Read-only cluster, node, volume, maintenance, capacity, and reclaim views."
+    },
+    {
+      "name": "Operations views",
+      "description": "Membership, operation, query, MCP, GUI, and workflow views."
+    },
+    {
+      "name": "Metrics",
+      "description": "Prometheus text exposition."
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "getSBSServiceHealth",
+        "summary": "Check process liveness",
+        "tags": [
+          "Health"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service process",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "cmd/sbs-service/main.go:mux.HandleFunc(\"/healthz\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HealthOK"
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "getSBSServiceReadiness",
+        "summary": "Check local and leader readiness",
+        "description": "Returns 503 while the process is not locally ready or, when leader election is configured, while it is not mutation-ready. Dependency loss is reported separately by /dependency.",
+        "tags": [
+          "Health"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service local readiness and leader lease",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "cmd/sbs-service/main.go:mux.HandleFunc(\"/readyz\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HealthOK"
+          },
+          "503": {
+            "$ref": "#/components/responses/NotReady"
+          }
+        }
+      }
+    },
+    "/dependency": {
+      "get": {
+        "operationId": "getSBSServiceDependencyReadiness",
+        "summary": "Report dependency-aware readiness",
+        "description": "Always returns HTTP 200. Dependency state and the fail-open serving/fail-closed mutation behavior are carried in the JSON body.",
+        "tags": [
+          "Health"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "shared dependency availability tracker",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "cmd/sbs-service/main.go:mux.Handle(\"/dependency\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DependencyReadiness"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "getSBSServiceMetrics",
+        "summary": "Read Prometheus metrics",
+        "tags": [
+          "Metrics"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service runtime, cluster metadata, and maintenance workers",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "cmd/sbs-service/main.go:mux.HandleFunc(\"/metrics\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/PrometheusMetrics"
+          }
+        }
+      }
+    },
+    "/api/v1/sbs/cluster": {
+      "get": {
+        "operationId": "getSBSClusterView",
+        "summary": "Read the complete SBS observability snapshot",
+        "description": "Unlike the other Phase-Y routes, this route returns the Snapshot directly rather than wrapping it in View.data.",
+        "tags": [
+          "SBS views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service AdminService, cluster metadata, and sbs-data health detail",
+        "x-namrbd-feature-gate": "always; bounded collectors may report a partial or degraded snapshot",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/sbs/cluster\"",
+        "responses": {
+          "200": {
+            "description": "Versioned SBS observability snapshot.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            }
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/sbs/nodes": {
+      "get": {
+        "operationId": "getSBSNodesView",
+        "summary": "Read SBS node and store observations",
+        "tags": [
+          "SBS views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service membership and sbs-data store health",
+        "x-namrbd-feature-gate": "always; bounded collectors may report a partial or degraded view",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/sbs/nodes\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/NodesView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/sbs/volumes": {
+      "get": {
+        "operationId": "getSBSVolumesView",
+        "summary": "Read SBS volume observations",
+        "tags": [
+          "SBS views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service volume metadata",
+        "x-namrbd-feature-gate": "always; bounded collectors may report a partial or degraded view",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/sbs/volumes\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/VolumesView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/sbs/maintenance": {
+      "get": {
+        "operationId": "getSBSMaintenanceView",
+        "summary": "Read maintenance and operation backlogs",
+        "tags": [
+          "SBS views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service transition and operation state",
+        "x-namrbd-feature-gate": "always; bounded collectors may report a partial or degraded view",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/sbs/maintenance\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MaintenanceView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/sbs/capacity": {
+      "get": {
+        "operationId": "getSBSCapacityView",
+        "summary": "Read capacity observations",
+        "tags": [
+          "SBS views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service volume metadata and sbs-data store health",
+        "x-namrbd-feature-gate": "always; bounded collectors may report a partial or degraded view",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/sbs/capacity\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/CapacityView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/sbs/reclaim": {
+      "get": {
+        "operationId": "getSBSReclaimView",
+        "summary": "Read retired-payload reclaim observations",
+        "tags": [
+          "SBS views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service retired-payload GC state",
+        "x-namrbd-feature-gate": "always; bounded collectors may report a partial or degraded view",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/sbs/reclaim\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ReclaimView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/membership/status": {
+      "get": {
+        "operationId": "getMembershipStatusView",
+        "summary": "Read the membership handoff view",
+        "tags": [
+          "Operations views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service node membership projection",
+        "x-namrbd-feature-gate": "always; bounded collectors may report a partial or degraded view",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/membership/status\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MembershipView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/operations/summary": {
+      "get": {
+        "operationId": "getOperationsSummaryView",
+        "summary": "Read operation counts by state",
+        "tags": [
+          "Operations views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service operation repository",
+        "x-namrbd-feature-gate": "always; bounded collectors may report a partial or degraded view",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/operations/summary\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/OperationsView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/operations/warnings": {
+      "get": {
+        "operationId": "getOperationsWarningsView",
+        "summary": "Read collection warnings and limitations",
+        "tags": [
+          "Operations views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service bounded observability collectors",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/operations/warnings\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/WarningsView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/query/views": {
+      "get": {
+        "operationId": "getQueryViewsView",
+        "summary": "Describe the registered read-only query surface",
+        "tags": [
+          "Operations views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service Phase-Y observability contract",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/query/views\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/QueryView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/mcp/tools": {
+      "get": {
+        "operationId": "getMCPToolsView",
+        "summary": "Describe registered MCP tools",
+        "tags": [
+          "Operations views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service Phase-Y MCP capability view",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/mcp/tools\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MCPView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/gui/summary": {
+      "get": {
+        "operationId": "getGUISummaryView",
+        "summary": "Read the GUI-oriented operational summary",
+        "tags": [
+          "Operations views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service Phase-Y observability snapshot",
+        "x-namrbd-feature-gate": "always; the response describes GUI capability and does not claim a public GUI",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/gui/summary\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/GUIView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/workflow/hardening": {
+      "get": {
+        "operationId": "getWorkflowHardeningView",
+        "summary": "Read operator-workflow hardening evidence",
+        "tags": [
+          "Operations views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service Phase-Y workflow evidence",
+        "x-namrbd-feature-gate": "always",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/workflow/hardening\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/WorkflowView"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "HealthOK": {
+        "description": "The process is alive or ready.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string",
+              "const": "ok\n"
+            }
+          }
+        }
+      },
+      "NotReady": {
+        "description": "The process is not locally ready or is not leader-ready.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not ready\n",
+                "not leader-ready\n"
+              ]
+            }
+          }
+        }
+      },
+      "DependencyReadiness": {
+        "description": "Dependency state and selected behavior.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DependencyReport"
+            }
+          }
+        }
+      },
+      "PrometheusMetrics": {
+        "description": "Prometheus text exposition for readiness, leadership, TiKV requests, internal RPC classes, maintenance, capacity, and reclaim state.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MethodNotAllowed": {
+        "description": "The route supports GET only.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NodesView": {
+        "description": "Versioned node and store view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/NodesData"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "VolumesView": {
+        "description": "Versioned volume view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/VolumesData"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "MaintenanceView": {
+        "description": "Versioned maintenance view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MaintenanceData"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "CapacityView": {
+        "description": "Versioned capacity view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Capacity"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "ReclaimView": {
+        "description": "Versioned reclaim view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Reclaim"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "MembershipView": {
+        "description": "Versioned membership view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Membership"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "OperationsView": {
+        "description": "Versioned operations view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Operations"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "WarningsView": {
+        "description": "Versioned warnings and limitations view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WarningsData"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "QueryView": {
+        "description": "Versioned query capability view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/QuerySurface"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "MCPView": {
+        "description": "Versioned MCP capability view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MCPSurface"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "GUIView": {
+        "description": "Versioned GUI-oriented summary view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GUIData"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "WorkflowView": {
+        "description": "Versioned workflow-hardening view.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowState"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ViewEnvelope": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "The fixed metadata from observability.View. data is selected per route and remains open to avoid overstating map-assembled response closure.",
+        "required": [
+          "schema_version",
+          "view_id",
+          "generated_at",
+          "source_authority",
+          "collection_status",
+          "collector_freshness_seconds",
+          "warning_count",
+          "rbac_checked",
+          "tenant_scope_checked",
+          "redaction_applied",
+          "read_only_mode_enforced",
+          "unsupported_claim_visible",
+          "data"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "namrbd.sbs.observability.v1"
+          },
+          "view_id": {
+            "type": "string"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source_authority": {
+            "type": "string"
+          },
+          "collection_status": {
+            "$ref": "#/components/schemas/CollectionStatus"
+          },
+          "collector_freshness_seconds": {
+            "type": "number"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warning_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "first_error": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "rbac_checked": {
+            "type": "boolean"
+          },
+          "tenant_scope_checked": {
+            "type": "boolean"
+          },
+          "redaction_applied": {
+            "type": "boolean"
+          },
+          "read_only_mode_enforced": {
+            "type": "boolean"
+          },
+          "unsupported_claim_visible": {
+            "type": "boolean"
+          },
+          "data": {}
+        }
+      },
+      "Snapshot": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "observability.Snapshot. Optional fields follow Go omitempty behavior; the object remains open for compatible observability additions.",
+        "required": [
+          "schema_version",
+          "generated_at",
+          "ready",
+          "local_is_leader",
+          "source_authority",
+          "collection_status",
+          "collector_freshness_seconds",
+          "warning_count",
+          "rbac_checked",
+          "tenant_scope_checked",
+          "redaction_applied",
+          "read_only_mode_enforced",
+          "unsupported_claim_visible",
+          "support_claimed",
+          "public_gui_claimed",
+          "public_benchmark_claimed",
+          "capacity",
+          "maintenance",
+          "reclaim",
+          "membership",
+          "operations",
+          "query",
+          "mcp",
+          "gui",
+          "workflow"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "namrbd.sbs.observability.v1"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cluster_id": {
+            "type": "string"
+          },
+          "sbs_cluster_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "leader_node_id": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "local_is_leader": {
+            "type": "boolean"
+          },
+          "leader_state": {
+            "type": "string"
+          },
+          "metadata_backend": {
+            "type": "string"
+          },
+          "runtime_mode": {
+            "type": "string"
+          },
+          "source_authority": {
+            "type": "string"
+          },
+          "collection_status": {
+            "$ref": "#/components/schemas/CollectionStatus"
+          },
+          "collector_freshness_seconds": {
+            "type": "number"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warning_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "first_error": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "rbac_checked": {
+            "type": "boolean"
+          },
+          "tenant_scope_checked": {
+            "type": "boolean"
+          },
+          "redaction_applied": {
+            "type": "boolean"
+          },
+          "read_only_mode_enforced": {
+            "type": "boolean"
+          },
+          "unsupported_claim_visible": {
+            "type": "boolean"
+          },
+          "support_claimed": {
+            "type": "boolean"
+          },
+          "public_gui_claimed": {
+            "type": "boolean"
+          },
+          "public_benchmark_claimed": {
+            "type": "boolean"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Node"
+            }
+          },
+          "stores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Store"
+            }
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Volume"
+            }
+          },
+          "capacity": {
+            "$ref": "#/components/schemas/Capacity"
+          },
+          "maintenance": {
+            "$ref": "#/components/schemas/Maintenance"
+          },
+          "reclaim": {
+            "$ref": "#/components/schemas/Reclaim"
+          },
+          "membership": {
+            "$ref": "#/components/schemas/Membership"
+          },
+          "operations": {
+            "$ref": "#/components/schemas/Operations"
+          },
+          "query": {
+            "$ref": "#/components/schemas/QuerySurface"
+          },
+          "mcp": {
+            "$ref": "#/components/schemas/MCPSurface"
+          },
+          "gui": {
+            "$ref": "#/components/schemas/GUISurface"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowState"
+          }
+        }
+      },
+      "CollectionStatus": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "partial",
+          "degraded",
+          "error"
+        ]
+      },
+      "NodesData": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "nodes",
+          "stores"
+        ],
+        "properties": {
+          "nodes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Node"
+            }
+          },
+          "stores": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Store"
+            }
+          }
+        }
+      },
+      "VolumesData": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "volumes"
+        ],
+        "properties": {
+          "volumes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Volume"
+            }
+          }
+        }
+      },
+      "MaintenanceData": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "maintenance",
+          "operations"
+        ],
+        "properties": {
+          "maintenance": {
+            "$ref": "#/components/schemas/Maintenance"
+          },
+          "operations": {
+            "$ref": "#/components/schemas/Operations"
+          }
+        }
+      },
+      "WarningsData": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "collection_status",
+          "warnings",
+          "warning_count",
+          "first_error",
+          "last_error",
+          "limitations"
+        ],
+        "properties": {
+          "collection_status": {
+            "$ref": "#/components/schemas/CollectionStatus"
+          },
+          "warnings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "warning_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "first_error": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GUIData": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "gui",
+          "cluster",
+          "capacity",
+          "reclaim",
+          "membership",
+          "operations"
+        ],
+        "properties": {
+          "gui": {
+            "$ref": "#/components/schemas/GUISurface"
+          },
+          "cluster": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "cluster_id",
+              "sbs_cluster_id",
+              "ready"
+            ],
+            "properties": {
+              "cluster_id": {
+                "type": "string"
+              },
+              "sbs_cluster_id": {
+                "type": "string"
+              },
+              "ready": {
+                "type": "boolean"
+              }
+            }
+          },
+          "capacity": {
+            "$ref": "#/components/schemas/Capacity"
+          },
+          "reclaim": {
+            "$ref": "#/components/schemas/Reclaim"
+          },
+          "membership": {
+            "$ref": "#/components/schemas/Membership"
+          },
+          "operations": {
+            "$ref": "#/components/schemas/Operations"
+          }
+        }
+      },
+      "Node": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "lifecycle",
+          "health",
+          "admin_http_endpoint_configured",
+          "sbs_endpoint_count"
+        ],
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "lifecycle": {
+            "type": "string"
+          },
+          "health": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_heartbeat_unix": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "capacity_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "used_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "admin_http_endpoint_configured": {
+            "type": "boolean"
+          },
+          "sbs_endpoint_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "consecutive_probe_failures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "recovery_cooldown_seconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "store_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "healthy_store_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "writable_store_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "allocatable_store_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "store_allocation_weight_total": {
+            "type": "integer"
+          },
+          "store_allocation_weight_observed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Store": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "store_count",
+          "healthy_store_count",
+          "writable_store_count",
+          "allocatable_store_count",
+          "placement_eligible"
+        ],
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "store_count": {
+            "type": "integer"
+          },
+          "healthy_store_count": {
+            "type": "integer"
+          },
+          "writable_store_count": {
+            "type": "integer"
+          },
+          "allocatable_store_count": {
+            "type": "integer"
+          },
+          "capacity_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "available_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "used_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "compaction_pending_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "compaction_in_progress_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "allocation_weight_total": {
+            "type": "integer"
+          },
+          "allocation_weight_observed": {
+            "type": "boolean"
+          },
+          "placement_eligible": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Volume": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "volume_id",
+          "status"
+        ],
+        "properties": {
+          "volume_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "redundancy_backend": {
+            "type": "string"
+          },
+          "topology_mode": {
+            "type": "string"
+          },
+          "protection_policy": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "epoch": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "chunk_size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extent_size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "block_size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "replication_factor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Capacity": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "logical_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "physical_used_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "physical_free_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reclaimable_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "protected_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unknown_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "store_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "node_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Maintenance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "repair_backlog",
+          "rebalance_backlog",
+          "drain_backlog"
+        ],
+        "properties": {
+          "repair_backlog": {
+            "type": "integer"
+          },
+          "repair_backlog_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "repair_backlog_chunks": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rebalance_backlog": {
+            "type": "integer"
+          },
+          "rebalance_backlog_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rebalance_backlog_chunks": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "drain_backlog": {
+            "type": "integer"
+          },
+          "drain_backlog_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "drain_backlog_chunks": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transition_failed_batches": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transition_recent_batches": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transition_small_batches": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transition_requeued": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transition_retry_pages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transition_retry_windows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transition_retry_window_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transition_retry_window_chunks": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transition_oldest_failed_batch_age_seconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maintenance_cooldown_volumes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maintenance_cooldown_max_remaining_seconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nodes_with_probe_failures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_consecutive_probe_failures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nodes_in_recovery_cooldown": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_recovery_cooldown_remaining_seconds": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Reclaim": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "protected_reference_check_passed",
+          "completed_claimed",
+          "evidence_required"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "pending_chunks": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed_batches": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "oldest_failed_batch_age_seconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "before_free_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "after_free_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reclaimed_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "protected_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "protected_reference_check_passed": {
+            "type": "boolean"
+          },
+          "completed_claimed": {
+            "type": "boolean"
+          },
+          "blocked_reason": {
+            "type": "string"
+          },
+          "evidence_required": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Membership": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_authority": {
+            "type": "string"
+          },
+          "gateway_membership_source_authority": {
+            "type": "string"
+          },
+          "sbs_membership_source_authority": {
+            "type": "string"
+          },
+          "membership_plan_id": {
+            "type": "string"
+          },
+          "namrbd_gateway_membership_ready": {
+            "type": "boolean"
+          },
+          "iscsi_gateway_membership_ready": {
+            "type": "boolean"
+          },
+          "sbs_membership_change_requested": {
+            "type": "boolean"
+          },
+          "sbs_membership_sync_completed": {
+            "type": "boolean"
+          },
+          "gateway_sbs_view_fresh": {
+            "type": "boolean"
+          },
+          "admin_guide_membership_handoff_ready": {
+            "type": "boolean"
+          },
+          "active_nodes": {
+            "type": "integer"
+          },
+          "draining_nodes": {
+            "type": "integer"
+          },
+          "removed_nodes": {
+            "type": "integer"
+          },
+          "healthy_nodes": {
+            "type": "integer"
+          },
+          "suspect_nodes": {
+            "type": "integer"
+          },
+          "down_nodes": {
+            "type": "integer"
+          },
+          "mutation_apply_enabled": {
+            "type": "boolean"
+          },
+          "human_approval_required": {
+            "type": "boolean"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Operations": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "total",
+          "running",
+          "failed",
+          "completed",
+          "canceled"
+        ],
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "running": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "completed": {
+            "type": "integer"
+          },
+          "canceled": {
+            "type": "integer"
+          }
+        }
+      },
+      "QuerySurface": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "query_api_registered",
+          "read_only",
+          "raw_log_fallback"
+        ],
+        "properties": {
+          "query_api_registered": {
+            "type": "boolean"
+          },
+          "observability_view_id": {
+            "type": "string"
+          },
+          "data_contract_version": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "families": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "raw_log_fallback": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MCPTool": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "read_only",
+          "mutating",
+          "human_approval_required"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "mutating": {
+            "type": "boolean"
+          },
+          "human_approval_required": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "MCPSurface": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mcp_server_ready",
+          "mcp_provider_ready",
+          "mcp_tool_registered",
+          "read_only",
+          "mutating_tools_enabled",
+          "human_approval_required"
+        ],
+        "properties": {
+          "mcp_server_ready": {
+            "type": "boolean"
+          },
+          "mcp_provider_ready": {
+            "type": "boolean"
+          },
+          "mcp_tool_registered": {
+            "type": "boolean"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MCPTool"
+            }
+          },
+          "mutating_tools_enabled": {
+            "type": "boolean"
+          },
+          "human_approval_required": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GUISurface": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gui_console_ready",
+          "gui_view_contract_ready",
+          "read_only_mode_enforced",
+          "mutation_controls_hidden"
+        ],
+        "properties": {
+          "gui_console_ready": {
+            "type": "boolean"
+          },
+          "gui_view_contract_ready": {
+            "type": "boolean"
+          },
+          "gui_route": {
+            "type": "string"
+          },
+          "read_only_mode_enforced": {
+            "type": "boolean"
+          },
+          "mutation_controls_hidden": {
+            "type": "boolean"
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "WorkflowState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operator_workflow_hardened",
+          "evidence_bundle_ready",
+          "operation_history_available",
+          "dangerous_actions_blocked",
+          "ai_context_redacted",
+          "ai_recommendation_has_evidence"
+        ],
+        "properties": {
+          "operator_workflow_hardened": {
+            "type": "boolean"
+          },
+          "evidence_bundle_ready": {
+            "type": "boolean"
+          },
+          "operation_history_available": {
+            "type": "boolean"
+          },
+          "dangerous_actions_blocked": {
+            "type": "boolean"
+          },
+          "ai_context_redacted": {
+            "type": "boolean"
+          },
+          "ai_recommendation_has_evidence": {
+            "type": "boolean"
+          },
+          "runbook_links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unavailable_evidence_reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "DependencyReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "behavior"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/DependencyStatus"
+          },
+          "behavior": {
+            "$ref": "#/components/schemas/DependencyBehavior"
+          }
+        }
+      },
+      "DependencyStatus": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "dependency_readiness",
+          "etcd_availability",
+          "tikv_availability",
+          "projection_freshness"
+        ],
+        "properties": {
+          "dependency_readiness": {
+            "$ref": "#/components/schemas/Readiness"
+          },
+          "etcd_availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "tikv_availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "projection_freshness": {
+            "$ref": "#/components/schemas/ProjectionFreshness"
+          },
+          "etcd_unavailable_grace_seconds": {
+            "type": "integer"
+          },
+          "tikv_unavailable_grace_seconds": {
+            "type": "integer"
+          },
+          "projection_stale_degraded_ms": {
+            "type": "integer"
+          },
+          "projection_stale_blocked_ms": {
+            "type": "integer"
+          },
+          "projection_lag_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "stale_projection_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "iscsi_gateway_stale_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "membership_change_rejected_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "export_admission_blocked_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serving_continues_on_dependency_loss": {
+            "type": "boolean"
+          },
+          "first_error": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          }
+        }
+      },
+      "DependencyBehavior": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "data_path",
+          "control_path",
+          "views",
+          "membership_change",
+          "export_admission",
+          "readiness",
+          "reasons"
+        ],
+        "properties": {
+          "data_path": {
+            "type": "string",
+            "enum": [
+              "continues",
+              "continues_degraded"
+            ]
+          },
+          "control_path": {
+            "type": "string",
+            "enum": [
+              "read_write",
+              "read_only"
+            ]
+          },
+          "views": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "degraded",
+              "unhealthy"
+            ]
+          },
+          "membership_change": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "export_admission": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/Readiness"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Availability": {
+        "type": "string",
+        "enum": [
+          "available",
+          "unavailable_within_grace",
+          "unavailable_beyond_grace"
+        ]
+      },
+      "ProjectionFreshness": {
+        "type": "string",
+        "enum": [
+          "fresh",
+          "degraded",
+          "blocked"
+        ]
+      },
+      "Readiness": {
+        "type": "string",
+        "enum": [
+          "healthy",
+          "degraded_serving_on_cache",
+          "blocked"
+        ]
+      },
+      "Decision": {
+        "type": "string",
+        "enum": [
+          "allowed",
+          "rejected",
+          "suppressed",
+          "blocked"
+        ]
+      }
+    }
+  }
+}

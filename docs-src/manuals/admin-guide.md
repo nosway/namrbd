@@ -11,7 +11,10 @@ operational guardrails. Enterprise Backup/DR, QoS, security/KMS, governance,
 advanced iSCSI, mobility, and dedupe material is design context for work under
 development. For initial deployment, consult the
 [Installation Guide](installation-guide.md), and for user workflows, refer to
-the [User Manual](user-manual.md).
+the [User Manual](user-manual.md). Use the
+[Troubleshooting and FAQ](troubleshooting-and-faq.md) for incident response and
+the [Compatibility Matrix](compatibility-matrix.md) before qualifying a new
+operating-system, kernel, or Kubernetes combination.
 
 The legacy metadata command surface is archived. Administrators should use `namrbdctl`, `sbsctl`, `namrbd-debug`, and standard administrative APIs for volume lifecycle management, storage authority, and system diagnostics.
 
@@ -529,6 +532,13 @@ Minimum closure summary fields:
 A validation package that changes `namrbd-gateway`, `sbs-service`, `sbs-data`, CSI, iSCSI, or kernel code must include the matching deploy, restart, or reload step before interpreting smoke or workload results.
 
 ## 9. Troubleshooting Checklist
+
+The full operational runbook is maintained in
+[Troubleshooting and FAQ](troubleshooting-and-faq.md). It covers suspected
+split-brain/multiple writers, etcd and PD/TiKV quorum loss, CSI provision or
+mount failures, and iSCSI disconnects using Symptom - Cause - Resolution -
+Verification procedures. Use the checklist below as the minimum evidence set,
+not as a substitute for the runbook.
 
 When a smoke or workload fails, capture:
 

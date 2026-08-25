@@ -54,6 +54,9 @@ MKDOCS_CONFIG ?= mkdocs.yml
 MKDOCS_SITE_DIR ?= site
 DOCS_SOURCE_DIR ?= docs-src
 DOCS_PUBLIC_MANUAL_SOURCE_DIR ?= $(DOCS_SOURCE_DIR)/manuals
+CLI_REFERENCE_GENERATOR ?= tools/generate-cli-reference.py
+API_REFERENCE_CHECKER ?= tools/check-api-reference.py
+CONFIG_REFERENCE_GENERATOR ?= tools/generate-config-reference.py
 CSI_HELM_CHART ?= deploy/kubernetes/csi/helm/namrbd-csi
 CSI_LEGACY_TEMPLATE_DIR ?= deploy/kubernetes/csi/templates
 CSI_HELM_REQUIRE_HELM ?= false
@@ -87,6 +90,10 @@ help:
 	@printf '  make kind-csi-pvc-demo\n'
 	@printf '  make csi-helm-chart-check\n'
 	@printf '  make observability-assets-check\n'
+	@printf '  make cli-reference\n'
+	@printf '  make cli-reference-check\n'
+	@printf '  make api-reference-check\n'
+	@printf '  make config-reference-check\n'
 	@printf '  make docs-source-check\n'
 	@printf '  make docs-build\n'
 	@printf '  make docs-render-check\n'
@@ -348,12 +355,42 @@ docs-source-check:
 	test -f "$(DOCS_SOURCE_DIR)/quickstart.md"
 	test -f "$(DOCS_SOURCE_DIR)/operations.md"
 	test -f "$(DOCS_SOURCE_DIR)/observability.md"
+	test -f "$(DOCS_SOURCE_DIR)/reference/cli/index.md"
+	test -f "$(DOCS_SOURCE_DIR)/reference/api/index.md"
+	test -f "$(DOCS_SOURCE_DIR)/reference/api/grpc.md"
+	test -f "$(DOCS_SOURCE_DIR)/reference/api/rest/namrbd-gateway-v1.openapi.json"
+	test -f "$(DOCS_SOURCE_DIR)/reference/api/rest/sbs-service-observability-v1.openapi.json"
+	test -f "$(DOCS_SOURCE_DIR)/reference/api/rest/sbs-data-operational-v1.openapi.json"
+	test -f "$(DOCS_SOURCE_DIR)/reference/api/rest/namrbd-iscsi-gateway-observability-v1.openapi.json"
+	test -f "$(DOCS_SOURCE_DIR)/reference/config/index.md"
+	test -f "$(DOCS_SOURCE_DIR)/reference/config/namrbd-gateway.md"
+	test -f "$(DOCS_SOURCE_DIR)/reference/config/namrbd-iscsi-gateway.md"
+	test -f "$(DOCS_SOURCE_DIR)/reference/config/sbs-service.md"
+	test -f "$(DOCS_SOURCE_DIR)/reference/config/sbs-data.md"
+	test -f "$(DOCS_SOURCE_DIR)/reference/config/namrbd-csi-driver.md"
+	test -f "$(DOCS_SOURCE_DIR)/reference/config/namrbd-mcp.md"
 	test -f "$(DOCS_PUBLIC_MANUAL_SOURCE_DIR)/index.md"
 	test -f "$(DOCS_PUBLIC_MANUAL_SOURCE_DIR)/installation-guide.md"
 	test -f "$(DOCS_PUBLIC_MANUAL_SOURCE_DIR)/user-manual.md"
 	test -f "$(DOCS_PUBLIC_MANUAL_SOURCE_DIR)/admin-guide.md"
+	test -f "$(DOCS_PUBLIC_MANUAL_SOURCE_DIR)/troubleshooting-and-faq.md"
+	test -f "$(DOCS_PUBLIC_MANUAL_SOURCE_DIR)/compatibility-matrix.md"
+	test -f "$(DOCS_PUBLIC_MANUAL_SOURCE_DIR)/edition-boundary.md"
+	test -f "$(DOCS_PUBLIC_MANUAL_SOURCE_DIR)/developer-onboarding.md"
 	test -f "$(DOCS_PUBLIC_MANUAL_SOURCE_DIR)/architecture-manual/index.md"
 	test -f "$(DOCS_PUBLIC_MANUAL_SOURCE_DIR)/architecture-manual/chapters/00-reading-guide.md"
+	test -f "docs/adr/README.md"
+	test -f "docs/adr/0000-template.md"
+	test -f "docs/adr/0001-metadata-authority-separation.md"
+	test -f "docs/adr/0002-pebble-for-local-sbs-storage.md"
+	test -f "docs/adr/0003-userspace-gateway-first.md"
+	test -f "cmd/README.md"
+	test -f "internal/README.md"
+	test -f "gateway/README.md"
+	test -f "sbs/README.md"
+	test -f "kernel/README.md"
+	test -f "proto/README.md"
+	test -f "iscsi/README.md"
 	test -f "$(DOCS_SOURCE_DIR)/requirements.txt"
 	test -f "$(DOCS_SOURCE_DIR)/assets/namrbd-docs.css"
 	$(GREP) -Eq '^docs_dir:[[:space:]]+docs-src$$' "$(MKDOCS_CONFIG)"
@@ -373,6 +410,22 @@ docs-source-check:
 		$(GREP) -rlE '\]\([^)]*\.html' "$(DOCS_SOURCE_DIR)" --include='*.md' >&2; \
 		exit 1; \
 	fi
+
+.PHONY: cli-reference
+cli-reference:
+	python3 "$(CLI_REFERENCE_GENERATOR)" --write --public-only
+
+.PHONY: cli-reference-check
+cli-reference-check:
+	python3 "$(CLI_REFERENCE_GENERATOR)" --check --public-only
+
+.PHONY: api-reference-check
+api-reference-check:
+	python3 "$(API_REFERENCE_CHECKER)" --check
+
+.PHONY: config-reference-check
+config-reference-check:
+	python3 "$(CONFIG_REFERENCE_GENERATOR)" --check --public-only
 
 .PHONY: docs-build
 docs-build: docs-source-check

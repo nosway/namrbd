@@ -34,6 +34,14 @@ not general-availability, compatibility, performance, or support commitments.
 See [Feature Status](../feature-status.md) for concise capability descriptions
 and current limitations.
 
+The [Community and Enterprise Edition Boundary](edition-boundary.md) defines
+the required `[Enterprise Edition Only]` label and the fail-closed CLI/API
+behavior when an advanced capability is unavailable. Canonical maintainers
+also maintain seven Enterprise operations manuals covering the eight feature
+families listed above. Those manuals are excluded from the Community source
+export. Every page is marked Enterprise-only and describes work under
+development and validation, not a published support promise.
+
 ## 4. Persona-Based Navigation
 
 Select the optimal reader path based on your operational goals and responsibilities.
@@ -77,3 +85,18 @@ Compile out-of-tree Linux modules using DKMS automation, manage etcd HA clusters
 </div>
 
 </div>
+
+## 5. Operations References
+
+- [Troubleshooting and FAQ](troubleshooting-and-faq.md): incident safety,
+  evidence collection, suspected split-brain, metadata quorum loss, CSI mount
+  failure, and iSCSI disconnect runbooks.
+- [OS, Kernel, and Kubernetes Compatibility Matrix](compatibility-matrix.md):
+  current support, build-only, unvalidated, and integration-preview boundaries.
+- [Administrator Guide](admin-guide.md): ownership, observability, maintenance,
+  and release guardrails.
+- [Developer Onboarding](developer-onboarding.md): codebase ownership, package
+  tests, local validation, Delve, and contribution boundaries.
+- [etcd HA Guide](etcd-ha-cluster-install-operations-guide.md) and
+  [TiKV HA Guide](tikv-ha-cluster-install-operations-guide.md): metadata backend
+  topology and member operations.

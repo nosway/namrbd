@@ -20,6 +20,9 @@ include go.sum
 include Makefile
 include mkdocs.yml
 include tools/check-docs-render.py
+include tools/generate-cli-reference.py
+include tools/check-api-reference.py
+include tools/generate-config-reference.py
 include .gitignore
 include README.md
 include LICENSE
@@ -37,6 +40,7 @@ include .github
 include LICENSES
 
 include cmd/namrbd-debug
+include cmd/README.md
 include cmd/namrbd-gateway
 include cmd/namrbd-iscsi-gateway
 include cmd/namrbd-csi-driver
@@ -56,6 +60,7 @@ include control
 include deploy/kubernetes/csi
 include deploy/observability
 include docs-src
+include docs/adr
 include examples
 include gateway
 include iscsi
@@ -80,6 +85,8 @@ include tools/mcp-client-provider-integration.py
 exclude stale-codes
 exclude enterprise
 exclude docs/enterprise
+exclude docs-src/manuals/enterprise
+exclude docs/reference
 exclude docs/community-source-export.md
 exclude docs/html-docs
 exclude qa-suite

@@ -1,0 +1,321 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "NAMRBD iSCSI Gateway Observability API",
+    "version": "1.0.0",
+    "description": "Reviewed Community read-only operations served only when namrbd-iscsi-gateway is started with a non-empty --observability-listen value. The listener has no source-code default address."
+  },
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Process and dependency health."
+    },
+    {
+      "name": "Metrics",
+      "description": "Prometheus text exposition."
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "getISCSIGatewayHealth",
+        "summary": "Check process liveness",
+        "tags": [
+          "Health"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-iscsi-gateway process",
+        "x-namrbd-feature-gate": "--observability-listen is non-empty",
+        "x-namrbd-source": "cmd/namrbd-iscsi-gateway/main.go:mux.HandleFunc(\"/healthz\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HealthOK"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "getISCSIGatewayReadiness",
+        "summary": "Report dependency-aware readiness",
+        "description": "Returns HTTP 200 in every dependency state. The readiness classification and fail-open/fail-closed behavior are carried in the JSON body.",
+        "tags": [
+          "Health"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "shared dependency availability tracker",
+        "x-namrbd-feature-gate": "--observability-listen is non-empty",
+        "x-namrbd-source": "cmd/namrbd-iscsi-gateway/main.go:mux.Handle(\"/readyz\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DependencyReadiness"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "getISCSIGatewayMetrics",
+        "summary": "Read Prometheus metrics",
+        "tags": [
+          "Metrics"
+        ],
+        "x-namrbd-stability": "stable",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "namrbd-iscsi-gateway runtime and serving registry view",
+        "x-namrbd-feature-gate": "--observability-listen is non-empty",
+        "x-namrbd-source": "cmd/namrbd-iscsi-gateway/main.go:mux.HandleFunc(\"/metrics\"",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/PrometheusMetrics"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "HealthOK": {
+        "description": "The process is alive.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string",
+              "const": "ok\n"
+            }
+          }
+        }
+      },
+      "DependencyReadiness": {
+        "description": "Dependency state and the behavior selected for that state.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DependencyReport"
+            }
+          }
+        }
+      },
+      "PrometheusMetrics": {
+        "description": "Prometheus text exposition for readiness, runtime identity, registry loading, fleet lease registration, and optional live-reload counters.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MethodNotAllowed": {
+        "description": "The route supports GET only.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "DependencyReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "behavior"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/DependencyStatus"
+          },
+          "behavior": {
+            "$ref": "#/components/schemas/DependencyBehavior"
+          }
+        }
+      },
+      "DependencyStatus": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "dependency_readiness",
+          "etcd_availability",
+          "tikv_availability",
+          "projection_freshness",
+          "etcd_unavailable_grace_seconds",
+          "tikv_unavailable_grace_seconds",
+          "projection_stale_degraded_ms",
+          "projection_stale_blocked_ms",
+          "projection_lag_ms",
+          "stale_projection_count",
+          "iscsi_gateway_stale_count",
+          "membership_change_rejected_count",
+          "export_admission_blocked_count",
+          "serving_continues_on_dependency_loss",
+          "first_error",
+          "last_error"
+        ],
+        "properties": {
+          "dependency_readiness": {
+            "$ref": "#/components/schemas/Readiness"
+          },
+          "etcd_availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "tikv_availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "projection_freshness": {
+            "$ref": "#/components/schemas/ProjectionFreshness"
+          },
+          "etcd_unavailable_grace_seconds": {
+            "type": "integer"
+          },
+          "tikv_unavailable_grace_seconds": {
+            "type": "integer"
+          },
+          "projection_stale_degraded_ms": {
+            "type": "integer"
+          },
+          "projection_stale_blocked_ms": {
+            "type": "integer"
+          },
+          "projection_lag_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "stale_projection_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "iscsi_gateway_stale_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "membership_change_rejected_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "export_admission_blocked_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serving_continues_on_dependency_loss": {
+            "type": "boolean"
+          },
+          "first_error": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          }
+        }
+      },
+      "DependencyBehavior": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "data_path",
+          "control_path",
+          "views",
+          "membership_change",
+          "export_admission",
+          "readiness",
+          "reasons"
+        ],
+        "properties": {
+          "data_path": {
+            "type": "string",
+            "enum": [
+              "continues",
+              "continues_degraded"
+            ]
+          },
+          "control_path": {
+            "type": "string",
+            "enum": [
+              "read_write",
+              "read_only"
+            ]
+          },
+          "views": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "degraded",
+              "unhealthy"
+            ]
+          },
+          "membership_change": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "export_admission": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/Readiness"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Availability": {
+        "type": "string",
+        "enum": [
+          "available",
+          "unavailable_within_grace",
+          "unavailable_beyond_grace"
+        ]
+      },
+      "ProjectionFreshness": {
+        "type": "string",
+        "enum": [
+          "fresh",
+          "degraded",
+          "blocked"
+        ]
+      },
+      "Readiness": {
+        "type": "string",
+        "enum": [
+          "healthy",
+          "degraded_serving_on_cache",
+          "blocked"
+        ]
+      },
+      "Decision": {
+        "type": "string",
+        "enum": [
+          "allowed",
+          "rejected",
+          "suppressed",
+          "blocked"
+        ]
+      }
+    }
+  }
+}

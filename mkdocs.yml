@@ -50,11 +50,35 @@ nav:
   - Quickstart: quickstart.md
   - Operations: operations.md
   - Observability: observability.md
+  - Reference:
+      - APIs: reference/api/index.md
+      - gRPC and Proto: reference/api/grpc.md
+      - Configuration:
+          - Overview: reference/config/index.md
+          - namrbd-gateway: reference/config/namrbd-gateway.md
+          - namrbd-iscsi-gateway: reference/config/namrbd-iscsi-gateway.md
+          - sbs-service: reference/config/sbs-service.md
+          - sbs-data: reference/config/sbs-data.md
+          - namrbd-csi-driver: reference/config/namrbd-csi-driver.md
+          - namrbd-mcp: reference/config/namrbd-mcp.md
+      - CLI Commands: reference/cli/index.md
+      - namrbdctl: reference/cli/namrbdctl.md
+      - sbsctl: reference/cli/sbsctl.md
+      - namrbd-gateway: reference/cli/namrbd-gateway.md
+      - sbs-service: reference/cli/sbs-service.md
+      - sbs-data: reference/cli/sbs-data.md
+      - namrbd-iscsi-gateway: reference/cli/namrbd-iscsi-gateway.md
+      - namrbd-csi-driver: reference/cli/namrbd-csi-driver.md
+      - namrbd-mcp: reference/cli/namrbd-mcp.md
   - Public Manuals:
       - Manual Portal: manuals/index.md
       - Installation Guide: manuals/installation-guide.md
       - User Manual: manuals/user-manual.md
       - Admin Guide: manuals/admin-guide.md
+      - Troubleshooting and FAQ: manuals/troubleshooting-and-faq.md
+      - Compatibility Matrix: manuals/compatibility-matrix.md
+      - Edition Boundary Guide: manuals/edition-boundary.md
+      - Developer Onboarding: manuals/developer-onboarding.md
       - etcd HA Guide: manuals/etcd-ha-cluster-install-operations-guide.md
       - TiKV HA Guide: manuals/tikv-ha-cluster-install-operations-guide.md
       - Architecture:

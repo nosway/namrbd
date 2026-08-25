@@ -44,6 +44,11 @@ Host requirements:
 - `TiKV/PD` for `sbs-service` authoritative SBS metadata in primary multi-node runtime.
 - Kubernetes 1.29+ style cluster and snapshot CRDs when CSI/Kubernetes paths are installed.
 
+The 1.29+ statement is an integration design baseline, not a frozen supported
+minor-version range. Review the
+[Compatibility Matrix](compatibility-matrix.md) before selecting an operating
+system, kernel, Kubernetes release, or CSI sidecar combination.
+
 Recommended validation/operator variables:
 
 ``` bash

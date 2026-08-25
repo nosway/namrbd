@@ -1,11 +1,5 @@
 # ![NAMRBD logo](web/operations-dashboard/static/assets/namrbd-logo.svg) NAMRBD
 
-[![Community CI](https://github.com/nosway/namrbd/actions/workflows/community-ci.yml/badge.svg?branch=main)](https://github.com/nosway/namrbd/actions/workflows/community-ci.yml)
-[![Code coverage](https://codecov.io/gh/nosway/namrbd/branch/main/graph/badge.svg)](https://codecov.io/gh/nosway/namrbd)
-[![Go version](https://img.shields.io/github/go-mod/go-version/nosway/namrbd?filename=go.mod&logo=go)](go.mod)
-[![License](https://img.shields.io/badge/license-Apache--2.0%20%7C%20GPL--2.0--only-blue.svg)](LICENSE-POLICY.md)
-[![Govulncheck](https://img.shields.io/github/actions/workflow/status/nosway/namrbd/community-ci.yml?branch=main&event=push&label=govulncheck)](https://github.com/nosway/namrbd/actions/workflows/community-ci.yml)
-
 NAMRBD (Network Attached Multipath Resilient Block Device) is an open-source
 distributed block storage platform for Linux. The public source tree provides
 the replicated storage core, gateway and SBS services, host and kernel control
@@ -24,6 +18,18 @@ The public repository is intended to work as a normal open-source checkout for
 building, testing, inspecting, and packaging the platform. Source availability
 does not by itself mean that every integration is a supported v1.0 release
 surface; [Feature Status](docs-src/feature-status.md) records that distinction.
+
+## Contents
+
+- [Platform Capabilities](#platform-capabilities)
+- [Advanced Features](#advanced-features)
+- [Prerequisites](#prerequisites)
+  - [Metadata Backend Requirements](#metadata-backend-requirements)
+- [Quickstart](#quickstart)
+- [Operations Assets](#operations-assets)
+- [Documentation](#documentation)
+- [Developer Onboarding](#developer-onboarding)
+- [License](#license)
 
 ## Platform Capabilities
 
@@ -53,6 +59,9 @@ before making deployment or compatibility assumptions.
 NAMRBD is also developing and validating advanced capabilities for the
 Enterprise edition. These descriptions are development directions, not
 general-availability, compatibility, performance, or support commitments.
+The [Edition Boundary Guide](docs-src/manuals/edition-boundary.md) defines the
+required `[Enterprise Edition Only]` marker and fail-closed behavior when an
+advanced CLI/API capability is unavailable.
 
 - **Erasure-coded storage:** full-stripe userspace EC placement, encoding,
   rebuild, and maintenance paths.
@@ -72,6 +81,56 @@ general-availability, compatibility, performance, or support commitments.
 
 NVMe/TCP remains an exploratory future direction and is not a current platform
 or Enterprise support claim.
+
+## Prerequisites
+
+Install only the tools needed for the workflow you plan to run:
+
+| Workflow | Requirements |
+| --- | --- |
+| Source build and tests | Git, `make`, and Go 1.22 or newer with automatic toolchain download enabled (`GOTOOLCHAIN=auto`), or Go 1.26.6 installed directly. The repository's `go.mod` pins the effective build toolchain to Go 1.26.6. |
+| Local container Quickstart | Docker Engine with BuildKit, Docker Compose v2 through `docker compose`, `curl`, and `jq`. The host must be able to pull the configured container images and expose the local ports in `examples/quickstart/.env.example`. |
+| kind CSI PVC demo | All container Quickstart tools plus `kind`, a `kubectl` client compatible with the kind cluster, Helm 3, and enough Docker resources to build the CSI image and run the Compose and kind containers together. |
+| Linux kernel module | A Linux build host, compiler/build tools, and kernel headers or a kernel build tree matching `uname -r`. This is not required for the userspace or container Quickstart. |
+| Documentation | Python 3 and `pip`; install the pinned packages from `docs-src/requirements.txt`. |
+
+Check the main toolchain before starting:
+
+```bash
+go version
+docker version
+docker compose version
+```
+
+For the kind CSI demo, also check:
+
+```bash
+kind version
+kubectl version --client
+helm version
+jq --version
+```
+
+### Metadata Backend Requirements
+
+- **Local Quickstart:** no host-installed etcd or TiKV is required. Compose
+  pulls etcd `v3.6.8` for gateway/control-plane metadata, while the local
+  `sbs-service` uses its embedded Pebble metadata backend. TiKV/PD is not part
+  of this entry-level topology.
+- **External or HA deployment:** provide an etcd v3-compatible cluster for
+  gateway/control-plane metadata. A three-member cluster is recommended for
+  quorum; the current [etcd HA guide](docs-src/manuals/etcd-ha-cluster-install-operations-guide.md)
+  uses etcd `v3.5.9` as its installation example.
+- **Primary multi-node SBS deployment:** provide a separate PD/TiKV cluster for
+  authoritative SBS metadata and configure `sbs-service` with the PD endpoints.
+  The current [TiKV HA guide](docs-src/manuals/tikv-ha-cluster-install-operations-guide.md)
+  uses TiKV/PD `v6.5.2` as its deployment example. PD client traffic normally
+  uses TCP `2379`, while TiKV storage traffic normally uses TCP `20160`.
+
+The etcd endpoints used by the gateway and the PD endpoints used by
+`sbs-service` are different service authorities even though their client ports
+may both be `2379`. Neither external backend is required merely to compile the
+source or run the ordinary unit tests.
 
 ## Quickstart
 
@@ -163,9 +222,13 @@ maintainer enables GitHub Pages and runs the `Docs` workflow with
 not require Pages to be enabled. No rendered HTML is committed, so the sources
 cannot drift from what readers see.
 
-`docs-src/` is the single authoring surface, with `mkdocs.yml` at the
+`docs-src/` is the single MkDocs authoring surface, with `mkdocs.yml` at the
 repository root and the installation, user, admin, HA, and architecture
-manuals under `docs-src/manuals/`. Build it locally with:
+manuals under `docs-src/manuals/`. Repository-only architecture decisions live
+under `docs/adr/`; rendered HTML is not committed. Start incident response with the
+[Troubleshooting and FAQ](docs-src/manuals/troubleshooting-and-faq.md), and
+check the [OS, Kernel, and Kubernetes Compatibility Matrix](docs-src/manuals/compatibility-matrix.md)
+before qualifying a deployment. Build the documentation locally with:
 
 ```bash
 python -m pip install -r docs-src/requirements.txt
@@ -175,6 +238,14 @@ mkdocs serve
 
 Internal planning notes, private validation tooling, and generated working directories
 are not part of the public documentation tree.
+
+## Developer Onboarding
+
+Start with the [Developer Onboarding Guide](docs-src/manuals/developer-onboarding.md)
+for the package map, repository-local Go cache workflow, validation gates, and
+Delve examples. Each top-level implementation directory also has a local
+`README.md` describing its role and interfaces. Durable technical decisions are
+indexed in [Architecture Decision Records](docs/adr/README.md).
 
 Release artifact expectations and the source-only status of `v1.0.0` are
 documented in [`RELEASE.md`](RELEASE.md). For issue and support boundaries, see
