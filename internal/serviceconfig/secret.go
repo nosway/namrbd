@@ -64,6 +64,35 @@ func (s SecretRef) Validate(field string) error {
 	return nil
 }
 
+// ParseSecretRef parses the reference syntax accepted by runtime flags and
+// persisted provider metadata. It never interprets an unprefixed value as
+// secret material: doing so would make a copied configuration silently carry
+// a credential.
+func ParseSecretRef(field, value string) (SecretRef, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return SecretRef{}, fmt.Errorf("%s: secret reference is required", field)
+	}
+	var ref SecretRef
+	switch {
+	case strings.HasPrefix(value, "file:"):
+		ref.File = strings.TrimSpace(strings.TrimPrefix(value, "file:"))
+	case strings.HasPrefix(value, "env:"):
+		ref.Env = strings.TrimSpace(strings.TrimPrefix(value, "env:"))
+	case strings.HasPrefix(value, "kms:"):
+		ref.KMS = strings.TrimSpace(strings.TrimPrefix(value, "kms:"))
+	default:
+		return SecretRef{}, fmt.Errorf("%s: secret reference must use file:, env:, or kms:", field)
+	}
+	if ref.Empty() {
+		return SecretRef{}, fmt.Errorf("%s: secret reference target is required", field)
+	}
+	if err := ref.Validate(field); err != nil {
+		return SecretRef{}, err
+	}
+	return ref, nil
+}
+
 // Patterns that indicate a secret value was pasted where a reference belongs.
 // These are deliberately shaped to catch the common real cases rather than to
 // be exhaustive: PEM blocks, long base64/hex blobs, and obvious inline

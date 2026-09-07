@@ -8,12 +8,17 @@ KDIR_V5 = /lib/modules/5.15.0-33-generic/build
 PWD := $(shell pwd)
 KERNEL_CC ?= $(shell \
 	if [ -r "$(KDIR)/include/generated/compile.h" ]; then \
-		cc=$$(sed -n 's/.*LINUX_COMPILER "\(.*\)".*/\1/p' "$(KDIR)/include/generated/compile.h" | awk '{print $$1}' | head -1); \
+		cc=$$(sed -n 's/.*LINUX_COMPILER[[:space:]]*"\(.*\)".*/\1/p' "$(KDIR)/include/generated/compile.h" | awk '{print $$1}' | head -1); \
 		if [ -n "$$cc" ] && command -v "$$cc" >/dev/null 2>&1; then \
 			echo "$$cc"; \
 		fi; \
 	fi)
 KBUILD_CC := $(if $(KERNEL_CC),CC=$(KERNEL_CC),)
+# The distributed lab headers do not include the matching vmlinux ELF, so
+# module BTF cannot be generated or verified there.  Keep this explicit rather
+# than emitting a misleading warning for every functional smoke run.
+NAMRBD_MODULE_GENERATE_BTF ?= 0
+KBUILD_BTF := $(if $(filter 1 true,$(NAMRBD_MODULE_GENERATE_BTF)),,CONFIG_DEBUG_INFO_BTF_MODULES=)
 NAMRBD_HAVE_BLK_MQ_ALLOC_DISK_3_ARGS := $(shell \
 	if grep -q "blk_mq_alloc_disk(set, lim, queuedata)" "$(KDIR)/include/linux/blk-mq.h" 2>/dev/null; then \
 		echo 1; \
@@ -39,7 +44,7 @@ ccflags-y += -DNAMRBD_HAVE_QUEUE_LIMITS_COMMIT_UPDATE=$(NAMRBD_HAVE_QUEUE_LIMITS
 
 all:
 	find $(PWD) -maxdepth 1 -type f -exec touch {} +
-	$(MAKE) -C $(KDIR) M=$(PWD) $(KBUILD_CC) modules
+	$(MAKE) -C $(KDIR) M=$(PWD) $(KBUILD_CC) $(KBUILD_BTF) modules
 
 # Build for 5.x: uses 5.x headers so LINUX_VERSION_CODE < 6.0.0 and 5.x blk-mq path is used
 v5:

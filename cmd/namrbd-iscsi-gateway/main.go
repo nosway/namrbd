@@ -49,7 +49,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	fs := flag.NewFlagSet("namrbd-iscsi-gateway", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	configPath := fs.String("config", "", "service config file path (AA-IMPL-001E); when set, it supplies instance settings while target/LUN/export mappings stay registry-owned")
+	configPath := fs.String("config", "", "service config file path; when set, it supplies instance settings while target/LUN/export mappings stay registry-owned")
 	backend := fs.String("backend", "memory", "backend mode: memory or sbs")
 	portal := fs.String("portal", "", "explicit portal address")
 	size := fs.String("memory-lun-size", "512MiB", "memory LUN size in bytes, KiB, MiB, or GiB")

@@ -1,7 +1,7 @@
 Operations Manual
 
 Advanced feature 안내: Enterprise 섹션은 개발·검증 방향을 설명하며 공개
-v1.0 설치 또는 지원 범위가 아닙니다. [기능 상태](../../feature-status.md)를
+v1.1 설치 또는 지원 범위가 아닙니다. [기능 상태](../../feature-status.md)를
 확인하십시오.
 
 # NAMRBD 설치 가이드
@@ -230,6 +230,49 @@ sbsctl node join --node-id data-09 --grpc-endpoint data-09.example.com:9444 --sb
 sbsctl cluster status --output json
 sbsctl node status --node-id data-01 --output json
 ```
+
+위의 명시적인 zone 생성과 `node join` 절차는 소규모 평가 클러스터에는 유용하지만,
+수백 개 노드로 shell 반복을 확장해서는 안 됩니다. 검토된 대규모 논리 fleet에는
+아래 manifest 경로를 사용합니다.
+
+#### 3.4.1 Manifest 기반 대규모 fleet 설치
+
+`configs/sbs-cluster-160.example.yaml`은 `node1..node160`, 8 zone×20 node,
+active service `node1`/`node21`/`node41`, standby 후보 `node61`/`node81`을
+materialize한 실행 가능한 exact-topology 예제입니다. 이는 논리 fleet 계약이며
+160대의 독립 물리 서버 지원을 의미하지 않습니다.
+
+다음 순서를 지킵니다.
+
+1. 승인된 artifact digest와 함께 `sbsctl cluster manifest validate`, `export`,
+   `render`, `plan`을 실행하고 canonical manifest, 각 digest, plan ID와 plan JSON을
+   보존합니다.
+2. 각 대상 host에서 해당 `rendered/nodes/<node-id>` bundle을 사용해 `sbsctl host
+   check --local`을 실행하고 검토된 host Ed25519 key로 보고서에 서명합니다. 이
+   검사는 host fact만 읽으며 storage format/mount, TiKV 변경, daemon 재시작을 하지
+   않습니다.
+3. signed report만 있는 디렉터리와 검토된 trust bundle로 `sbsctl cluster manifest
+   admit`을 실행합니다. 누락·만료·future skew·잘못된 서명·다른 manifest용 보고서는
+   거부되며, admission은 새로운 no-mutation join plan을 기록합니다.
+4. `cluster manifest rollout start`로 file-backed parent operation을 만들고,
+   `issue`가 반환한 instruction은 외부 transport가 실행하도록 합니다. 결과는
+   `record`로 저장합니다. 실패한 wave 뒤의 wave는 진행하지 말고, 원인을 검토한 뒤
+   실패 node만 `retry`하고 `resume --reason`을 사용합니다.
+5. aggregate cluster status를 확인한 다음 page/point 명령으로 필요한 node와
+   volume만 상세 조회합니다. 모든 operation revision과 first/last error를 설치
+   증거에 보존합니다.
+
+Manifest parser는 unknown/multi-document YAML, 중복 ID·hostname·address·device
+claim, 잘못된 8×20 및 active 3/standby 2 배치, secret literal, 승인되지 않은
+artifact, 불완전한 storage claim, destructive provisioning을 거부합니다.
+Validate/render/plan, host check, admission과 rollout state transition의 live TiKV
+mutation, storage action, daemon action은 모두 0입니다. 실제 배포나 재시작은 외부
+instruction executor에서 처음 허용됩니다.
+
+Storage format과 mount 생성은 별도 승인되는 host provisioning 절차입니다.
+Manifest의 immutable device-by-id와 filesystem UUID를 임시 device 이름으로
+대체하지 마십시오. 정확한 flag와 실패 계약은 [Operations](../../operations.md)와
+[생성된 `sbsctl` reference](../../reference/cli/sbsctl.md)를 참조하십시오.
 
 ### 3.5 Gateway
 

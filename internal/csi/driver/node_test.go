@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	csipb "github.com/container-storage-interface/spec/lib/go/csi"
@@ -23,6 +24,9 @@ type fakeNodeHelper struct {
 	nextAttach       NodeAttachment
 	lookupAttachment NodeAttachment
 	lookupErr        error
+	mountErr         error
+	reloadErr        error
+	growErr          error
 }
 
 func newFakeNodeHelper() *fakeNodeHelper {
@@ -64,7 +68,7 @@ func (f *fakeNodeHelper) FormatIfNeeded(_ context.Context, req NodeFormatRequest
 
 func (f *fakeNodeHelper) Mount(_ context.Context, req NodeMountRequest) error {
 	f.mountCalls = append(f.mountCalls, req)
-	return nil
+	return f.mountErr
 }
 
 func (f *fakeNodeHelper) BindBlock(_ context.Context, req NodeBindBlockRequest) error {
@@ -79,12 +83,12 @@ func (f *fakeNodeHelper) Unmount(_ context.Context, targetPath string) error {
 
 func (f *fakeNodeHelper) ReloadSize(_ context.Context, req NodeReloadSizeRequest) error {
 	f.reloadCalls = append(f.reloadCalls, req)
-	return nil
+	return f.reloadErr
 }
 
 func (f *fakeNodeHelper) GrowFilesystem(_ context.Context, req NodeGrowFilesystemRequest) error {
 	f.growCalls = append(f.growCalls, req)
-	return nil
+	return f.growErr
 }
 
 func newNodeTestServer(t *testing.T, helper *fakeNodeHelper) *Server {
@@ -434,6 +438,41 @@ func TestNodeStageSnapshotFilesystemGrowsAfterMount(t *testing.T) {
 		helper.growCalls[0].VolumePath != stageReq.GetStagingTargetPath() ||
 		helper.growCalls[0].FSType != "ext4" {
 		t.Fatalf("grow calls=%+v", helper.growCalls)
+	}
+}
+
+func TestNodeStageMountFailureDetachesPartialAttachment(t *testing.T) {
+	helper := newFakeNodeHelper()
+	helper.mountErr = errors.New("mount failed")
+	srv := newNodeTestServer(t, helper)
+	_, err := srv.NodeStageVolume(context.Background(), &csipb.NodeStageVolumeRequest{
+		VolumeId:          "00a1b2d0",
+		StagingTargetPath: "/stage/mount-failure",
+		VolumeCapability:  mountRWOP(),
+	})
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("NodeStageVolume err=%v want Internal", err)
+	}
+	if len(helper.detachCalls) != 1 || len(helper.unmountCalls) != 0 {
+		t.Fatalf("partial cleanup detach=%+v unmount=%+v", helper.detachCalls, helper.unmountCalls)
+	}
+}
+
+func TestNodeStageSnapshotGrowFailureUnmountsAndDetaches(t *testing.T) {
+	helper := newFakeNodeHelper()
+	helper.growErr = errors.New("grow failed")
+	srv := newNodeTestServer(t, helper)
+	_, err := srv.NodeStageVolume(context.Background(), &csipb.NodeStageVolumeRequest{
+		VolumeId:          "00a1b2d1",
+		StagingTargetPath: "/stage/grow-failure",
+		VolumeCapability:  mountRWOP(),
+		VolumeContext:     volumeContext(volumeContextProvisioningSnapshot, "restore-pvc"),
+	})
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("NodeStageVolume err=%v want Internal", err)
+	}
+	if len(helper.unmountCalls) != 1 || helper.unmountCalls[0] != "/stage/grow-failure" || len(helper.detachCalls) != 1 {
+		t.Fatalf("partial cleanup unmount=%+v detach=%+v", helper.unmountCalls, helper.detachCalls)
 	}
 }
 

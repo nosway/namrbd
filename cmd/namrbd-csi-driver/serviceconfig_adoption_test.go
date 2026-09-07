@@ -164,21 +164,14 @@ func TestCSIEndpointListSuppliesPrimaryWhenSingularIsUnset(t *testing.T) {
 	}
 }
 
-func TestCSILegacyServiceEnvironmentNamesRemainV10Compatible(t *testing.T) {
-	var primary, endpoints string
-	b := csiConfigBinding{AdminEndpoint: &primary, AdminEndpoints: &endpoints}
-	summary, err := applyCSIConfig(installedCSIConfig(t, nil), b, map[string]string{}, envLookup(map[string]string{
+func TestCSILegacyServiceEnvironmentNamesAreRejectedAtV11(t *testing.T) {
+	_, err := applyCSIConfig(installedCSIConfig(t, nil), csiConfigBinding{}, map[string]string{}, envLookup(map[string]string{
 		"NAMRBD_ADMIN_ENDPOINT":  "legacy-primary:9443",
 		"NAMRBD_ADMIN_ENDPOINTS": "legacy-a:9443 legacy-b:9443",
 	}))
-	if err != nil {
-		t.Fatalf("apply: %v", err)
-	}
-	if primary != "legacy-primary:9443" || endpoints != "legacy-primary:9443,legacy-b:9443" {
-		t.Fatalf("primary=%q endpoints=%q", primary, endpoints)
-	}
-	if summary.EnvOverrideCount != 2 || summary.WarningCount != 2 {
-		t.Fatalf("summary=%+v", summary)
+	if err == nil || !strings.Contains(err.Error(), "removed environment variable") ||
+		!strings.Contains(err.Error(), "use NAMRBD_SBS_SERVICE_ENDPOINT") {
+		t.Fatalf("error=%v", err)
 	}
 }
 

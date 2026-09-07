@@ -32,15 +32,18 @@ type sbsServiceConfigBinding struct {
 	TiKVKeyFile        *string
 	TiKVOperationTrace *bool
 
-	LeaderLeaseDuration    *time.Duration
-	LeaderRenewInterval    *time.Duration
-	HealthShardCount       *int
-	HealthConcurrency      *int
-	HealthInterval         *time.Duration
-	HealthTimeout          *time.Duration
-	HealthSuspectAfter     *int
-	HealthDownAfter        *int
-	HealthRecoveryCooldown *time.Duration
+	LeaderLeaseDuration                *time.Duration
+	LeaderRenewInterval                *time.Duration
+	HealthShardCount                   *int
+	HealthConcurrency                  *int
+	HealthInterval                     *time.Duration
+	HealthTimeout                      *time.Duration
+	HealthSuspectAfter                 *int
+	HealthDownAfter                    *int
+	HealthRecoveryCooldown             *time.Duration
+	ClusterSummaryState                *string
+	ClusterSummaryDegradedAfter        *time.Duration
+	ClusterSummaryRebuildRequiredAfter *time.Duration
 
 	ServiceOwnedWriteEffects   *bool
 	NativeAllocationFastPath   *bool
@@ -266,6 +269,9 @@ func applySBSServiceBlock(s *serviceconfig.SBSServiceConfig, b sbsServiceConfigB
 	setInt("health-suspect-after", "sbs_service.health.suspect_threshold", b.HealthSuspectAfter, s.Health.SuspectThreshold)
 	setInt("health-down-after", "sbs_service.health.down_threshold", b.HealthDownAfter, s.Health.DownThreshold)
 	setDur("health-recovery-cooldown", "sbs_service.health.recovery_cooldown_seconds", b.HealthRecoveryCooldown, s.Health.RecoveryCooldownSeconds)
+	setStr("cluster-summary-state", "sbs_service.summary.state", b.ClusterSummaryState, s.Summary.State)
+	setDur("cluster-summary-degraded-after", "sbs_service.summary.freshness_degraded_seconds", b.ClusterSummaryDegradedAfter, s.Summary.FreshnessDegradedSeconds)
+	setDur("cluster-summary-rebuild-required-after", "sbs_service.summary.freshness_rebuild_required_seconds", b.ClusterSummaryRebuildRequiredAfter, s.Summary.FreshnessRebuildRequiredSeconds)
 
 	setBool("service-owned-write-effects", "sbs_service.write_effects.service_owned", b.ServiceOwnedWriteEffects, s.WriteEffects.ServiceOwned)
 	setBool("native-allocation-fast-path", "sbs_service.write_effects.native_allocation_fast_path", b.NativeAllocationFastPath, s.WriteEffects.NativeAllocationFastPath)

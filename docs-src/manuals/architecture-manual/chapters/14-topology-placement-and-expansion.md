@@ -64,21 +64,36 @@ Replicated and EC placement both consume the same topology model. Replicated pla
 
 ## Topology Installation Workflow
 
-A typical installation declares zones first, joins nodes with a zone assignment, validates the topology, then creates volumes whose placement policy consumes that topology. Store details are reported by `sbs-data` and admitted through node membership and store health; topology does not become a separate kernel or gateway source of truth.
+Small manual installations may create zones and join nodes directly. Fleet
+installation uses the strict manifest workflow so identity, address, topology,
+role, store claim, and service configuration are reviewed as one canonical
+document before any mutation:
 
-    sbsctl topology zone create --zone zone-a
-    sbsctl topology zone create --zone zone-b
-    sbsctl topology zone create --zone zone-c
+    sbsctl cluster manifest validate --file fleet.yaml --approved-artifact-digest sha256:<digest> --output json
+    sbsctl cluster manifest render --file fleet.yaml --approved-artifact-digest sha256:<digest> --output-dir rendered
+    sbsctl cluster manifest plan --file fleet.yaml --approved-artifact-digest sha256:<digest> --plan-output plan.json --output json
+    sbsctl host check --local --manifest fleet.yaml --bundle rendered/nodes/<node-id> --node-id <node-id> --plan-id <plan-id> ...
+    sbsctl cluster manifest admit --file fleet.yaml --plan-id <plan-id> --reports-dir reports --trust-bundle trust.json --join-plan-output join-plan.json ...
+    sbsctl cluster manifest rollout start --file fleet.yaml --join-plan join-plan.json --operation-output rollout-1.json ...
 
-    sbsctl node join --node-id data-01 --zone zone-a
-    sbsctl node join --node-id data-02 --zone zone-b
-    sbsctl node join --node-id data-03 --zone zone-c
+Validation, rendering, planning, checking, admission, and rollout state
+transitions are pure with respect to TiKV, payload storage, and daemon control.
+The rollout document describes externally executed batches; it does not SSH to
+hosts, provision disks, or start/stop daemons itself. Duplicate node ids or
+addresses, duplicate device claims, secret literals, destructive provisioning,
+and topology/role violations are rejected before apply.
 
-    sbsctl topology validate --output json
-    sbsctl topology summary --output json
-    sbsctl volume create --failure-domain zone --topology-mode strict ...
+The exact logical fleet fixture contains `node1` through `node160`, eight zones
+with twenty nodes each, and three active plus two standby
+`sbs-service` members. This proves manifest/schema/canonicalization and software
+workflow behavior. It is not evidence for 160 independent physical servers;
+that qualification remains tracked separately in the hardware registry.
 
-Operational workflows may later use `sbsctl topology zone update --zone <zone> --disable` to stop new placement into a zone, `sbsctl node update-topology --node-id <node> --zone <zone>` for controlled reassignment, and maintenance commands to drain or rebalance data after preflight proves the post-change topology remains safe.
+For a controlled topology change, create a new manifest generation and repeat
+the plan/check/admit path. Drain or rebalance only after preflight proves that
+the resulting placement remains safe. Direct zone or node commands remain
+appropriate for small manual environments, but a client must not invent
+nonexistent `topology validate`, `topology summary`, or zone-disable commands.
 
 Membership operations should be run as plan, preflight, apply, synchronize, verify, rollback, and audit. SBS node join, topology update, store tuning, drain, remove, and force-remove are `sbs-service` AdminService authority. Gateway membership and liveness remain gateway/control-plane authority. Basic iSCSI status can report portals, targets, LUNs, initiators, and sessions, but it is not cluster-wide iSCSI HA authority. Operator views should use `/api/v1/membership/status` and preserve `source_authority`, freshness, warning/error, RBAC, redaction, and unsupported-claim fields.
 

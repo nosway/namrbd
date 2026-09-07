@@ -13,20 +13,21 @@ import (
 const maintenanceThrottleAuthority = "sbs-service-maintenance-throttle"
 
 type maintenanceThrottleRecord struct {
-	Authority               string `json:"authority"`
-	Generation              uint64 `json:"generation"`
-	MaxConcurrentRepairs    int    `json:"max_concurrent_repairs"`
-	MaxConcurrentRebalances int    `json:"max_concurrent_rebalances"`
-	MaxConcurrentDrains     int    `json:"max_concurrent_drains"`
-	MaxConcurrentPayloadGCs int    `json:"max_concurrent_payload_gcs"`
-	PauseRepairs            bool   `json:"pause_repairs"`
-	PauseRebalances         bool   `json:"pause_rebalances"`
-	PauseDrains             bool   `json:"pause_drains"`
-	PausePayloadGCs         bool   `json:"pause_payload_gcs"`
-	CreatedBy               string `json:"created_by,omitempty"`
-	CreatedReason           string `json:"created_reason,omitempty"`
-	CreatedAtUnix           int64  `json:"created_at_unix,omitempty"`
-	UpdatedAtUnix           int64  `json:"updated_at_unix,omitempty"`
+	Authority                   string `json:"authority"`
+	Generation                  uint64 `json:"generation"`
+	MaxConcurrentRepairs        int    `json:"max_concurrent_repairs"`
+	MaxConcurrentRebalances     int    `json:"max_concurrent_rebalances"`
+	MaxConcurrentDrains         int    `json:"max_concurrent_drains"`
+	MaxTotalConcurrentMovements int    `json:"max_total_concurrent_movements"`
+	MaxConcurrentPayloadGCs     int    `json:"max_concurrent_payload_gcs"`
+	PauseRepairs                bool   `json:"pause_repairs"`
+	PauseRebalances             bool   `json:"pause_rebalances"`
+	PauseDrains                 bool   `json:"pause_drains"`
+	PausePayloadGCs             bool   `json:"pause_payload_gcs"`
+	CreatedBy                   string `json:"created_by,omitempty"`
+	CreatedReason               string `json:"created_reason,omitempty"`
+	CreatedAtUnix               int64  `json:"created_at_unix,omitempty"`
+	UpdatedAtUnix               int64  `json:"updated_at_unix,omitempty"`
 }
 
 func (s *server) loadMaintenanceSettingsSnapshot(ctx context.Context) (maintenanceSnapshot, error) {
@@ -97,16 +98,17 @@ func maintenanceThrottleRecordFromSnapshot(settings maintenanceSnapshot) mainten
 		settings.generation = 1
 	}
 	return maintenanceThrottleRecord{
-		Authority:               maintenanceThrottleAuthority,
-		Generation:              settings.generation,
-		MaxConcurrentRepairs:    maxInt(settings.maxConcurrentRepairs, 1),
-		MaxConcurrentRebalances: maxInt(settings.maxConcurrentRebalances, 1),
-		MaxConcurrentDrains:     maxInt(settings.maxConcurrentDrains, 1),
-		MaxConcurrentPayloadGCs: maxInt(settings.maxConcurrentPayloadGCs, 1),
-		PauseRepairs:            settings.pauseRepairs,
-		PauseRebalances:         settings.pauseRebalances,
-		PauseDrains:             settings.pauseDrains,
-		PausePayloadGCs:         settings.pausePayloadGCs,
+		Authority:                   maintenanceThrottleAuthority,
+		Generation:                  settings.generation,
+		MaxConcurrentRepairs:        maxInt(settings.maxConcurrentRepairs, 1),
+		MaxConcurrentRebalances:     maxInt(settings.maxConcurrentRebalances, 1),
+		MaxConcurrentDrains:         maxInt(settings.maxConcurrentDrains, 1),
+		MaxTotalConcurrentMovements: maxInt(settings.maxTotalConcurrentMovements, 1),
+		MaxConcurrentPayloadGCs:     maxInt(settings.maxConcurrentPayloadGCs, 1),
+		PauseRepairs:                settings.pauseRepairs,
+		PauseRebalances:             settings.pauseRebalances,
+		PauseDrains:                 settings.pauseDrains,
+		PausePayloadGCs:             settings.pausePayloadGCs,
 	}
 }
 
@@ -126,6 +128,9 @@ func (r maintenanceThrottleRecord) withDefaults(defaults maintenanceThrottleReco
 	if r.MaxConcurrentDrains <= 0 {
 		r.MaxConcurrentDrains = maxInt(defaults.MaxConcurrentDrains, 1)
 	}
+	if r.MaxTotalConcurrentMovements <= 0 {
+		r.MaxTotalConcurrentMovements = maxInt(defaults.MaxTotalConcurrentMovements, 1)
+	}
 	if r.MaxConcurrentPayloadGCs <= 0 {
 		r.MaxConcurrentPayloadGCs = maxInt(defaults.MaxConcurrentPayloadGCs, 1)
 	}
@@ -134,15 +139,16 @@ func (r maintenanceThrottleRecord) withDefaults(defaults maintenanceThrottleReco
 
 func (r maintenanceThrottleRecord) toSnapshot() maintenanceSnapshot {
 	return maintenanceSnapshot{
-		generation:              maxUint64(r.Generation, 1),
-		maxConcurrentRepairs:    maxInt(r.MaxConcurrentRepairs, 1),
-		maxConcurrentRebalances: maxInt(r.MaxConcurrentRebalances, 1),
-		maxConcurrentDrains:     maxInt(r.MaxConcurrentDrains, 1),
-		maxConcurrentPayloadGCs: maxInt(r.MaxConcurrentPayloadGCs, 1),
-		pauseRepairs:            r.PauseRepairs,
-		pauseRebalances:         r.PauseRebalances,
-		pauseDrains:             r.PauseDrains,
-		pausePayloadGCs:         r.PausePayloadGCs,
+		generation:                  maxUint64(r.Generation, 1),
+		maxConcurrentRepairs:        maxInt(r.MaxConcurrentRepairs, 1),
+		maxConcurrentRebalances:     maxInt(r.MaxConcurrentRebalances, 1),
+		maxConcurrentDrains:         maxInt(r.MaxConcurrentDrains, 1),
+		maxTotalConcurrentMovements: maxInt(r.MaxTotalConcurrentMovements, 1),
+		maxConcurrentPayloadGCs:     maxInt(r.MaxConcurrentPayloadGCs, 1),
+		pauseRepairs:                r.PauseRepairs,
+		pauseRebalances:             r.PauseRebalances,
+		pauseDrains:                 r.PauseDrains,
+		pausePayloadGCs:             r.PausePayloadGCs,
 	}
 }
 
@@ -153,6 +159,7 @@ func (m *maintenanceSettings) applySnapshot(settings maintenanceSnapshot) {
 	m.maxConcurrentRepairs = maxInt(settings.maxConcurrentRepairs, 1)
 	m.maxConcurrentRebalances = maxInt(settings.maxConcurrentRebalances, 1)
 	m.maxConcurrentDrains = maxInt(settings.maxConcurrentDrains, 1)
+	m.maxTotalConcurrentMovements = maxInt(settings.maxTotalConcurrentMovements, 1)
 	m.maxConcurrentPayloadGCs = maxInt(settings.maxConcurrentPayloadGCs, 1)
 	m.pauseRepairs = settings.pauseRepairs
 	m.pauseRebalances = settings.pauseRebalances

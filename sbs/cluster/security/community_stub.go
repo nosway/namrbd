@@ -10,14 +10,17 @@ const (
 )
 
 type KeyAccessLease struct {
-	LeaseID    string
-	VolumeID   string
-	DataKeyID  string
-	KeyVersion uint64
-	Purpose    string
-	ExpiresAt  string
-	IssuedTo   string
-	Revoked    bool
+	LeaseID          string
+	VolumeID         string
+	DataKeyID        string
+	SecurityPolicyID string
+	PolicyGeneration uint64
+	KeyProviderID    string
+	KeyVersion       uint64
+	Purpose          string
+	ExpiresAt        string
+	IssuedTo         string
+	Revoked          bool
 }
 
 type KeyAccessLeaseIssueRequest struct {

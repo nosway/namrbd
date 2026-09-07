@@ -28,7 +28,7 @@ Flags:
   --chunk-gc-interval duration
       background allocation chunk (AC) garbage collection interval; <=0 disables the worker (default 30s)
   --config string
-      service config file path (AA-IMPL-001D); when set, it supplies stable settings and explicitly typed flags still win (default )
+      service config file path; when set, it supplies stable settings and explicitly typed flags still win (default )
   --control-http-listen string
       HTTP control-plane listen address (default 0.0.0.0:9701)
   --data-backend-mode string
@@ -68,7 +68,7 @@ Flags:
   --path-plan-reconcile-interval duration
       background desired/observed gateway path-plan reconcile interval; <=0 disables the worker (default 5s)
   --print-config
-      emit an equivalent service config for this invocation on stdout and exit (AA-IMPL-002) (default false)
+      emit an equivalent service config for this invocation on stdout and exit (default false)
   --redis-addr string
       redis address (requires -tags legacy_redis) (default 127.0.0.1:6379)
   --sbs-append-only-service-write-effects

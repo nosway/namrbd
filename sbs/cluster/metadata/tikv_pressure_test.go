@@ -80,7 +80,12 @@ func TestTiKVPressureCountersRecordAndReset(t *testing.T) {
 	tikvPressure.batchGets.Add(1)
 	tikvPressure.batchGetKeys.Add(300)
 	tikvPressure.batchGetChunks.Add(3)
+	tikvPressure.batchGetNanos.Add(400)
 	tikvPressure.pointGets.Add(2)
+	tikvPressure.pointGetNanos.Add(200)
+	tikvPressure.rangePages.Add(4)
+	tikvPressure.rangePageNanos.Add(800)
+	tikvPressure.hotCandidates.Add(1)
 	tikvPressure.txnRetries.Add(1)
 
 	got := TiKVPressureSnapshotNow()
@@ -89,6 +94,9 @@ func TestTiKVPressureCountersRecordAndReset(t *testing.T) {
 	}
 	if got.PointGetCount != 2 || got.TxnRetryCount != 1 {
 		t.Errorf("point and retry counters = %+v", got)
+	}
+	if got.RangePageCount != 4 || got.PointGetNanos != 200 || got.BatchGetNanos != 400 || got.RangePageNanos != 800 || got.HotCandidateCount != 1 {
+		t.Errorf("range, latency, and candidate counters = %+v", got)
 	}
 	// The scan counter must stay at zero: nothing in this package scans.
 	if got.FullScanCount != 0 {

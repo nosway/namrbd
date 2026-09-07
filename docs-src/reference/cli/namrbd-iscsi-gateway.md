@@ -28,7 +28,7 @@ Flags:
   --chap-secret-ref string
       CHAP secret reference for --auth-mode=chap; raw secrets are not accepted (default )
   --config string
-      service config file path (AA-IMPL-001E); when set, it supplies instance settings while target/LUN/export mappings stay registry-owned (default )
+      service config file path; when set, it supplies instance settings while target/LUN/export mappings stay registry-owned (default )
   --export-id string
       export id (default memory)
   --generation uint

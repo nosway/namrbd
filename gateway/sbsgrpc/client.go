@@ -18,6 +18,14 @@ func NewClient(next sbsv1.VolumeServiceClient) *Client {
 	return &Client{next: next}
 }
 
+func (c *Client) MaterializeVolume(ctx context.Context, req *service.MaterializeVolumeRequest) (*service.MaterializeVolumeResponse, error) {
+	resp, err := c.next.MaterializeVolume(ctx, toProtoMaterializeVolumeRequest(req))
+	if err != nil {
+		return nil, fromGRPCError(err)
+	}
+	return fromProtoMaterializeVolumeResponse(resp), nil
+}
+
 func (c *Client) OpenVolume(ctx context.Context, req *service.OpenVolumeRequest) (*service.OpenVolumeResponse, error) {
 	resp, err := c.next.OpenVolume(ctx, toProtoOpenVolumeRequest(req))
 	if err != nil {
@@ -139,6 +147,24 @@ func (c *Client) ApplyISCSIWriterFence(ctx context.Context, req *service.ApplyIS
 		Status: resp.GetStatus(), Applied: resp.GetApplied(), Fence: fromProtoISCSIWriterFence(resp.GetFence()),
 		StaleWriterRejectedCount: resp.GetStaleWriterRejectedCount(),
 	}, nil
+}
+
+func (c *Client) ApplyCompressionPolicy(ctx context.Context, req *service.ApplyCompressionPolicyRequest) (*service.ApplyCompressionPolicyResponse, error) {
+	resp, err := c.next.ApplyCompressionPolicy(ctx, &sbsv1.ApplyCompressionPolicyRequest{Policy: toProtoCompressionPolicy(req.Policy)})
+	if err != nil {
+		return nil, fromGRPCError(err)
+	}
+	return &service.ApplyCompressionPolicyResponse{
+		Status: resp.GetStatus(), Applied: resp.GetApplied(), Runtime: fromProtoCompressionRuntimeStatus(resp.GetRuntime()),
+	}, nil
+}
+
+func (c *Client) GetCompressionRuntimeStatus(ctx context.Context, req *service.GetCompressionRuntimeStatusRequest) (*service.GetCompressionRuntimeStatusResponse, error) {
+	resp, err := c.next.GetCompressionRuntimeStatus(ctx, &sbsv1.GetCompressionRuntimeStatusRequest{VolumeId: req.VolumeID})
+	if err != nil {
+		return nil, fromGRPCError(err)
+	}
+	return &service.GetCompressionRuntimeStatusResponse{Runtime: fromProtoCompressionRuntimeStatus(resp.GetRuntime())}, nil
 }
 
 func fromGRPCError(err error) error {

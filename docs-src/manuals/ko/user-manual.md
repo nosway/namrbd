@@ -1,7 +1,7 @@
 사용자 매뉴얼
 
 Advanced feature 안내: Enterprise 섹션은 개발·검증 중인 설계를 요약하며
-공개 v1.0 지원 범위가 아닙니다. [기능 상태](../../feature-status.md)를
+공개 v1.1 지원 범위가 아닙니다. [기능 상태](../../feature-status.md)를
 확인하십시오.
 
 # NAMRBD 사용자 매뉴얼
@@ -43,6 +43,7 @@ NAMRBD는 다음과 같은 강점을 내장한 네트워크 기반 Linux 블록 
 - EC 프로필 전환은 온라인 상의 단순 메타데이터 플립(flipping)으로 해결되지 않으며, 향후 작업 영역에서 이관 및 재패킹(migration/repack) 프로세스로 고도화되어 제어됩니다.
 - 현재 보안 baseline은 통합 mock 가상 공급자 보안 증적을 바탕으로 수립되었으며, Governance/WORM 지원은 블록 네이티브 파생 객체 보호와 유저스페이스 게이트웨이 기접수 쓰기 봉인 차단을 독립 범위로 다룹니다. 실시간 외부 KMS 네트워크 소거 및 디듀플리케이션은 향후 별도 과제로 연동됩니다.
 - 기본 iSCSI 지원은 Linux open-iscsi를 필수 호환성 기준으로 주장합니다. Windows 환경은 가상 메모리 드라이브 및 세션 정리에 대한 부분 증적만을 내포하며, macOS는 전면 제외되어 있습니다.
+- 소프트웨어 검증은 exact logical 160-node manifest와 18-host/160-process lab topology를 포함합니다. 이는 160개 독립 physical server의 qualification/support가 아니며, 해당 경계에는 별도의 물리 fleet-scale qualification이 필요합니다.
 - 커뮤니티 에디션은 수동 복제본 스냅샷, 수동 스냅샷 복원, 스냅샷 격리 보호, 복원 대상 용량 검증, 기초적인 삭제 및 종속성 보호, 그리고 최대 3개 distinct iSCSI-exported volumes 대상 기본 iSCSI gateway/CLI/LUN export로 제한됩니다. Enterprise 백업/DR 자동화, 동적 성능 계층, KMS 연동 암호화 및 보안 통제, Governance/WORM 보안 통제, 3개 초과 iSCSI export, unlimited export scale, iSCSI HA, MPIO/ALUA, 고급 보안/감사, 대규모 관측성, 원격 DR 자동화는 Enterprise-only이거나 별도 검증이 필요한 향후 영역입니다.
 
 ## 2. 빠른 시작
@@ -129,6 +130,31 @@ namrbdctl destroy-device --device 0
 sudo rmmod namrbd_ctrl
 sudo rmmod namrbd_blk
 ```
+
+### 2.5 Full scan 없이 cluster 관측
+
+일반 overview는 bounded aggregate를 사용합니다.
+
+```bash
+curl -fsS http://service-01.example.com:9081/api/v1/sbs/cluster
+```
+
+`collection_status`, `projection.health`, `partial`, `stale`,
+`rebuild_required`, source/baseline revision, freshness를 함께 확인합니다.
+Service는 unhealthy projection을 raw metadata 전체 scan으로 숨기지 않습니다.
+
+상세 정보는 revision-pinned page 하나 또는 exact entity 하나를 조회합니다.
+
+```bash
+sbsctl node list --page-size 128 --output json
+sbsctl volume list --health degraded --page-size 128 --output json
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/node?id=node1'
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/volume?id=00000065'
+```
+
+반환된 page token은 명시적으로 이어서 사용합니다. Invalid 또는 revision
+mismatch token은 fail closed하며, `automatic_page_completion=false`가 routine
+polling을 implicit fleet-wide enumeration으로 바꾸지 못하게 합니다.
 
 ## 3. Snapshot And Restore
 
@@ -423,7 +449,22 @@ sbsctl volume status --volume-id <volume_id> --output json
 
 게이트웨이는 기정의된 `--sbs-service-endpoint`를 통해서만 `sbs-service`에 접근해야 합니다. 게이트웨이가 raw SBS TiKV 메타 플래그를 직접 제어하는 비정형 경로는 역사적 개발 환경 전용이며, 상용 런타임에서 권장되지 않습니다.
 
-### 10.4 Kubernetes
+### 10.4 Bounded fleet view
+
+Cluster view가 `partial`, `stale`, `rebuild_required`를 보고하면 response를
+보존하고 source revision, baseline revision, freshness,
+`metadata_pressure`를 비교합니다. 영향받은 entity는 node/volume page와
+point lookup으로 찾습니다. Legacy unpaged list를 반복하거나 invalid token으로
+pagination을 처음부터 재시작하거나 condition을 숨기기 위해 limit을 올리지
+않습니다.
+
+Stable fleet health code는 다음 점검 대상을 알려줍니다:
+`SBS_HOST_CHECK_FAILED`, `SBS_CONFIG_DRIFT`, `SBS_STRAY_NODE`,
+`SBS_STORAGE_CLAIM_MISMATCH`, `SBS_FLEET_CHECK_STALE`,
+`SBS_APPLY_PAUSED`. Fleet state를 변경하기 전에 manifest digest, plan id,
+source revision, apply state, first/last error를 보존합니다.
+
+### 10.5 Kubernetes
 
 Checks:
 
@@ -435,7 +476,7 @@ kubectl get pvc,pv,volumesnapshot -A
 
 Collect PVC/PV handles, pod events, CSI controller logs, CSI node logs, and the Discard/Reclaim summary path.
 
-### 10.5 iSCSI
+### 10.6 iSCSI
 
 Checks:
 
@@ -448,7 +489,7 @@ ls -l /dev/disk/by-path/*iscsi*lun-0
 
 Collect target IQN, portal, LUN id, initiator IQN/vendor/version, SCSI status/sense, gateway summary JSON, operation JSONL, and whether `iscsi_gateway_restarted=true` for the run.
 
-### 10.6 Smoke Failure
+### 10.7 Smoke Failure
 
 Record:
 

@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nosway/namrbd/internal/adminclient"
 	adminv1 "github.com/nosway/namrbd/sbs/admin/v1"
 	"github.com/nosway/namrbd/sbs/cluster/metadata"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type AdminEndpointSourceSnapshotLister struct {
@@ -21,11 +19,11 @@ func NewAdminEndpointSourceSnapshotLister(endpoint string) (*AdminEndpointSource
 	if endpoint == "" {
 		return nil, nil, fmt.Errorf("source snapshot lister requires reachable --sbs-admin-endpoint")
 	}
-	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := adminclient.Dial(context.Background(), endpoint)
 	if err != nil {
 		return nil, nil, fmt.Errorf("dial source snapshot lister endpoint %q: %w", endpoint, err)
 	}
-	return &AdminEndpointSourceSnapshotLister{client: adminv1.NewAdminServiceClient(conn)}, func() { _ = conn.Close() }, nil
+	return &AdminEndpointSourceSnapshotLister{client: client.Admin}, func() { _ = client.Close() }, nil
 }
 
 func (l *AdminEndpointSourceSnapshotLister) ListSnapshotRecords(ctx context.Context, sourceVolumeID string, includeDeleted bool) ([]metadata.SnapshotRecord, error) {

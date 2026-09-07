@@ -2,6 +2,8 @@ package maintenance
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"testing"
 	"time"
@@ -15,6 +17,49 @@ func addNodeClientAliases(clients map[string]service.SBSClient, aliases map[stri
 	for nodeID, replicaID := range aliases {
 		clients[nodeID] = clients[replicaID]
 	}
+}
+
+type claimedWorkerStore struct {
+	*fakeStore
+	transitionListCalls int
+	mutationListCalls   int
+}
+
+type transitionOpenConflictClient struct {
+	service.SBSClient
+	conflict bool
+}
+
+func (c *transitionOpenConflictClient) OpenVolume(ctx context.Context, req *service.OpenVolumeRequest) (*service.OpenVolumeResponse, error) {
+	if c.conflict {
+		return nil, &service.SBSError{
+			Code:    service.SBSErrorCodeAttachmentMismatch,
+			Message: transitionWriterContextConflictMessage,
+		}
+	}
+	return c.SBSClient.OpenVolume(ctx, req)
+}
+
+func (s *claimedWorkerStore) ValidateMaintenanceWorkLease(_ context.Context, claim metadata.MaintenanceWorkRecord, leaseOwner string) (metadata.MaintenanceWorkRecord, error) {
+	transition, found := s.transitions[claim.PlacementRef]
+	if !found || transition.State == metadata.PlacementTransitionCompleted || claim.LeaseOwner != leaseOwner {
+		return metadata.MaintenanceWorkRecord{}, metadata.ErrMaintenanceWorkLeaseLost
+	}
+	return claim, nil
+}
+
+func (s *claimedWorkerStore) RenewMaintenanceWorkLease(_ context.Context, claim metadata.MaintenanceWorkRecord, leaseOwner string, _ time.Duration) (metadata.MaintenanceWorkRecord, error) {
+	return s.ValidateMaintenanceWorkLease(context.Background(), claim, leaseOwner)
+}
+
+func (s *claimedWorkerStore) ListPlacementTransitions(ctx context.Context, volumeID string) ([]metadata.PlacementTransitionRecord, error) {
+	s.transitionListCalls++
+	return s.fakeStore.ListPlacementTransitions(ctx, volumeID)
+}
+
+func (s *claimedWorkerStore) ListMutationOperations(ctx context.Context, volumeID string) ([]metadata.MutationOperationRecord, error) {
+	s.mutationListCalls++
+	return s.fakeStore.ListMutationOperations(ctx, volumeID)
 }
 
 func TestWorkerRunOnceAppliesQueuedTransition(t *testing.T) {
@@ -85,6 +130,162 @@ func TestWorkerRunOnceAppliesQueuedTransition(t *testing.T) {
 	transition := store.transitions["pl-1"]
 	if transition.State != metadata.PlacementTransitionCompleted {
 		t.Fatalf("transition state=%q want=%q", transition.State, metadata.PlacementTransitionCompleted)
+	}
+}
+
+func TestWorkerDefersWriterContextConflictAndCompletesAfterRelease(t *testing.T) {
+	store := newFakeStore()
+	store.replicaSets = append(store.replicaSets, metadata.ReplicaSetState{
+		ReplicaSetID:     "rs-2",
+		VolumeID:         "00a1b2c3",
+		PlacementRef:     "pl-2",
+		Epoch:            5,
+		PrimaryReplicaID: "rep-d",
+		WriteQuorum:      2,
+		ReadQuorum:       1,
+		Replicas: []metadata.ReplicaDescriptor{
+			{NodeID: "node-d", ReplicaID: "rep-d", Role: metadata.ReplicaRolePrimary},
+			{NodeID: "node-e", ReplicaID: "rep-e", Role: metadata.ReplicaRoleSecondary},
+			{NodeID: "node-f", ReplicaID: "rep-f", Role: metadata.ReplicaRoleSecondary},
+		},
+	})
+	for _, nodeID := range []string{"node-d", "node-e", "node-f"} {
+		store.nodes[nodeID] = metadata.NodeMembershipRecord{NodeID: nodeID, LifecycleState: metadata.NodeLifecycleActive, HealthState: metadata.NodeHealthHealthy}
+	}
+
+	spec := service.NormalizeVolumeSpec(service.VolumeSpec{
+		ID:        service.HexVolumeID(0x00a1b2c3),
+		Name:      "vol-a",
+		Prefix:    "vol-a-00a1b2c3",
+		SizeBytes: 4096 * 4,
+		BlockSize: 8,
+	})
+	conflictClient := &transitionOpenConflictClient{SBSClient: service.NewInMemorySBSClient([]service.VolumeSpec{spec})}
+	replicaClients := map[string]service.SBSClient{
+		"rep-a": conflictClient,
+		"rep-b": service.NewInMemorySBSClient([]service.VolumeSpec{spec}),
+		"rep-c": service.NewInMemorySBSClient([]service.VolumeSpec{spec}),
+		"rep-d": service.NewInMemorySBSClient([]service.VolumeSpec{spec}),
+		"rep-e": service.NewInMemorySBSClient([]service.VolumeSpec{spec}),
+		"rep-f": service.NewInMemorySBSClient([]service.VolumeSpec{spec}),
+	}
+	addNodeClientAliases(replicaClients, map[string]string{"node-a": "rep-a", "node-b": "rep-b", "node-c": "rep-c", "node-d": "rep-d", "node-e": "rep-e", "node-f": "rep-f"})
+
+	svc := NewService(store)
+	svc.now = func() time.Time { return time.Unix(1000, 0) }
+	if _, err := svc.EnqueueRepair(context.Background(), "00a1b2c3", 1, "rs-2"); err != nil {
+		t.Fatalf("EnqueueRepair: %v", err)
+	}
+	seedPayload(t, store.mappings[0], "00a1b2c3", map[string]service.SBSClient{
+		"rep-a": replicaClients["rep-a"],
+		"rep-b": replicaClients["rep-b"],
+		"rep-c": replicaClients["rep-c"],
+	})
+	conflictClient.conflict = true
+
+	worker := NewWorker(svc, WorkerConfig{
+		VolumeID:       "00a1b2c3",
+		ReplicaClients: replicaClients,
+		GatewayID:      "gw-a",
+		HostID:         "host-a",
+		RetryBackoff:   time.Second,
+	})
+	worker.now = func() time.Time { return time.Unix(1000, 0) }
+
+	worked, err := worker.RunOnce(context.Background())
+	if err != nil || !worked {
+		t.Fatalf("RunOnce conflict worked=%t err=%v", worked, err)
+	}
+	transition := store.transitions["pl-1"]
+	if transition.State != metadata.PlacementTransitionQueued {
+		t.Fatalf("transition state=%q want=%q", transition.State, metadata.PlacementTransitionQueued)
+	}
+	if transition.Attempt != 2 {
+		t.Fatalf("transition attempt=%d want=2", transition.Attempt)
+	}
+
+	conflictClient.conflict = false
+	worker.now = func() time.Time { return time.Unix(1002, 0) }
+	worked, err = worker.RunOnce(context.Background())
+	if err != nil || !worked {
+		t.Fatalf("RunOnce after release worked=%t err=%v", worked, err)
+	}
+	if got := store.transitions["pl-1"].State; got != metadata.PlacementTransitionCompleted {
+		t.Fatalf("transition state after release=%q want=%q", got, metadata.PlacementTransitionCompleted)
+	}
+}
+
+func TestTransitionWriterContextConflictClassificationIsExact(t *testing.T) {
+	exact := fmt.Errorf("open replica %q: %w", "rep-a", &service.SBSError{
+		Code:    service.SBSErrorCodeAttachmentMismatch,
+		Message: transitionWriterContextConflictMessage,
+	})
+	if !isTransitionWriterContextConflict(exact) {
+		t.Fatal("exact wrapped writer-context conflict was not classified retryable")
+	}
+	for name, err := range map[string]error{
+		"other attachment mismatch": &service.SBSError{Code: service.SBSErrorCodeAttachmentMismatch, Message: "attachment mismatch"},
+		"same text wrong code":      &service.SBSError{Code: service.SBSErrorCodeBadRequest, Message: transitionWriterContextConflictMessage},
+		"untyped same text":         errors.New(transitionWriterContextConflictMessage),
+	} {
+		if isTransitionWriterContextConflict(err) {
+			t.Fatalf("%s unexpectedly classified retryable: %v", name, err)
+		}
+	}
+}
+
+func TestWorkerRunClaimedOnceUsesPointLeaseAndDoesNotReplayCompletedWork(t *testing.T) {
+	base := newFakeStore()
+	base.replicaSets = append(base.replicaSets, metadata.ReplicaSetState{
+		ReplicaSetID: "rs-2", VolumeID: "00a1b2c3", PlacementRef: "pl-2", Epoch: 5,
+		PrimaryReplicaID: "rep-d", WriteQuorum: 2, ReadQuorum: 1,
+		Replicas: []metadata.ReplicaDescriptor{
+			{NodeID: "node-d", ReplicaID: "rep-d", Role: metadata.ReplicaRolePrimary},
+			{NodeID: "node-e", ReplicaID: "rep-e", Role: metadata.ReplicaRoleSecondary},
+			{NodeID: "node-f", ReplicaID: "rep-f", Role: metadata.ReplicaRoleSecondary},
+		},
+	})
+	for _, nodeID := range []string{"node-d", "node-e", "node-f"} {
+		base.nodes[nodeID] = metadata.NodeMembershipRecord{NodeID: nodeID, LifecycleState: metadata.NodeLifecycleActive, HealthState: metadata.NodeHealthHealthy}
+	}
+	spec := service.NormalizeVolumeSpec(service.VolumeSpec{ID: service.HexVolumeID(0x00a1b2c3), Name: "vol-a", Prefix: "vol-a-00a1b2c3", SizeBytes: 4096 * 4, BlockSize: 8})
+	clients := map[string]service.SBSClient{
+		"rep-a": service.NewInMemorySBSClient([]service.VolumeSpec{spec}),
+		"rep-b": service.NewInMemorySBSClient([]service.VolumeSpec{spec}),
+		"rep-c": service.NewInMemorySBSClient([]service.VolumeSpec{spec}),
+		"rep-d": service.NewInMemorySBSClient([]service.VolumeSpec{spec}),
+		"rep-e": service.NewInMemorySBSClient([]service.VolumeSpec{spec}),
+		"rep-f": service.NewInMemorySBSClient([]service.VolumeSpec{spec}),
+	}
+	addNodeClientAliases(clients, map[string]string{"node-a": "rep-a", "node-b": "rep-b", "node-c": "rep-c", "node-d": "rep-d", "node-e": "rep-e", "node-f": "rep-f"})
+	store := &claimedWorkerStore{fakeStore: base}
+	svc := NewService(store)
+	svc.now = func() time.Time { return time.Unix(1000, 0) }
+	transition, err := svc.EnqueueRepair(context.Background(), "00a1b2c3", 1, "rs-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedPayload(t, base.mappings[0], "00a1b2c3", map[string]service.SBSClient{"rep-a": clients["rep-a"], "rep-b": clients["rep-b"], "rep-c": clients["rep-c"]})
+	claim := metadata.MaintenanceWorkRecord{
+		WorkID: "00a1b2c3:pl-1", Reason: "repair", State: metadata.MaintenanceWorkStateLeased,
+		VolumeID: "00a1b2c3", PlacementRef: transition.PlacementRef,
+		CurrentReplicaSetID: transition.CurrentReplicaSetID, TargetReplicaSetID: transition.TargetReplicaSetID,
+		LeaseOwner: "worker-a", LeaseGeneration: 1,
+	}
+	worker := NewWorker(svc, WorkerConfig{
+		VolumeID: claim.VolumeID, ReplicaClients: clients, GatewayID: "gw-a", HostID: "host-a", WorkLeaseOwner: claim.LeaseOwner,
+	})
+	worker.now = func() time.Time { return time.Unix(1000, 0) }
+	worked, err := worker.RunClaimedOnce(context.Background(), claim)
+	if err != nil || !worked || base.transitions[claim.PlacementRef].State != metadata.PlacementTransitionCompleted {
+		t.Fatalf("claimed run worked=%t transition=%+v err=%v", worked, base.transitions[claim.PlacementRef], err)
+	}
+	if store.transitionListCalls != 0 {
+		t.Fatalf("claimed worker rediscovered transitions=%d mutation_reads_inside_apply=%d", store.transitionListCalls, store.mutationListCalls)
+	}
+	worked, err = worker.RunClaimedOnce(context.Background(), claim)
+	if worked || !errors.Is(err, metadata.ErrMaintenanceWorkLeaseLost) {
+		t.Fatalf("completed replay worked=%t err=%v", worked, err)
 	}
 }
 
@@ -591,12 +792,13 @@ func TestWorkerRunOncePrioritizesTransitionWithFailedBatch(t *testing.T) {
 	if _, err := svc.EnqueueRepair(context.Background(), "00a1b2c3", 2, "rs-4"); err != nil {
 		t.Fatalf("EnqueueRepair extent2: %v", err)
 	}
-	store.mutationOps["transition-pl-2-page-00000000000000000002"] = metadata.MutationOperationRecord{
-		OperationID:       "transition-pl-2-page-00000000000000000002",
+	failedBatchID := transitionPageBatchMutationOperationID(store.transitions["pl-2"], 2)
+	store.mutationOps[failedBatchID] = metadata.MutationOperationRecord{
+		OperationID:       failedBatchID,
 		VolumeID:          "00a1b2c3",
 		Kind:              "transition_batch",
 		State:             metadata.MutationOperationFailed,
-		IdempotencyKey:    "transition-pl-2",
+		IdempotencyKey:    transitionMutationOperationID(store.transitions["pl-2"]),
 		AffectedExtentIDs: []uint64{2},
 		AffectedPageNos:   []uint64{2},
 		StartedAtUnix:     900,
@@ -742,12 +944,13 @@ func TestWorkerRunOncePrioritizesTransitionWithRecentBatch(t *testing.T) {
 		AffectedPageNos:   []uint64{1},
 		LastUpdatedAtUnix: 999,
 	}
-	store.mutationOps["transition-pl-2-page-00000000000000000001"] = metadata.MutationOperationRecord{
-		OperationID:       "transition-pl-2-page-00000000000000000001",
+	recentBatchID := transitionPageBatchMutationOperationID(store.transitions["pl-2"], 1)
+	store.mutationOps[recentBatchID] = metadata.MutationOperationRecord{
+		OperationID:       recentBatchID,
 		VolumeID:          "00a1b2c3",
 		Kind:              "transition_batch",
 		State:             metadata.MutationOperationRunning,
-		IdempotencyKey:    "transition-pl-2",
+		IdempotencyKey:    transitionMutationOperationID(store.transitions["pl-2"]),
 		AffectedExtentIDs: []uint64{2},
 		AffectedPageNos:   []uint64{1},
 		StartedAtUnix:     995,
@@ -884,8 +1087,9 @@ func TestWorkerRunOncePrioritizesTransitionWithSmallerRetryWindow(t *testing.T) 
 	if _, err := svc.EnqueueRepair(context.Background(), "00a1b2c3", 2, "rs-4"); err != nil {
 		t.Fatalf("EnqueueRepair extent2: %v", err)
 	}
-	store.mutationOps["transition-pl-1"] = metadata.MutationOperationRecord{
-		OperationID:       "transition-pl-1",
+	firstParentID := transitionMutationOperationID(store.transitions["pl-1"])
+	store.mutationOps[firstParentID] = metadata.MutationOperationRecord{
+		OperationID:       firstParentID,
 		VolumeID:          "00a1b2c3",
 		Kind:              "transition",
 		State:             metadata.MutationOperationPending,
@@ -897,8 +1101,9 @@ func TestWorkerRunOncePrioritizesTransitionWithSmallerRetryWindow(t *testing.T) 
 			{ExtentID: 1, StartPageNo: 1, EndPageNo: 1, DataBytes: 8, DataChunks: 2},
 		},
 	}
-	store.mutationOps["transition-pl-2"] = metadata.MutationOperationRecord{
-		OperationID:       "transition-pl-2",
+	secondParentID := transitionMutationOperationID(store.transitions["pl-2"])
+	store.mutationOps[secondParentID] = metadata.MutationOperationRecord{
+		OperationID:       secondParentID,
 		VolumeID:          "00a1b2c3",
 		Kind:              "transition",
 		State:             metadata.MutationOperationPending,

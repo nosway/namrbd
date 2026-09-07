@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -86,6 +87,32 @@ type VolumePurgeResult struct {
 	ReclaimedBytes uint64 `json:"reclaimed_bytes"`
 }
 
+type PhysicalChunkInspectionResult struct {
+	VolumeID       string                     `json:"volume_id"`
+	RequestedCount int                        `json:"requested_count"`
+	ObjectGetCount int                        `json:"object_get_count"`
+	FoundCount     int                        `json:"found_count"`
+	MissingCount   int                        `json:"missing_count"`
+	FoundRefs      []service.PhysicalChunkRef `json:"found_refs,omitempty"`
+	MissingRefs    []service.PhysicalChunkRef `json:"missing_refs,omitempty"`
+}
+
+type PhysicalChunkDeletionResult struct {
+	VolumeID                    string                     `json:"volume_id"`
+	RequestedCount              int                        `json:"requested_count"`
+	ObjectGetCount              int                        `json:"object_get_count"`
+	FoundCount                  int                        `json:"found_count"`
+	MissingCount                int                        `json:"missing_count"`
+	DeleteAttemptCount          int                        `json:"delete_attempt_count"`
+	DeletedCount                int                        `json:"deleted_count"`
+	PayloadStorageMutationCount int                        `json:"payload_storage_mutation_count"`
+	FoundRefs                   []service.PhysicalChunkRef `json:"found_refs,omitempty"`
+	MissingRefs                 []service.PhysicalChunkRef `json:"missing_refs,omitempty"`
+	DeletedRefs                 []service.PhysicalChunkRef `json:"deleted_refs,omitempty"`
+}
+
+var ErrPhysicalChunkDeletePrecondition = errors.New("physical chunk delete precondition failed")
+
 type openSession struct {
 	handle             string
 	attachmentID       string
@@ -129,6 +156,27 @@ func Open(cfg Config) (*Client, error) {
 	if err != nil {
 		_ = db.Close()
 		return nil, err
+	}
+	compressionPolicies, err := meta.listCompressionPolicies(context.Background())
+	if err != nil {
+		_ = objects.Close()
+		_ = db.Close()
+		return nil, fmt.Errorf("load compression policies: %w", err)
+	}
+	for _, policy := range compressionPolicies {
+		var aliases []string
+		if spec, specErr := meta.getVolumeSpec(context.Background(), policy.VolumeID); specErr == nil {
+			aliases = append(aliases, spec.Prefix)
+		} else if !isNotFound(specErr) {
+			_ = objects.Close()
+			_ = db.Close()
+			return nil, fmt.Errorf("load volume %s for compression policy: %w", policy.VolumeID, specErr)
+		}
+		if _, _, err := objects.applyCompressionPolicy(policy, aliases...); err != nil {
+			_ = objects.Close()
+			_ = db.Close()
+			return nil, fmt.Errorf("restore compression policy for volume %s: %w", policy.VolumeID, err)
+		}
 	}
 	version := strings.TrimSpace(cfg.BuildVersion)
 	if version == "" {
@@ -295,6 +343,139 @@ func (c *Client) SweepChunkGarbage(ctx context.Context, volumeID string, limit i
 	return collector.SweepVolumeWithProtectedRefs(ctx, parsedVolumeID, limit, protectedRefs)
 }
 
+func (c *Client) InspectChunkGarbage(ctx context.Context, volumeID string, limit int, protectedRefs []service.PhysicalChunkRef) (service.ChunkGarbageSweepResult, error) {
+	return c.InspectChunkGarbageCandidates(ctx, volumeID, limit, nil, protectedRefs)
+}
+
+func (c *Client) InspectChunkGarbageCandidates(ctx context.Context, volumeID string, limit int, candidateRefs, protectedRefs []service.PhysicalChunkRef) (service.ChunkGarbageSweepResult, error) {
+	parsedVolumeID, err := service.ParseVolumeID(volumeID)
+	if err != nil {
+		return service.ChunkGarbageSweepResult{}, fmt.Errorf("parse volume_id: %w", err)
+	}
+	collector := service.NewChunkGarbageCollector(c.meta, c.objects)
+	return collector.InspectVolumeCandidatesWithProtectedRefs(ctx, parsedVolumeID, limit, candidateRefs, protectedRefs)
+}
+
+// InspectPhysicalChunks performs bounded point reads for exact physical-write
+// objects. It returns identities only and never exposes payload bytes or mutates
+// the object store. Store/shard-qualified refs belong to the logical allocator
+// path and are rejected here so the two namespaces cannot be confused.
+func (c *Client) InspectPhysicalChunks(ctx context.Context, volumeID string, refs []service.PhysicalChunkRef) (PhysicalChunkInspectionResult, error) {
+	canonicalVolumeID, err := service.ParseVolumeID(volumeID)
+	if err != nil {
+		return PhysicalChunkInspectionResult{}, fmt.Errorf("parse volume_id: %w", err)
+	}
+	canonical := service.CanonicalVolumeID(canonicalVolumeID)
+	if len(refs) == 0 || len(refs) > 512 {
+		return PhysicalChunkInspectionResult{}, fmt.Errorf("physical chunk refs must contain 1..512 entries")
+	}
+	chunkIDs := make([]uint64, 0, len(refs))
+	seen := make(map[uint64]struct{}, len(refs))
+	for _, ref := range refs {
+		if ref.ChunkID == 0 || ref.StoreID != "" || ref.ShardID != 0 {
+			return PhysicalChunkInspectionResult{}, fmt.Errorf("physical chunk refs require only a positive chunk_id")
+		}
+		if _, found := seen[ref.ChunkID]; found {
+			continue
+		}
+		seen[ref.ChunkID] = struct{}{}
+		chunkIDs = append(chunkIDs, ref.ChunkID)
+	}
+	sort.Slice(chunkIDs, func(i, j int) bool { return chunkIDs[i] < chunkIDs[j] })
+	spec, err := c.meta.getVolumeSpec(ctx, canonical)
+	if err != nil {
+		return PhysicalChunkInspectionResult{}, err
+	}
+	result := PhysicalChunkInspectionResult{VolumeID: canonical, RequestedCount: len(chunkIDs)}
+	for _, chunkID := range chunkIDs {
+		_, found, err := c.objects.Get(ctx, store.BuildChunkKey(spec.Prefix, chunkID))
+		result.ObjectGetCount++
+		if err != nil {
+			return result, err
+		}
+		ref := service.PhysicalChunkRef{ChunkID: chunkID}
+		if found {
+			result.FoundRefs = append(result.FoundRefs, ref)
+			continue
+		}
+		result.MissingRefs = append(result.MissingRefs, ref)
+	}
+	result.FoundCount = len(result.FoundRefs)
+	result.MissingCount = len(result.MissingRefs)
+	return result, nil
+}
+
+// DeletePhysicalChunks deletes one exact, bounded physical-write batch. Unlike
+// garbage collection, it never scans local metadata and never mutates a TiKV
+// record. The caller must supply a strictly increasing set so an approved batch
+// cannot silently change through duplicate removal or reordering. Every object
+// is point-read before the first delete; a missing object rejects the entire
+// batch without mutation.
+func (c *Client) DeletePhysicalChunks(ctx context.Context, volumeID string, refs []service.PhysicalChunkRef) (PhysicalChunkDeletionResult, error) {
+	parsedVolumeID, err := service.ParseVolumeID(volumeID)
+	if err != nil {
+		return PhysicalChunkDeletionResult{}, fmt.Errorf("parse volume_id: %w", err)
+	}
+	canonical := service.CanonicalVolumeID(parsedVolumeID)
+	if len(refs) == 0 || len(refs) > 512 {
+		return PhysicalChunkDeletionResult{}, fmt.Errorf("physical chunk refs must contain 1..512 entries")
+	}
+	chunkIDs := make([]uint64, 0, len(refs))
+	var previous uint64
+	for i, ref := range refs {
+		if ref.ChunkID == 0 || ref.StoreID != "" || ref.ShardID != 0 {
+			return PhysicalChunkDeletionResult{}, fmt.Errorf("physical chunk refs require only a positive chunk_id")
+		}
+		if i > 0 && ref.ChunkID <= previous {
+			return PhysicalChunkDeletionResult{}, fmt.Errorf("physical chunk refs must be strictly increasing and unique")
+		}
+		previous = ref.ChunkID
+		chunkIDs = append(chunkIDs, ref.ChunkID)
+	}
+	spec, err := c.meta.getVolumeSpec(ctx, canonical)
+	if err != nil {
+		return PhysicalChunkDeletionResult{}, err
+	}
+	result := PhysicalChunkDeletionResult{VolumeID: canonical, RequestedCount: len(chunkIDs)}
+	for _, chunkID := range chunkIDs {
+		_, found, getErr := c.objects.Get(ctx, store.BuildChunkKey(spec.Prefix, chunkID))
+		result.ObjectGetCount++
+		if getErr != nil {
+			return result, getErr
+		}
+		ref := service.PhysicalChunkRef{ChunkID: chunkID}
+		if found {
+			result.FoundRefs = append(result.FoundRefs, ref)
+		} else {
+			result.MissingRefs = append(result.MissingRefs, ref)
+		}
+	}
+	result.FoundCount = len(result.FoundRefs)
+	result.MissingCount = len(result.MissingRefs)
+	if result.MissingCount != 0 {
+		return result, fmt.Errorf("%w: %d of %d objects are missing", ErrPhysicalChunkDeletePrecondition, result.MissingCount, result.RequestedCount)
+	}
+	for _, ref := range result.FoundRefs {
+		result.DeleteAttemptCount++
+		if err := c.objects.Delete(ctx, store.BuildChunkKey(spec.Prefix, ref.ChunkID)); err != nil {
+			return result, fmt.Errorf("delete physical chunk %d: %w", ref.ChunkID, err)
+		}
+		result.DeletedCount++
+		result.PayloadStorageMutationCount++
+		result.DeletedRefs = append(result.DeletedRefs, ref)
+	}
+	return result, nil
+}
+
+func (c *Client) SweepChunkGarbageCandidates(ctx context.Context, volumeID string, limit int, candidateRefs, protectedRefs []service.PhysicalChunkRef) (service.ChunkGarbageSweepResult, error) {
+	parsedVolumeID, err := service.ParseVolumeID(volumeID)
+	if err != nil {
+		return service.ChunkGarbageSweepResult{}, fmt.Errorf("parse volume_id: %w", err)
+	}
+	collector := service.NewChunkGarbageCollector(c.meta, c.objects)
+	return collector.SweepVolumeCandidatesWithProtectedRefs(ctx, parsedVolumeID, limit, candidateRefs, protectedRefs)
+}
+
 func (c *Client) PurgeVolume(ctx context.Context, volumeID string) (VolumePurgeResult, error) {
 	parsedVolumeID, err := service.ParseVolumeID(volumeID)
 	if err != nil {
@@ -325,6 +506,10 @@ func (c *Client) PurgeVolume(ctx context.Context, volumeID string) (VolumePurgeR
 		result.KeyCount += metadataResult.KeyCount
 		result.Bytes += metadataResult.Bytes
 	}
+	if err := c.meta.deleteCompressionPolicy(ctx, canonical); err != nil {
+		return VolumePurgeResult{}, fmt.Errorf("delete local compression policy: %w", err)
+	}
+	c.objects.removeCompressionPolicy(canonical, spec.Prefix)
 	return VolumePurgeResult{VolumeID: canonical, KeyCount: result.KeyCount, ReclaimedBytes: result.Bytes}, nil
 }
 
@@ -464,6 +649,20 @@ func (c *Client) CreateVolume(ctx context.Context, spec service.VolumeSpec) (ser
 		return service.VolumeSpec{}, err
 	}
 	return spec, nil
+}
+
+func (c *Client) MaterializeVolume(ctx context.Context, req *service.MaterializeVolumeRequest) (*service.MaterializeVolumeResponse, error) {
+	if req == nil {
+		return nil, badRequest("nil request")
+	}
+	if err := req.Validate(); err != nil {
+		return nil, badRequest(err.Error())
+	}
+	spec, err := c.CreateVolume(ctx, req.Spec)
+	if err != nil {
+		return nil, translateServiceError(err)
+	}
+	return &service.MaterializeVolumeResponse{Status: "ok", Spec: spec}, nil
 }
 
 func (c *Client) OpenVolume(ctx context.Context, req *service.OpenVolumeRequest) (*service.OpenVolumeResponse, error) {
@@ -1258,6 +1457,53 @@ func (c *Client) ApplyISCSIWriterFence(ctx context.Context, req *service.ApplyIS
 	}, nil
 }
 
+func (c *Client) ApplyCompressionPolicy(ctx context.Context, req *service.ApplyCompressionPolicyRequest) (*service.ApplyCompressionPolicyResponse, error) {
+	if req == nil {
+		return nil, badRequest("nil request")
+	}
+	if err := req.Policy.Validate(); err != nil {
+		return nil, badRequest(err.Error())
+	}
+	current, found, err := c.meta.getCompressionPolicy(ctx, req.Policy.VolumeID)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		if current.PolicyRevision > req.Policy.PolicyRevision {
+			return nil, staleGeneration("compression policy revision is stale")
+		}
+		if current.PolicyRevision == req.Policy.PolicyRevision && current != req.Policy {
+			return nil, staleGeneration("compression policy conflicts at current revision")
+		}
+	}
+	var aliases []string
+	if spec, specErr := c.meta.getVolumeSpec(ctx, req.Policy.VolumeID); specErr == nil {
+		aliases = append(aliases, spec.Prefix)
+	} else if !isNotFound(specErr) {
+		return nil, specErr
+	}
+	applied, runtime, err := c.objects.applyCompressionPolicy(req.Policy, aliases...)
+	if err != nil {
+		return nil, badRequest(err.Error())
+	}
+	if applied || !found {
+		if err := c.meta.putCompressionPolicy(ctx, req.Policy); err != nil {
+			return nil, err
+		}
+	}
+	return &service.ApplyCompressionPolicyResponse{Status: "ok", Applied: applied, Runtime: runtime}, nil
+}
+
+func (c *Client) GetCompressionRuntimeStatus(_ context.Context, req *service.GetCompressionRuntimeStatusRequest) (*service.GetCompressionRuntimeStatusResponse, error) {
+	if req == nil {
+		return nil, badRequest("nil request")
+	}
+	if _, err := service.ParseVolumeID(req.VolumeID); err != nil {
+		return nil, badRequest(err.Error())
+	}
+	return &service.GetCompressionRuntimeStatusResponse{Runtime: c.objects.compressionStatusForVolume(req.VolumeID)}, nil
+}
+
 func (c *Client) validateISCSIWriterFence(ctx context.Context, volumeID string, reqCtx service.SBSRequestContext) error {
 	fence, found, err := c.currentISCSIWriterFence(ctx, volumeID)
 	if err != nil || !found {
@@ -1443,7 +1689,7 @@ func translateServiceError(err error) error {
 		return nil
 	case errors.Is(err, service.ErrVolumeNotFound), errors.Is(err, pebble.ErrNotFound):
 		return notFound(err.Error())
-	case errors.Is(err, service.ErrBadAlignment), errors.Is(err, service.ErrBadDataLength), errors.Is(err, service.ErrOutOfRange):
+	case errors.Is(err, service.ErrBadAlignment), errors.Is(err, service.ErrBadDataLength), errors.Is(err, service.ErrOutOfRange), errors.Is(err, service.ErrVolumeGeometryChange):
 		return badRequest(err.Error())
 	default:
 		return err
@@ -1451,5 +1697,6 @@ func translateServiceError(err error) error {
 }
 
 var _ service.SBSClient = (*Client)(nil)
+var _ service.VolumeMaterializerSBSClient = (*Client)(nil)
 var _ service.ECShardSBSClient = (*Client)(nil)
 var _ store.ObjectStore = (*objectStore)(nil)

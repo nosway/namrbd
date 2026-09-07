@@ -3,6 +3,7 @@ package maintenance
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -13,6 +14,23 @@ import (
 	"github.com/nosway/namrbd/sbs/cluster/metadata"
 	"github.com/nosway/namrbd/sbs/cluster/replication"
 )
+
+func TestRetiredReplicaTargetsUseNodePhysicalBoundary(t *testing.T) {
+	targets, err := retiredReplicaTargets(metadata.ReplicaSetState{Replicas: []metadata.ReplicaDescriptor{
+		{NodeID: "node-a", ReplicaID: "rep-a"},
+		{NodeID: "node-b", ReplicaID: "rep-b"},
+	}}, metadata.ReplicaSetState{Replicas: []metadata.ReplicaDescriptor{
+		{NodeID: "node-b", ReplicaID: "rep-b-new"},
+		{NodeID: "node-c", ReplicaID: "rep-c"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []metadata.MutationRetiredReplicaTarget{{NodeID: "node-a", SourceReplicaIDs: []string{"rep-a"}}}
+	if !reflect.DeepEqual(targets, want) {
+		t.Fatalf("targets=%+v want=%+v", targets, want)
+	}
+}
 
 type failReadSBSClient struct {
 	next service.SBSClient
@@ -2346,9 +2364,16 @@ func TestApplyTransitionMaterializesLegacyCompatibleAllocationPages(t *testing.T
 	if store.mappings[0].ChunkID != 0 || store.mappings[0].Revision != store.volume.Revision {
 		t.Fatalf("mapping=%+v volume revision=%d", store.mappings[0], store.volume.Revision)
 	}
-	operation := store.mutationOps["transition-pl-1"]
+	operation := store.mutationOps[transitionMutationOperationID(store.transitions["pl-1"])]
 	if len(operation.RetiredPhysicalChunkIDs) != 1 || operation.RetiredPhysicalChunkIDs[0] != 101 {
 		t.Fatalf("retired physical chunk ids=%v want=[101]", operation.RetiredPhysicalChunkIDs)
+	}
+	if !operation.RetiredReplicaTargetsResolved || !reflect.DeepEqual(operation.RetiredReplicaTargets, []metadata.MutationRetiredReplicaTarget{
+		{NodeID: "node-a", SourceReplicaIDs: []string{"rep-a"}},
+		{NodeID: "node-b", SourceReplicaIDs: []string{"rep-b"}},
+		{NodeID: "node-c", SourceReplicaIDs: []string{"rep-c"}},
+	}) {
+		t.Fatalf("retired replica targets=%+v resolved=%v", operation.RetiredReplicaTargets, operation.RetiredReplicaTargetsResolved)
 	}
 	payloadGCOp := store.mutationOps[metadata.PayloadGCMutationOperationID("00a1b2c3")]
 	if payloadGCOp.State != metadata.MutationOperationPending {
@@ -2444,7 +2469,7 @@ func TestApplyTransitionMarksMutationOperationFailedOnTargetOpenError(t *testing
 	if err == nil {
 		t.Fatalf("ApplyTransition unexpectedly succeeded: %+v", transition)
 	}
-	op := store.mutationOps["transition-pl-1"]
+	op := store.mutationOps[transitionMutationOperationID(store.transitions["pl-1"])]
 	if op.State != metadata.MutationOperationFailed || op.ErrorMessage == "" {
 		t.Fatalf("mutation operation=%+v", op)
 	}

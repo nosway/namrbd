@@ -1,7 +1,7 @@
 Operations Manual
 
 Advanced feature note: Enterprise sections summarize designs under development
-and validation. Commands or APIs mentioned there are not public v1.0 support
+and validation. Commands or APIs mentioned there are not public v1.1 support
 claims. See [Feature Status](../feature-status.md).
 
 # NAMRBD User Manual
@@ -44,6 +44,7 @@ Current boundaries:
 - EC profile conversion is not online metadata flipping; future work should use controlled migration/repack.
 - The current security baseline uses integrated mock provider evidence, while scoped Governance/WORM support separately covers block-native derived objects and userspace gateway sealed-target write rejection. Live external KMS network/provider destroy and dedupe remain future or conditional tracks.
 - Basic iSCSI support claims Linux open-iscsi as the required compatibility baseline. Windows has optional memory-backend and SBS-backed connection/log-cleanup evidence only; macOS is excluded.
+- Software validation covers the exact logical 160-node manifest and an 18-host/160-process lab topology. It does not qualify or support 160 independent physical servers; that boundary requires a dedicated physical fleet-scale qualification.
 - Community edition remains limited to manual replicated snapshot, manual restore-from-snapshot, read-only snapshot/read-view safety, restore-size validation, basic delete/reference guardrails, and basic iSCSI gateway/CLI/LUN export with at most 3 distinct iSCSI-exported volumes. Enterprise Backup & DR automation, Enterprise Performance tiers, Enterprise Security & Vault KMS, scoped Governance/WORM, more than 3 iSCSI exports, unlimited export scale, iSCSI HA, MPIO/ALUA, advanced security/audit, scale observability, release/access claim packages, and remote DR features are enterprise-only or future-gated.
 
 ## 2. Quick Start
@@ -130,6 +131,31 @@ namrbdctl destroy-device --device 0
 sudo rmmod namrbd_ctrl
 sudo rmmod namrbd_blk
 ```
+
+### 2.5 Observe The Cluster Without A Full Scan
+
+Use the bounded aggregate for a normal overview:
+
+```bash
+curl -fsS http://service-01.example.com:9081/api/v1/sbs/cluster
+```
+
+Check `collection_status`, `projection.health`, `partial`, `stale`,
+`rebuild_required`, source/baseline revisions, and freshness together. The
+service does not hide an unhealthy projection by scanning all raw metadata.
+
+For detail, request one revision-pinned page or one exact entity:
+
+```bash
+sbsctl node list --page-size 128 --output json
+sbsctl volume list --health degraded --page-size 128 --output json
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/node?id=node1'
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/volume?id=00000065'
+```
+
+Follow a returned page token explicitly. An invalid or revision-mismatched
+token fails closed, and `automatic_page_completion=false` prevents routine
+polling from turning into an implicit fleet-wide enumeration.
 
 ## 3. Snapshot And Restore
 
@@ -424,7 +450,22 @@ sbsctl volume status --volume-id <volume_id> --output json
 
 The gateway should use `--sbs-service-endpoint` to reach `sbs-service`. Raw SBS TiKV metadata flags are legacy/dev bootstrap, not the primary runtime path.
 
-### 10.4 Kubernetes
+### 10.4 Bounded Fleet View
+
+If the cluster view reports `partial`, `stale`, or `rebuild_required`, retain
+the response and compare its source revision, baseline revision, freshness,
+and `metadata_pressure` fields. Use node/volume pages and point lookups to find
+the affected entity. Do not loop the legacy unpaged list calls, repeatedly
+restart pagination with an invalid token, or increase limits to conceal the
+condition.
+
+The stable fleet health codes identify the next check:
+`SBS_HOST_CHECK_FAILED`, `SBS_CONFIG_DRIFT`, `SBS_STRAY_NODE`,
+`SBS_STORAGE_CLAIM_MISMATCH`, `SBS_FLEET_CHECK_STALE`, or
+`SBS_APPLY_PAUSED`. Preserve the manifest digest, plan id, source revision,
+apply state, first error, and last error before changing fleet state.
+
+### 10.5 Kubernetes
 
 Checks:
 
@@ -436,7 +477,7 @@ kubectl get pvc,pv,volumesnapshot -A
 
 Collect PVC/PV handles, pod events, CSI controller logs, CSI node logs, and the Enterprise Discard Reclaim summary path.
 
-### 10.5 iSCSI
+### 10.6 iSCSI
 
 Checks:
 
@@ -449,7 +490,7 @@ ls -l /dev/disk/by-path/*iscsi*lun-0
 
 Collect target IQN, portal, LUN id, initiator IQN/vendor/version, SCSI status/sense, gateway summary JSON, operation JSONL, and whether `iscsi_gateway_restarted=true` for the run.
 
-### 10.6 Smoke Failure
+### 10.7 Smoke Failure
 
 Record:
 

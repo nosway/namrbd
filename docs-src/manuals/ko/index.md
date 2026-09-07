@@ -6,7 +6,7 @@
 
 NAMRBD는 Network Attached Multipath Resilient Block Device의 약어로, 네이티브 Linux 블록 디바이스 경로, Kubernetes CSI 연동, 선택형 표준 iSCSI 타겟 게이트웨이를 제공하는 오픈 소스 분산 블록 스토리지 플랫폼입니다.
 
-공개 소스는 복제 스토리지 플랫폼과 호스트, 게이트웨이, SBS, CSI, iSCSI, 운영 표면을 제공합니다. 소스 공개 여부와 v1.0 지원 검증 여부는 서로 다르므로 구성 선택 전에 [기능 상태](../../feature-status.md)를 확인하십시오. 고급 Enterprise 기능은 개발·검증 중이며 일반 제공 약속이 아닙니다.
+공개 소스는 복제 스토리지 플랫폼과 호스트, 게이트웨이, SBS, CSI, iSCSI, 운영 표면을 제공합니다. 소스 공개 여부와 v1.1 지원 검증 여부는 서로 다르므로 구성 선택 전에 [기능 상태](../../feature-status.md)를 확인하십시오. 고급 Enterprise 기능은 개발·검증 중이며 일반 제공 약속이 아닙니다.
 
 </div>
 
@@ -19,10 +19,10 @@ NAMRBD는 분산 스토리지 기판인 SBS 기술을 공유하는 초저지연 
 | 구성 | 목적 | 핵심 종속성 | 현재 상태 |
 |----|----|----|----|
 | 로컬 단일 노드 quickstart | 개발자 평가 및 smoke 검증 | `namrbd-gateway`, `sbs-service`, `sbs-data`, 로컬 메타데이터 | 공개 개발 워크플로 |
-| 복제 userspace gateway | 복제 블록 볼륨 서비스 | SBS 클러스터, 메타데이터 authority, `namrbd-gateway` | v1.0에서 검증된 볼륨 경로 |
-| Kubernetes CSI 클러스터 | 동적 영속 볼륨 프로비저닝 | SBS 클러스터, `sbsctl`, `namrbd-csi-driver` | 공개 integration preview, v1.0 지원 미검증 |
+| 복제 userspace gateway | 복제 블록 볼륨 서비스 | SBS 클러스터, 메타데이터 authority, `namrbd-gateway` | v1.1에서 검증된 볼륨 경로 |
+| Kubernetes CSI 클러스터 | 동적 영속 볼륨 프로비저닝 | SBS 클러스터, `sbsctl`, `namrbd-csi-driver` | 공개 integration preview, v1.1 지원 미검증 |
 | 기본 iSCSI target access | 단일 target path를 통한 Linux open-iscsi LUN export | `namrbd-iscsi-gateway`, `sbsctl iscsi`, TCP/3260 | 공개 integration preview, 최대 3개 distinct exported volumes |
-| Linux kernel block path | 네이티브 `/dev/namrbdX` 연결 | 일치하는 kernel header, kernel module, gateway | 소스 공개, kernel I/O는 v1.0 지원 범위 밖 |
+| Linux kernel block path | 네이티브 `/dev/namrbdX` 연결 | 일치하는 kernel header, kernel module, gateway | 소스 공개, kernel I/O는 v1.1 지원 범위 밖 |
 
 ## 3. 개발 중인 Advanced Features
 

@@ -17,4 +17,3 @@ reference plus affected client/server tests.
 The combined admin schema can contain edition-gated messages. Community
 listeners, help, and published references must expose only the reviewed
 Community surface; schema presence alone does not enable a feature.
-

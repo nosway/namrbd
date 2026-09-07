@@ -174,9 +174,21 @@ EXPECTED_SPECS: dict[str, tuple[PublicOperation, ...]] = {
         ),
         operation(
             "get",
+            "/api/v1/sbs/node",
+            SBS_SERVICE_PHASE_Y_SOURCE,
+            'mux.HandleFunc("/api/v1/sbs/node"',
+        ),
+        operation(
+            "get",
             "/api/v1/sbs/volumes",
             SBS_SERVICE_PHASE_Y_SOURCE,
             'mux.HandleFunc("/api/v1/sbs/volumes"',
+        ),
+        operation(
+            "get",
+            "/api/v1/sbs/volume",
+            SBS_SERVICE_PHASE_Y_SOURCE,
+            'mux.HandleFunc("/api/v1/sbs/volume"',
         ),
         operation(
             "get",
@@ -267,11 +279,11 @@ EXPECTED_SPECS: dict[str, tuple[PublicOperation, ...]] = {
 
 EXPECTED_OPERATION_COUNTS = {
     "namrbd-gateway-v1.openapi.json": 14,
-    "sbs-service-observability-v1.openapi.json": 17,
+    "sbs-service-observability-v1.openapi.json": 19,
     "sbs-data-operational-v1.openapi.json": 5,
     "namrbd-iscsi-gateway-observability-v1.openapi.json": 3,
 }
-EXPECTED_OPERATION_COUNT = 39
+EXPECTED_OPERATION_COUNT = 41
 ALLOWED_SBS_DATA_DEBUG_PATHS = frozenset(
     {"/debug/summary", "/debug/store-health"}
 )

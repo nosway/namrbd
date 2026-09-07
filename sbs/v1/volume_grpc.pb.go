@@ -19,21 +19,24 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VolumeService_OpenVolume_FullMethodName            = "/sbs.v1.VolumeService/OpenVolume"
-	VolumeService_CloseVolume_FullMethodName           = "/sbs.v1.VolumeService/CloseVolume"
-	VolumeService_GetVolumeProfile_FullMethodName      = "/sbs.v1.VolumeService/GetVolumeProfile"
-	VolumeService_GetVolumeStatus_FullMethodName       = "/sbs.v1.VolumeService/GetVolumeStatus"
-	VolumeService_Read_FullMethodName                  = "/sbs.v1.VolumeService/Read"
-	VolumeService_Write_FullMethodName                 = "/sbs.v1.VolumeService/Write"
-	VolumeService_ReadPhysicalChunk_FullMethodName     = "/sbs.v1.VolumeService/ReadPhysicalChunk"
-	VolumeService_WritePhysicalChunk_FullMethodName    = "/sbs.v1.VolumeService/WritePhysicalChunk"
-	VolumeService_WriteECShard_FullMethodName          = "/sbs.v1.VolumeService/WriteECShard"
-	VolumeService_ReadECShard_FullMethodName           = "/sbs.v1.VolumeService/ReadECShard"
-	VolumeService_DeleteECShard_FullMethodName         = "/sbs.v1.VolumeService/DeleteECShard"
-	VolumeService_Flush_FullMethodName                 = "/sbs.v1.VolumeService/Flush"
-	VolumeService_Discard_FullMethodName               = "/sbs.v1.VolumeService/Discard"
-	VolumeService_Zero_FullMethodName                  = "/sbs.v1.VolumeService/Zero"
-	VolumeService_ApplyISCSIWriterFence_FullMethodName = "/sbs.v1.VolumeService/ApplyISCSIWriterFence"
+	VolumeService_OpenVolume_FullMethodName                  = "/sbs.v1.VolumeService/OpenVolume"
+	VolumeService_CloseVolume_FullMethodName                 = "/sbs.v1.VolumeService/CloseVolume"
+	VolumeService_GetVolumeProfile_FullMethodName            = "/sbs.v1.VolumeService/GetVolumeProfile"
+	VolumeService_GetVolumeStatus_FullMethodName             = "/sbs.v1.VolumeService/GetVolumeStatus"
+	VolumeService_Read_FullMethodName                        = "/sbs.v1.VolumeService/Read"
+	VolumeService_Write_FullMethodName                       = "/sbs.v1.VolumeService/Write"
+	VolumeService_ReadPhysicalChunk_FullMethodName           = "/sbs.v1.VolumeService/ReadPhysicalChunk"
+	VolumeService_WritePhysicalChunk_FullMethodName          = "/sbs.v1.VolumeService/WritePhysicalChunk"
+	VolumeService_WriteECShard_FullMethodName                = "/sbs.v1.VolumeService/WriteECShard"
+	VolumeService_ReadECShard_FullMethodName                 = "/sbs.v1.VolumeService/ReadECShard"
+	VolumeService_DeleteECShard_FullMethodName               = "/sbs.v1.VolumeService/DeleteECShard"
+	VolumeService_Flush_FullMethodName                       = "/sbs.v1.VolumeService/Flush"
+	VolumeService_Discard_FullMethodName                     = "/sbs.v1.VolumeService/Discard"
+	VolumeService_Zero_FullMethodName                        = "/sbs.v1.VolumeService/Zero"
+	VolumeService_ApplyISCSIWriterFence_FullMethodName       = "/sbs.v1.VolumeService/ApplyISCSIWriterFence"
+	VolumeService_ApplyCompressionPolicy_FullMethodName      = "/sbs.v1.VolumeService/ApplyCompressionPolicy"
+	VolumeService_GetCompressionRuntimeStatus_FullMethodName = "/sbs.v1.VolumeService/GetCompressionRuntimeStatus"
+	VolumeService_MaterializeVolume_FullMethodName           = "/sbs.v1.VolumeService/MaterializeVolume"
 )
 
 // VolumeServiceClient is the client API for VolumeService service.
@@ -55,6 +58,11 @@ type VolumeServiceClient interface {
 	Discard(ctx context.Context, in *DiscardRequest, opts ...grpc.CallOption) (*DiscardResponse, error)
 	Zero(ctx context.Context, in *ZeroRequest, opts ...grpc.CallOption) (*ZeroResponse, error)
 	ApplyISCSIWriterFence(ctx context.Context, in *ApplyISCSIWriterFenceRequest, opts ...grpc.CallOption) (*ApplyISCSIWriterFenceResponse, error)
+	ApplyCompressionPolicy(ctx context.Context, in *ApplyCompressionPolicyRequest, opts ...grpc.CallOption) (*ApplyCompressionPolicyResponse, error)
+	GetCompressionRuntimeStatus(ctx context.Context, in *GetCompressionRuntimeStatusRequest, opts ...grpc.CallOption) (*GetCompressionRuntimeStatusResponse, error)
+	// MaterializeVolume idempotently installs metadata that has already been
+	// admitted by the cluster control plane into one sbs-data node.
+	MaterializeVolume(ctx context.Context, in *MaterializeVolumeRequest, opts ...grpc.CallOption) (*MaterializeVolumeResponse, error)
 }
 
 type volumeServiceClient struct {
@@ -215,6 +223,36 @@ func (c *volumeServiceClient) ApplyISCSIWriterFence(ctx context.Context, in *App
 	return out, nil
 }
 
+func (c *volumeServiceClient) ApplyCompressionPolicy(ctx context.Context, in *ApplyCompressionPolicyRequest, opts ...grpc.CallOption) (*ApplyCompressionPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyCompressionPolicyResponse)
+	err := c.cc.Invoke(ctx, VolumeService_ApplyCompressionPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *volumeServiceClient) GetCompressionRuntimeStatus(ctx context.Context, in *GetCompressionRuntimeStatusRequest, opts ...grpc.CallOption) (*GetCompressionRuntimeStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCompressionRuntimeStatusResponse)
+	err := c.cc.Invoke(ctx, VolumeService_GetCompressionRuntimeStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *volumeServiceClient) MaterializeVolume(ctx context.Context, in *MaterializeVolumeRequest, opts ...grpc.CallOption) (*MaterializeVolumeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MaterializeVolumeResponse)
+	err := c.cc.Invoke(ctx, VolumeService_MaterializeVolume_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // VolumeServiceServer is the server API for VolumeService service.
 // All implementations must embed UnimplementedVolumeServiceServer
 // for forward compatibility.
@@ -234,6 +272,11 @@ type VolumeServiceServer interface {
 	Discard(context.Context, *DiscardRequest) (*DiscardResponse, error)
 	Zero(context.Context, *ZeroRequest) (*ZeroResponse, error)
 	ApplyISCSIWriterFence(context.Context, *ApplyISCSIWriterFenceRequest) (*ApplyISCSIWriterFenceResponse, error)
+	ApplyCompressionPolicy(context.Context, *ApplyCompressionPolicyRequest) (*ApplyCompressionPolicyResponse, error)
+	GetCompressionRuntimeStatus(context.Context, *GetCompressionRuntimeStatusRequest) (*GetCompressionRuntimeStatusResponse, error)
+	// MaterializeVolume idempotently installs metadata that has already been
+	// admitted by the cluster control plane into one sbs-data node.
+	MaterializeVolume(context.Context, *MaterializeVolumeRequest) (*MaterializeVolumeResponse, error)
 	mustEmbedUnimplementedVolumeServiceServer()
 }
 
@@ -288,6 +331,15 @@ func (UnimplementedVolumeServiceServer) Zero(context.Context, *ZeroRequest) (*Ze
 }
 func (UnimplementedVolumeServiceServer) ApplyISCSIWriterFence(context.Context, *ApplyISCSIWriterFenceRequest) (*ApplyISCSIWriterFenceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ApplyISCSIWriterFence not implemented")
+}
+func (UnimplementedVolumeServiceServer) ApplyCompressionPolicy(context.Context, *ApplyCompressionPolicyRequest) (*ApplyCompressionPolicyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ApplyCompressionPolicy not implemented")
+}
+func (UnimplementedVolumeServiceServer) GetCompressionRuntimeStatus(context.Context, *GetCompressionRuntimeStatusRequest) (*GetCompressionRuntimeStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCompressionRuntimeStatus not implemented")
+}
+func (UnimplementedVolumeServiceServer) MaterializeVolume(context.Context, *MaterializeVolumeRequest) (*MaterializeVolumeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MaterializeVolume not implemented")
 }
 func (UnimplementedVolumeServiceServer) mustEmbedUnimplementedVolumeServiceServer() {}
 func (UnimplementedVolumeServiceServer) testEmbeddedByValue()                       {}
@@ -580,6 +632,60 @@ func _VolumeService_ApplyISCSIWriterFence_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VolumeService_ApplyCompressionPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyCompressionPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumeServiceServer).ApplyCompressionPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumeService_ApplyCompressionPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumeServiceServer).ApplyCompressionPolicy(ctx, req.(*ApplyCompressionPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VolumeService_GetCompressionRuntimeStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCompressionRuntimeStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumeServiceServer).GetCompressionRuntimeStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumeService_GetCompressionRuntimeStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumeServiceServer).GetCompressionRuntimeStatus(ctx, req.(*GetCompressionRuntimeStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VolumeService_MaterializeVolume_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MaterializeVolumeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumeServiceServer).MaterializeVolume(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumeService_MaterializeVolume_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumeServiceServer).MaterializeVolume(ctx, req.(*MaterializeVolumeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // VolumeService_ServiceDesc is the grpc.ServiceDesc for VolumeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -646,6 +752,18 @@ var VolumeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ApplyISCSIWriterFence",
 			Handler:    _VolumeService_ApplyISCSIWriterFence_Handler,
+		},
+		{
+			MethodName: "ApplyCompressionPolicy",
+			Handler:    _VolumeService_ApplyCompressionPolicy_Handler,
+		},
+		{
+			MethodName: "GetCompressionRuntimeStatus",
+			Handler:    _VolumeService_GetCompressionRuntimeStatus_Handler,
+		},
+		{
+			MethodName: "MaterializeVolume",
+			Handler:    _VolumeService_MaterializeVolume_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

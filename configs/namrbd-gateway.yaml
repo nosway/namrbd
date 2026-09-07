@@ -39,6 +39,9 @@ gateway:
         file: /etc/namrbd/tls/etcd-client.key
 
   sbs_admin_endpoint: sbs-service.namrbd.internal:9090
+  # Optional Enterprise split AdminService endpoint. mTLS client references
+  # and NAMRBD_ADMIN_RBAC_GENERATION are supplied as runtime secret/env refs.
+  sbs_authenticated_admin_endpoint: sbs-admin.namrbd.internal:9443
   # The gateway's own metadata backend: memory or etcd. SBS metadata lives in
   # TiKV behind sbs-service and is not addressed from here.
   metadata_backend: etcd

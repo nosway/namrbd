@@ -22,6 +22,8 @@ func (s *server) backgroundBudgetSummaries(context.Context, maintenanceSnapshot)
 	return nil
 }
 
+func startEnterpriseBackupScheduler(context.Context, *server) {}
+
 func putBackupJSON(ctx context.Context, kv backupJSONStore, key string, record any) error {
 	payload, err := json.Marshal(record)
 	if err != nil {

@@ -31,9 +31,10 @@ type gatewayConfigBinding struct {
 	EtcdEndpoints *string
 	EtcdRoot      *string
 
-	SBSAdminEndpoint *string
-	MetadataBackend  *string
-	DataBackendMode  *string
+	SBSAdminEndpoint              *string
+	SBSAuthenticatedAdminEndpoint *string
+	MetadataBackend               *string
+	DataBackendMode               *string
 
 	VolumeCacheTTL             *time.Duration
 	ZeroEvidenceCacheTTL       *time.Duration
@@ -233,6 +234,7 @@ func applyGatewayConfig(g *serviceconfig.GatewayConfig, profile string, b gatewa
 	}
 
 	setString("sbs-service-endpoint", b.SBSAdminEndpoint, g.SBSAdminEndpoint)
+	setString("sbs-authenticated-admin-endpoint", b.SBSAuthenticatedAdminEndpoint, g.SBSAuthenticatedAdminEndpoint)
 	setString("metadata-backend", b.MetadataBackend, g.MetadataBackend)
 	setString("data-backend-mode", b.DataBackendMode, g.DataBackendMode)
 

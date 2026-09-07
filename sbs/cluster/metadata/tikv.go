@@ -310,6 +310,8 @@ func prefixBatchKeys(prefix string, keys []string) ([]string, map[string]string)
 func (kv *tiKVTxnKV) Get(ctx context.Context, key string) (out []byte, found bool, err error) {
 	start := time.Now()
 	defer func() {
+		tikvPressure.pointGets.Add(1)
+		tikvPressure.pointGetNanos.Add(time.Since(start).Nanoseconds())
 		outcome := "ok"
 		if err != nil {
 			outcome = "error"
@@ -407,6 +409,11 @@ func (kv *tiKVTxnKV) List(ctx context.Context, prefix, cursor string, limit int)
 	limit = boundedTiKVListLimit(limit)
 	start := time.Now()
 	defer func() {
+		tikvPressure.rangePages.Add(1)
+		tikvPressure.rangePageNanos.Add(time.Since(start).Nanoseconds())
+		if len(keys) >= MaxTiKVListKeys {
+			tikvPressure.hotCandidates.Add(1)
+		}
 		logTiKVOperation(kv.traceOperations, "list", "standalone", prefix, "", start, err,
 			structuredlog.F("result_count", len(keys)),
 			structuredlog.F("limit", limit),
@@ -574,6 +581,8 @@ const tiKVTxnBatchGetPointFallbackMaxUniqueKeys = 2
 func (tx *tiKVTxn) Get(ctx context.Context, key string) (out []byte, found bool, err error) {
 	start := time.Now()
 	defer func() {
+		tikvPressure.pointGets.Add(1)
+		tikvPressure.pointGetNanos.Add(time.Since(start).Nanoseconds())
 		outcome := "ok"
 		if err != nil {
 			outcome = "error"
@@ -598,6 +607,11 @@ func (tx *tiKVTxn) List(_ context.Context, prefix, cursor string, limit int) (ke
 	limit = boundedTiKVListLimit(limit)
 	start := time.Now()
 	defer func() {
+		tikvPressure.rangePages.Add(1)
+		tikvPressure.rangePageNanos.Add(time.Since(start).Nanoseconds())
+		if len(keys) >= MaxTiKVListKeys {
+			tikvPressure.hotCandidates.Add(1)
+		}
 		logTiKVOperation(tx.traceOperations, "txn_list", "snapshot", prefix, "", start, err,
 			structuredlog.F("result_count", len(keys)),
 			structuredlog.F("limit", limit),
@@ -638,6 +652,12 @@ func (tx *tiKVTxn) BatchGet(ctx context.Context, keys []string) (out map[string]
 	uniqueKeyCount := 0
 	batchGetMode := "batch_get"
 	defer func() {
+		duration := time.Since(start).Nanoseconds()
+		if batchGetMode == "point_get_fallback" {
+			tikvPressure.pointGetNanos.Add(duration)
+		} else if batchGetMode != "empty" {
+			tikvPressure.batchGetNanos.Add(duration)
+		}
 		outcome := "ok"
 		if err != nil {
 			outcome = "error"
@@ -683,6 +703,7 @@ func (tx *tiKVTxn) BatchGet(ctx context.Context, keys []string) (out map[string]
 	tikvPressure.batchGetChunks.Add(int64(len(chunks)))
 	if len(chunks) > 1 {
 		batchGetMode = "batch_get_chunked"
+		tikvPressure.hotCandidates.Add(1)
 	}
 	for _, chunk := range chunks {
 		values, chunkErr := tx.txn.BatchGet(ctx, chunk)

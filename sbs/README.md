@@ -20,4 +20,3 @@ or maintenance path.
 
 Generated `*/v1/*.pb.go` files follow the `.proto` sources in `proto/`; do not
 edit generated bindings by hand.
-

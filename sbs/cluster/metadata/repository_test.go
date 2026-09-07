@@ -172,6 +172,21 @@ func TestMembershipProjectionCASPagingAndTombstone(t *testing.T) {
 	}
 }
 
+func TestMembershipProjectionReadOnlyPageDoesNotBootstrapMissingState(t *testing.T) {
+	kv := newFakeTransactionalKV()
+	repo := NewRepository(kv, "sbs/cluster")
+	setCountBefore := len(kv.setCalls)
+	txCountBefore := kv.runTxCalls
+
+	_, err := repo.ListMembershipProjectionPageReadOnly(context.Background(), "", 32, false)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error=%v want ErrNotFound", err)
+	}
+	if len(kv.setCalls) != setCountBefore || kv.runTxCalls != txCountBefore {
+		t.Fatalf("read-only page bootstrapped projection: set keys=%d->%d tx=%d->%d", setCountBefore, len(kv.setCalls), txCountBefore, kv.runTxCalls)
+	}
+}
+
 func TestMembershipMutationRetriesTransactionConflictButNotGenerationConflict(t *testing.T) {
 	ResetTiKVPressureForTest()
 	defer ResetTiKVPressureForTest()
@@ -382,6 +397,45 @@ type churningMembershipProjectionKV struct {
 type conflictInjectingMembershipKV struct {
 	*fakeTransactionalKV
 	conflictsRemaining int
+}
+
+func TestVolumeAuthorityPairMutationIsAtomic(t *testing.T) {
+	ctx := context.Background()
+	kv := &conflictInjectingMembershipKV{fakeTransactionalKV: newFakeTransactionalKV(), conflictsRemaining: 1}
+	repo := NewRepository(kv, "volume-authority-atomic")
+	state := VolumeState{VolumeID: "00a1b2c3", Epoch: 1, Revision: 1, Status: VolumeStatusHealthy}
+	spec := VolumeSpecRecord{VolumeID: state.VolumeID, SizeBytes: 4096, BlockSize: 4096, ChunkSizeBytes: 4096}
+	if err := repo.PutVolumeAuthority(ctx, state, spec); !errors.Is(err, ErrCASConflict) {
+		t.Fatalf("conflicted put error=%v", err)
+	}
+	if _, err := repo.GetVolumeState(ctx, state.VolumeID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("state after conflicted put error=%v", err)
+	}
+	if _, err := repo.GetVolumeSpec(ctx, state.VolumeID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("spec after conflicted put error=%v", err)
+	}
+	if err := repo.PutVolumeAuthority(ctx, state, spec); err != nil {
+		t.Fatal(err)
+	}
+	kv.conflictsRemaining = 1
+	if err := repo.DeleteVolumeAuthority(ctx, state.VolumeID); !errors.Is(err, ErrCASConflict) {
+		t.Fatalf("conflicted delete error=%v", err)
+	}
+	if _, err := repo.GetVolumeState(ctx, state.VolumeID); err != nil {
+		t.Fatalf("state lost after conflicted delete: %v", err)
+	}
+	if _, err := repo.GetVolumeSpec(ctx, state.VolumeID); err != nil {
+		t.Fatalf("spec lost after conflicted delete: %v", err)
+	}
+	if err := repo.DeleteVolumeAuthority(ctx, state.VolumeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.GetVolumeState(ctx, state.VolumeID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("state after delete error=%v", err)
+	}
+	if _, err := repo.GetVolumeSpec(ctx, state.VolumeID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("spec after delete error=%v", err)
+	}
 }
 
 type mapMembershipReadSnapshot struct {
@@ -2273,12 +2327,13 @@ func TestRepositoryCommitAppendOnlyWriteMetadataBatchCommitsStateAndEffectsInOne
 
 	kv.resetGetCalls()
 	kv.resetSetCalls()
+	beforeTxCalls := kv.runTxCalls
 	states, records, err := repo.CommitAppendOnlyWriteMetadataBatch(ctx, reqs)
 	if err != nil {
 		t.Fatalf("CommitAppendOnlyWriteMetadataBatch: %v", err)
 	}
-	if kv.runTxCalls != 1 {
-		t.Fatalf("RunInTransaction calls=%d want 1", kv.runTxCalls)
+	if kv.runTxCalls != beforeTxCalls+1 {
+		t.Fatalf("RunInTransaction calls=%d want 1", kv.runTxCalls-beforeTxCalls)
 	}
 	if len(states) != 2 || len(records) != 2 {
 		t.Fatalf("states=%d records=%d want 2 each", len(states), len(records))

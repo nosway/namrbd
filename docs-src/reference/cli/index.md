@@ -8,7 +8,7 @@ canonical internal reference and are not published here as supported syntax. The
 [Feature Status](../../feature-status.md) page remains authoritative for release
 support and edition availability.
 
-`namrbd-iscsictl` is deprecated and not shipped in v1.0; use `sbsctl iscsi`.
+Use `sbsctl iscsi` for basic iSCSI administration.
 Internal debug and benchmark binaries are not part of this public reference.
 Historical `namrbd-meta` source is archived and is not an active command surface.
 
@@ -17,7 +17,7 @@ Historical `namrbd-meta` source is archived and is not an active command surface
 | Binary | Purpose | Distribution | Reference shape |
 | --- | --- | --- | --- |
 | [`namrbdctl`](namrbdctl.md) | Linux host/device control and gateway-facing volume I/O | Shipped (Community and Enterprise) | 30 command paths |
-| [`sbsctl`](sbsctl.md) | SBS cluster, volume, snapshot, maintenance, and basic iSCSI administration | Shipped; this page is generated from the Community build | 76 command paths |
+| [`sbsctl`](sbsctl.md) | SBS cluster, volume, snapshot, maintenance, and basic iSCSI administration | Shipped; this page is generated from the Community build | 98 command paths |
 | [`namrbd-gateway`](namrbd-gateway.md) | Gateway control and data-plane daemon | Shipped daemon | daemon flags |
 | [`sbs-service`](sbs-service.md) | SBS metadata and administrative authority | Shipped daemon | daemon flags |
 | [`sbs-data`](sbs-data.md) | SBS payload service | Shipped daemon | daemon flags |

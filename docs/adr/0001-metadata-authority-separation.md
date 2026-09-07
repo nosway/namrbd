@@ -80,4 +80,3 @@ Tests must reject gateway raw-metadata authority and must distinguish the local
 development backend from primary TiKV mode. Revisit through a new ADR if one
 store can satisfy all ownership, transaction, watch, scale, and independent
 failure requirements without broadening writer authority.
-

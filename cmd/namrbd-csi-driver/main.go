@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	csipb "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
@@ -33,7 +34,7 @@ func run(args []string) error {
 		return nil
 	}
 	fs := flag.NewFlagSet("namrbd-csi-driver", flag.ExitOnError)
-	configPath := fs.String("config", "", "service config file path (AA-IMPL-001H)")
+	configPath := fs.String("config", "", "service config file path")
 	endpoint := fs.String("endpoint", "unix:///tmp/namrbd-csi.sock", "CSI listening endpoint, unix://path or tcp://host:port")
 	adminEndpointDefault, adminEndpointSet, err := getenvCompatOrDefault(envcompat.CSISBSServiceEndpoint, "127.0.0.1:9897")
 	if err != nil {
@@ -212,6 +213,24 @@ func (b adminBackend) GetVolume(ctx context.Context, req *adminv1.GetVolumeReque
 	err := b.client.Invoke(ctx, req.GetCluster(), func(client adminv1.AdminServiceClient) error {
 		var callErr error
 		resp, callErr = client.GetVolume(ctx, req)
+		return callErr
+	})
+	return resp, err
+}
+
+func (b adminBackend) ListVolumes(ctx context.Context, req *adminv1.ListVolumesRequest) (*adminv1.ListVolumesResponse, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
+	if req.GetAdmission() == nil {
+		req.Admission = &adminv1.ExpensiveCallAdmission{Reason: "csi admin compatibility", RecordBudget: 1_000_000}
+	}
+	var resp *adminv1.ListVolumesResponse
+	err := b.client.Invoke(ctx, req.GetCluster(), func(client adminv1.AdminServiceClient) error {
+		var callErr error
+		resp, callErr = client.ListVolumes(ctx, req)
 		return callErr
 	})
 	return resp, err

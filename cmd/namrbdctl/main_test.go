@@ -694,6 +694,12 @@ func TestRunClusterMetricsIncludesPrioritySummary(t *testing.T) {
 func TestMergeDiscoveryIntoManifest(t *testing.T) {
 	manifest := `{"volume_id":"00000065","control_endpoints":[{"address":"127.0.0.1","port":9701}],"dataplane_endpoints":[{"path_id":0,"address":"127.0.0.1","port":9700,"priority":100}]}`
 	discovery := map[string]any{
+		"volume": map[string]any{
+			"path_plan_revision": float64(7),
+			"path_plan": map[string]any{
+				"desired_revision": float64(7),
+			},
+		},
 		"gateways": []any{
 			map[string]any{
 				"gateway_id": "gw-a",
@@ -739,6 +745,27 @@ func TestMergeDiscoveryIntoManifest(t *testing.T) {
 	}
 	if first["gateway_id"].(string) != "gw-a" || second["gateway_id"].(string) != "gw-b" {
 		t.Fatalf("unexpected gateway ids: first=%+v second=%+v", first, second)
+	}
+	if out["path_plan_revision"].(float64) != 7 || out["path_plan"].(map[string]any)["desired_revision"].(float64) != 7 {
+		t.Fatalf("discovery path plan was not promoted into the attach manifest: %+v", out)
+	}
+}
+
+func TestMergeDiscoveryIntoManifestPreservesNewerAttachRevision(t *testing.T) {
+	merged, err := mergeDiscoveryIntoManifest(
+		`{"volume_id":"00000065","path_plan_revision":9}`,
+		map[string]any{"volume": map[string]any{"path_plan_revision": float64(7)}},
+		discoveryMergeOptions{},
+	)
+	if err != nil {
+		t.Fatalf("mergeDiscoveryIntoManifest failed: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(merged), &out); err != nil {
+		t.Fatalf("unmarshal merged manifest: %v", err)
+	}
+	if out["path_plan_revision"].(float64) != 9 {
+		t.Fatalf("newer attach revision was overwritten: %+v", out)
 	}
 }
 
@@ -973,7 +1000,6 @@ func TestRunAttachGatewayPrintsFencingAndHandoffSummary(t *testing.T) {
 						"attached_host_id":"host-a",
 						"attached_device_id":7,
 						"attachment_generation":3,
-						"path_plan_revision":7,
 						"writer_fencing_epoch":9,
 						"runtime_path_expansion_eligible_at_unix":1,
 						"handoff_required":true,
@@ -993,8 +1019,8 @@ func TestRunAttachGatewayPrintsFencingAndHandoffSummary(t *testing.T) {
 					}`))
 					return rec.Result(req), nil
 				case req.Method == http.MethodGet && req.URL.Path == "/api/v1/discovery/volumes/00000065":
-					rec.status = http.StatusNotFound
-					_, _ = rec.Write([]byte(`not found`))
+					rec.Header().Set("Content-Type", "application/json")
+					_, _ = rec.Write([]byte(`{"volume":{"path_plan_revision":7}}`))
 					return rec.Result(req), nil
 				default:
 					t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
@@ -1059,6 +1085,22 @@ func TestRunAttachGatewayPrintsFencingAndHandoffSummary(t *testing.T) {
 	}
 	if manifest["controller_priority_class"].(string) != "handoff" {
 		t.Fatalf("unexpected attach manifest controller priority class: %+v", manifest)
+	}
+	if client.updatedReq.DeviceID != 7 || client.updatedReq.PathPlanRevision != 7 || client.updatedReq.DownMask != 0 || client.updatedReq.DegradedMask != 0 {
+		t.Fatalf("attach did not apply the manifest path plan revision: %+v", client.updatedReq)
+	}
+	if out["runtime_applied_path_plan_revision"].(float64) != 7 || out["path_plan_revision_state"].(string) != "converged" {
+		t.Fatalf("unexpected attach runtime path plan summary: %+v", out)
+	}
+}
+
+func TestApplyAttachManifestPathPlanRejectsUnversionedManifest(t *testing.T) {
+	client := &fakeNetlinkClient{}
+	if _, err := applyAttachManifestPathPlan(client, 7, `{"volume_id":"00000065"}`); err == nil {
+		t.Fatal("expected an unversioned attach manifest to be rejected")
+	}
+	if client.updatedReq.PathPlanRevision != 0 {
+		t.Fatalf("unversioned attach unexpectedly updated the kernel path plan: %+v", client.updatedReq)
 	}
 }
 

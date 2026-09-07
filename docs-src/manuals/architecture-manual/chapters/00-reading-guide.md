@@ -1,7 +1,7 @@
 Chapter 1
 
 Advanced feature note: Enterprise topics in this manual describe architecture
-under development and validation, not public v1.0 support claims. See
+under development and validation, not public v1.1 support claims. See
 [Feature Status](../../../feature-status.md).
 
 # Reading Guide

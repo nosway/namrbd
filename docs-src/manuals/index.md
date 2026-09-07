@@ -6,7 +6,7 @@ Distributed Block Storage Docs
 
 NAMRBD (Network Attached Multipath Resilient Block Device) is an open-source distributed block storage platform with native Linux block-device paths, Kubernetes CSI integration, and an optional standard iSCSI target gateway.
 
-The public source provides the replicated storage platform and its main host, gateway, SBS, CSI, iSCSI, and operations surfaces. Source availability and v1.0 support validation are distinct; see the [Feature Status](../feature-status.md) page before choosing a deployment shape. Advanced Enterprise capabilities are under development and validation and are not general-availability commitments.
+The public source provides the replicated storage platform and its main host, gateway, SBS, CSI, iSCSI, and operations surfaces. Source availability and v1.1 support validation are distinct; see the [Feature Status](../feature-status.md) page before choosing a deployment shape. Advanced Enterprise capabilities are under development and validation and are not general-availability commitments.
 
 </div>
 
@@ -19,10 +19,10 @@ NAMRBD is a low-latency distributed block storage system sharing the SBS storage
 | Shape | Purpose | Primary dependencies | Current status |
 |----|----|----|----|
 | Local single-node quickstart | Developer evaluation and smoke validation | `namrbd-gateway`, `sbs-service`, `sbs-data`, local metadata | Public development workflow |
-| Replicated userspace gateway | Replicated block-volume service | SBS cluster, metadata authority, `namrbd-gateway` | Validated v1.0 volume path |
-| Kubernetes CSI cluster | Dynamic persistent volume provisioning | SBS cluster, `sbsctl`, `namrbd-csi-driver` | Public integration preview; not validated for v1.0 support |
+| Replicated userspace gateway | Replicated block-volume service | SBS cluster, metadata authority, `namrbd-gateway` | Validated v1.1 volume path |
+| Kubernetes CSI cluster | Dynamic persistent volume provisioning | SBS cluster, `sbsctl`, `namrbd-csi-driver` | Public integration preview; not validated for v1.1 support |
 | Basic iSCSI target access | Linux open-iscsi LUN export through a single target path | `namrbd-iscsi-gateway`, `sbsctl iscsi`, TCP/3260 | Public integration preview, capped at three distinct exported volumes |
-| Linux kernel block path | Native `/dev/namrbdX` attachment | Matching kernel headers, kernel module, gateways | Source available; kernel I/O is outside the v1.0 support boundary |
+| Linux kernel block path | Native `/dev/namrbdX` attachment | Matching kernel headers, kernel module, gateways | Source available; kernel I/O is outside the v1.1 support boundary |
 
 ## 3. Advanced Features Under Development
 

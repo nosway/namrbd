@@ -33,6 +33,7 @@ as fixed strings.
 | `gateway.etcd.tls.key.kms` | string key name | no runtime binding | omitted | Schema-accepted but not consumed. |
 | `gateway.etcd.tls.server_name` | string | no runtime binding | omitted | Schema-accepted but not consumed. |
 | `gateway.sbs_admin_endpoint` | string endpoint | `NAMRBD_SBS_SERVICE_ENDPOINT`, otherwise empty | `sbs-service.namrbd.internal:9090` | Required. |
+| `gateway.sbs_authenticated_admin_endpoint` | string endpoint | `NAMRBD_SBS_AUTHENTICATED_ADMIN_ENDPOINT`, otherwise empty | `sbs-admin.namrbd.internal:9443` | Optional Enterprise mTLS AdminService endpoint. When empty, AdminService clients retain the compatible `gateway.sbs_admin_endpoint` path; internal authority RPCs always remain on that service endpoint. |
 | `gateway.metadata_backend` | string | `memory` | `etcd` | Passed to repository initialization; invalid values fail there. |
 | `gateway.data_backend_mode` | string | `c6` | `sbs` | Passed to backend selection. |
 | `gateway.cache.volume_ttl_seconds` | integer seconds | `30` | `30` | Zero is accepted and applied. |
@@ -85,6 +86,7 @@ zero behavior differs across consumers.
 | `gateway.advertise_control_address` | `NAMRBD_GATEWAY_ADVERTISE_CONTROL_ADDRESS` | none |
 | `gateway.advertise_data_address` | `NAMRBD_GATEWAY_ADVERTISE_DATA_ADDRESS` | none |
 | `gateway.sbs_admin_endpoint` | `NAMRBD_SBS_SERVICE_ENDPOINT` | `NAMRBD_GATEWAY_SBS_ADMIN_ENDPOINT` |
+| `gateway.sbs_authenticated_admin_endpoint` | `NAMRBD_SBS_AUTHENTICATED_ADMIN_ENDPOINT` | none |
 
 The two `NAMRBD_DP_*` variables are direct runtime fallbacks, not shared-loader
 overrides. A non-empty secret reference in YAML is resolved before that fallback
@@ -92,13 +94,14 @@ and therefore supplies the runtime value.
 
 ## CLI overrides
 
-The six environment-override fields map to `--gateway-id`,
+The seven environment-override fields map to `--gateway-id`,
 `--control-http-listen`, `--data-listen`, `--advertise-control-address`,
-`--advertise-data-address`, and `--sbs-service-endpoint`.
+`--advertise-data-address`, `--sbs-service-endpoint`, and
+`--sbs-authenticated-admin-endpoint`.
 
 This daemon additionally preserves an explicitly typed corresponding flag for
 every consumed YAML field: `--data-disable`, `--tls-*`, `--etcd-endpoints`,
-`--etcd-root`, `--metadata-backend`, `--data-backend-mode`, the cache and
+`--etcd-root`, `--sbs-authenticated-admin-endpoint`, `--metadata-backend`, `--data-backend-mode`, the cache and
 reconcile flags, `--max-inflight-*`, `--max-io-size`, the data-plane key/TTL/wire
 flags, and `--dataplane-request-trace`. The dependency block and unconsumed
 fields have no CLI override.

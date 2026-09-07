@@ -78,6 +78,8 @@ func gatewayOverrides() []Overridable {
 			func(g *GatewayConfig) *string { return &g.AdvertiseDataAddr }),
 		compatStr("gateway.sbs_admin_endpoint", envcompat.GatewaySBSServiceEndpoint, "sbs-service-endpoint",
 			func(g *GatewayConfig) *string { return &g.SBSAdminEndpoint }),
+		compatStr("gateway.sbs_authenticated_admin_endpoint", envcompat.GatewaySBSAuthenticatedAdminEndpoint, "sbs-authenticated-admin-endpoint",
+			func(g *GatewayConfig) *string { return &g.SBSAuthenticatedAdminEndpoint }),
 	}
 }
 

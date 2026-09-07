@@ -36,6 +36,9 @@ index](index.md) for the common file, secret-reference, and precedence rules.
 | `sbs_service.health.suspect_threshold` | integer | `3` | `3` | A positive YAML value is applied. |
 | `sbs_service.health.down_threshold` | integer | `6` | `6` | When both thresholds are positive, must exceed `suspect_threshold`. |
 | `sbs_service.health.recovery_cooldown_seconds` | integer seconds | `30` | `30` | A positive YAML value is applied; zero retains the built-in. |
+| `sbs_service.summary.state` | string | `disabled` | `disabled` | Fleet-wide restart setting: `disabled`, `shadow`, or `enforced`. Shadow keeps legacy serving and explicit-only parity checks; enforced uses only the bounded aggregate. |
+| `sbs_service.summary.freshness_degraded_seconds` | integer seconds | `300` | `300` | Enforced mode reports the complete aggregate as degraded at this age. Must be positive in enforced mode. |
+| `sbs_service.summary.freshness_rebuild_required_seconds` | integer seconds | `900` | `900` | Must exceed the degraded threshold; enforced mode reports `rebuild_required` at this age. |
 | `sbs_service.write_effects.service_owned` | boolean | `true` | `true` | Applied directly. |
 | `sbs_service.write_effects.native_allocation_fast_path` | boolean | `true` | `true` | Applied directly. |
 | `sbs_service.write_effects.batch_max` | integer | `16` | `64` | A positive value is applied. In `large_scale`, `batch_max * 2` must not exceed `tikv.batch_get_size`. |
@@ -99,8 +102,9 @@ then preserves them over YAML. Positive YAML `write_effects.batch_max` and
 missing from the adoption precedence map, so YAML replaces them when
 `--config` is used.
 
-The dependency, scan/batch budget, and observability fields have no environment
-override.
+The summary, dependency, scan/batch budget, and observability fields have no
+environment override. Summary state and freshness are intentionally file-only
+so service instances cannot drift through host-local environment settings.
 
 Validation runs against the parsed file before most of these direct
 environment-derived runtime values are preserved. The winning direct value is
@@ -135,8 +139,8 @@ Actual behavior: every service-YAML edit requires restart.
 
 The unconnected logical policy marks TiKV timeout/scan/batch/trace, dependency,
 health, and observability as live. Identity, backend, listeners, payload root,
-TiKV endpoints/keyspace/API/TLS, leader timings, and the write-effect block are
-restart fields.
+TiKV endpoints/keyspace/API/TLS, leader timings, summary policy, and the
+write-effect block are restart fields.
 
 ## Sources checked
 

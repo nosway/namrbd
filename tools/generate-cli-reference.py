@@ -70,7 +70,7 @@ BINARIES = {
     },
     "namrbd-debug": {
         "role": "Low-level inspection, workload, and break-glass utility",
-        "scope": "Internal/lab only; not a v1.0 release artifact",
+        "scope": "Internal/lab only; not a public release artifact",
         "top_args": [],
         "top_exit": 2,
         "commands": "namrbd-debug",
@@ -147,6 +147,7 @@ PUBLIC_DENIED_COMMAND_PREFIXES = (
     "sbsctl security ",
     "sbsctl mobility ",
     "sbsctl dedupe ",
+    "sbsctl governance ",
     "sbsctl iscsi failover ",
 )
 
@@ -159,6 +160,7 @@ PUBLIC_DENIED_FLAG_NAMES = {
     "export-epoch",
     "export-lease-id",
     "redundancy-backend",
+    "sbs-authenticated-admin-endpoint",
     "weak-placement",
 }
 
@@ -173,9 +175,11 @@ PUBLIC_DENIED_SURFACE_TOKENS = {
     "ec",
     "encryption",
     "failover",
+    "governance",
     "ha",
     "journal",
     "kms",
+    "legal-hold",
     "materialize",
     "mobility",
     "performance",
@@ -186,6 +190,7 @@ PUBLIC_DENIED_SURFACE_TOKENS = {
     "security",
     "shipping",
     "standby-volume",
+    "worm",
 }
 
 PUBLIC_DENIED_ENV_TOKENS = {
@@ -195,6 +200,9 @@ PUBLIC_DENIED_ENV_TOKENS = {
 PUBLIC_DENIED_ENV_NAMES = {
     "NAMRBD_SBS_ASYNC_WRITE_MUTATION_FINALIZE",
     "NAMRBD_SBS_DATA_OPERATION_TRACE",
+    "NAMRBD_SBS_AUTHENTICATED_ADMIN_ENDPOINT",
+    "NAMRBD_SBS_ENABLE_LAB_PHYSICAL_CLEANUP",
+    "NAMRBD_SBS_ENABLE_LAB_PHYSICAL_INSPECTION",
     "NAMRBD_SBS_ENABLE_LAB_STORE_DEBUG",
     "NAMRBD_SBS_LAB_CACHE_OPEN_VOLUME_SPEC",
     "NAMRBD_SBS_LAB_DISABLE_IDEMPOTENCY_SYNC",
@@ -564,7 +572,10 @@ def envcompat_catalog() -> dict[str, tuple[str, list[str]]]:
 
 def environment_inventory(binary: str, files: list[Path]) -> dict[str, set[str]]:
     text = "\n".join(path.read_text(encoding="utf-8") for path in files)
-    direct = set(re.findall(r"\b(?:NAMRBD|SBS)_[A-Z0-9_]+\b", text))
+    # NAMRBD_* names are current direct inputs. Legacy SBS_* names are added
+    # from the reviewed envcompat catalog below; accepting every SBS_* token
+    # here also mistakes Phase AD stable health codes for environment inputs.
+    direct = set(re.findall(r"\bNAMRBD_[A-Z0-9_]+\b", text))
     for match in re.finditer(r"(?:Getenv|LookupEnv|getenv[A-Za-z0-9_]*|firstEnv[A-Za-z0-9_]*)\(\s*\"([A-Z][A-Z0-9_]*)\"", text):
         direct.add(match.group(1))
 
@@ -622,7 +633,7 @@ canonical internal reference and are not published here as supported syntax. The
 [Feature Status](../../feature-status.md) page remains authoritative for release
 support and edition availability.
 
-`namrbd-iscsictl` is deprecated and not shipped in v1.0; use `sbsctl iscsi`.
+Use `sbsctl iscsi` for basic iSCSI administration.
 Internal debug and benchmark binaries are not part of this public reference.
 Historical `namrbd-meta` source is archived and is not an active command surface.
 

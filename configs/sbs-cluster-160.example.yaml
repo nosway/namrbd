@@ -1,0 +1,3449 @@
+# AD-IMPL-001 exact 160-node manifest fixture.
+#
+# This is desired state only. It contains no observed membership, daemon,
+# capacity, or secret value. Validation requires the artifact digest to be
+# supplied independently with --approved-artifact-digest.
+apiVersion: namrbd.io/v1alpha1
+kind: SBSCluster
+metadata:
+  name: sbs-prod-160
+  revision: "20260903-001"
+spec:
+  clusterId: namrbd-prod
+  sbsClusterId: sbs-prod-160
+  expectedNodeCount: 160
+  expectedZones: 8
+  artifact:
+    version: 1.0.0
+    digest: sha256:c3bd6d1fdc4b1a1239e4036e294b71fb7ea0880ba990a486d1cedaede3f4eecf
+    approvalRef: release/1.0.0/enterprise
+    binaryDigests:
+      sbs-data: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      sbs-service: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      sbsctl: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  metadataAuthority:
+    pdEndpoints:
+      - https://pd-01.namrbd.internal:2379
+      - https://pd-02.namrbd.internal:2379
+      - https://pd-03.namrbd.internal:2379
+    keyspace: namrbd-prod
+    apiVersion: v2
+    tls:
+      enabled: true
+      certFile: /etc/namrbd/tls/tikv-client.crt
+      keyRef: tikv-client-key
+  bundle:
+    configRevision: 20260903
+    binaryDirectory: /usr/lib/namrbd
+    configDirectory: /etc/namrbd
+    dataStatePath: /var/lib/namrbd/sbs-data
+    serviceUser: namrbd
+  serviceConfig:
+    payloadRoot: /var/lib/namrbd/sbs
+    tikv:
+      timeoutSeconds: 5
+      scanPageSize: 512
+      batchGetSize: 128
+    leader:
+      leaseDurationSeconds: 15
+      renewIntervalSeconds: 5
+    health:
+      shardCount: 8
+      concurrencyPerShard: 16
+      intervalSeconds: 10
+      timeoutSeconds: 2
+      suspectThreshold: 3
+      downThreshold: 6
+      recoveryCooldownSeconds: 30
+    writeEffects:
+      serviceOwned: true
+      nativeAllocationFastPath: true
+      batchMax: 64
+      laneBucketCount: 8
+      asyncMutationFinalize: false
+  servicePlacement:
+    activeHosts: [node1, node21, node41]
+    standbyCandidates: [node61, node81]
+  rollout:
+    order: [zone-01, zone-02, zone-03, zone-04, zone-05, zone-06, zone-07, zone-08]
+    maxParallelPerZone: 5
+    pauseOnFailure: true
+  secretRefs:
+    - name: tikv-client-key
+      file: /etc/namrbd/tls/tikv-client.key
+  nodes:
+    - id: node1
+      hostname: node1
+      managementAddress: 10.10.1.1
+      dataAddress: 10.20.1.1
+      dataEndpoint: 10.20.1.1:9091
+      adminEndpoint: 10.10.1.1:9093
+      metricsEndpoint: 10.10.1.1:9103
+      serviceGrpcEndpoint: 10.10.1.1:9090
+      serviceHttpEndpoint: 10.10.1.1:9092
+      serviceMetricsEndpoint: 10.10.1.1:9102
+      location:
+        zone: zone-01
+        rack: rack-01
+      roles: [sbs-data, sbs-service-active]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node1-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000001
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node2
+      hostname: node2
+      managementAddress: 10.10.1.2
+      dataAddress: 10.20.1.2
+      dataEndpoint: 10.20.1.2:9091
+      adminEndpoint: 10.10.1.2:9093
+      metricsEndpoint: 10.10.1.2:9103
+      location:
+        zone: zone-01
+        rack: rack-02
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node2-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000002
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node3
+      hostname: node3
+      managementAddress: 10.10.1.3
+      dataAddress: 10.20.1.3
+      dataEndpoint: 10.20.1.3:9091
+      adminEndpoint: 10.10.1.3:9093
+      metricsEndpoint: 10.10.1.3:9103
+      location:
+        zone: zone-01
+        rack: rack-03
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node3-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000003
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node4
+      hostname: node4
+      managementAddress: 10.10.1.4
+      dataAddress: 10.20.1.4
+      dataEndpoint: 10.20.1.4:9091
+      adminEndpoint: 10.10.1.4:9093
+      metricsEndpoint: 10.10.1.4:9103
+      location:
+        zone: zone-01
+        rack: rack-04
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node4-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000004
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node5
+      hostname: node5
+      managementAddress: 10.10.1.5
+      dataAddress: 10.20.1.5
+      dataEndpoint: 10.20.1.5:9091
+      adminEndpoint: 10.10.1.5:9093
+      metricsEndpoint: 10.10.1.5:9103
+      location:
+        zone: zone-01
+        rack: rack-05
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node5-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000005
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node6
+      hostname: node6
+      managementAddress: 10.10.1.6
+      dataAddress: 10.20.1.6
+      dataEndpoint: 10.20.1.6:9091
+      adminEndpoint: 10.10.1.6:9093
+      metricsEndpoint: 10.10.1.6:9103
+      location:
+        zone: zone-01
+        rack: rack-06
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node6-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000006
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node7
+      hostname: node7
+      managementAddress: 10.10.1.7
+      dataAddress: 10.20.1.7
+      dataEndpoint: 10.20.1.7:9091
+      adminEndpoint: 10.10.1.7:9093
+      metricsEndpoint: 10.10.1.7:9103
+      location:
+        zone: zone-01
+        rack: rack-07
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node7-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000007
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node8
+      hostname: node8
+      managementAddress: 10.10.1.8
+      dataAddress: 10.20.1.8
+      dataEndpoint: 10.20.1.8:9091
+      adminEndpoint: 10.10.1.8:9093
+      metricsEndpoint: 10.10.1.8:9103
+      location:
+        zone: zone-01
+        rack: rack-08
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node8-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000008
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node9
+      hostname: node9
+      managementAddress: 10.10.1.9
+      dataAddress: 10.20.1.9
+      dataEndpoint: 10.20.1.9:9091
+      adminEndpoint: 10.10.1.9:9093
+      metricsEndpoint: 10.10.1.9:9103
+      location:
+        zone: zone-01
+        rack: rack-09
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node9-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000009
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node10
+      hostname: node10
+      managementAddress: 10.10.1.10
+      dataAddress: 10.20.1.10
+      dataEndpoint: 10.20.1.10:9091
+      adminEndpoint: 10.10.1.10:9093
+      metricsEndpoint: 10.10.1.10:9103
+      location:
+        zone: zone-01
+        rack: rack-10
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node10-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000000a
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node11
+      hostname: node11
+      managementAddress: 10.10.1.11
+      dataAddress: 10.20.1.11
+      dataEndpoint: 10.20.1.11:9091
+      adminEndpoint: 10.10.1.11:9093
+      metricsEndpoint: 10.10.1.11:9103
+      location:
+        zone: zone-01
+        rack: rack-11
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node11-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000000b
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node12
+      hostname: node12
+      managementAddress: 10.10.1.12
+      dataAddress: 10.20.1.12
+      dataEndpoint: 10.20.1.12:9091
+      adminEndpoint: 10.10.1.12:9093
+      metricsEndpoint: 10.10.1.12:9103
+      location:
+        zone: zone-01
+        rack: rack-12
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node12-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000000c
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node13
+      hostname: node13
+      managementAddress: 10.10.1.13
+      dataAddress: 10.20.1.13
+      dataEndpoint: 10.20.1.13:9091
+      adminEndpoint: 10.10.1.13:9093
+      metricsEndpoint: 10.10.1.13:9103
+      location:
+        zone: zone-01
+        rack: rack-13
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node13-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000000d
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node14
+      hostname: node14
+      managementAddress: 10.10.1.14
+      dataAddress: 10.20.1.14
+      dataEndpoint: 10.20.1.14:9091
+      adminEndpoint: 10.10.1.14:9093
+      metricsEndpoint: 10.10.1.14:9103
+      location:
+        zone: zone-01
+        rack: rack-14
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node14-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000000e
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node15
+      hostname: node15
+      managementAddress: 10.10.1.15
+      dataAddress: 10.20.1.15
+      dataEndpoint: 10.20.1.15:9091
+      adminEndpoint: 10.10.1.15:9093
+      metricsEndpoint: 10.10.1.15:9103
+      location:
+        zone: zone-01
+        rack: rack-15
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node15-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000000f
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node16
+      hostname: node16
+      managementAddress: 10.10.1.16
+      dataAddress: 10.20.1.16
+      dataEndpoint: 10.20.1.16:9091
+      adminEndpoint: 10.10.1.16:9093
+      metricsEndpoint: 10.10.1.16:9103
+      location:
+        zone: zone-01
+        rack: rack-16
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node16-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000010
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node17
+      hostname: node17
+      managementAddress: 10.10.1.17
+      dataAddress: 10.20.1.17
+      dataEndpoint: 10.20.1.17:9091
+      adminEndpoint: 10.10.1.17:9093
+      metricsEndpoint: 10.10.1.17:9103
+      location:
+        zone: zone-01
+        rack: rack-17
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node17-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000011
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node18
+      hostname: node18
+      managementAddress: 10.10.1.18
+      dataAddress: 10.20.1.18
+      dataEndpoint: 10.20.1.18:9091
+      adminEndpoint: 10.10.1.18:9093
+      metricsEndpoint: 10.10.1.18:9103
+      location:
+        zone: zone-01
+        rack: rack-18
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node18-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000012
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node19
+      hostname: node19
+      managementAddress: 10.10.1.19
+      dataAddress: 10.20.1.19
+      dataEndpoint: 10.20.1.19:9091
+      adminEndpoint: 10.10.1.19:9093
+      metricsEndpoint: 10.10.1.19:9103
+      location:
+        zone: zone-01
+        rack: rack-19
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node19-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000013
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node20
+      hostname: node20
+      managementAddress: 10.10.1.20
+      dataAddress: 10.20.1.20
+      dataEndpoint: 10.20.1.20:9091
+      adminEndpoint: 10.10.1.20:9093
+      metricsEndpoint: 10.10.1.20:9103
+      location:
+        zone: zone-01
+        rack: rack-20
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node20-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000014
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node21
+      hostname: node21
+      managementAddress: 10.10.2.1
+      dataAddress: 10.20.2.1
+      dataEndpoint: 10.20.2.1:9091
+      adminEndpoint: 10.10.2.1:9093
+      metricsEndpoint: 10.10.2.1:9103
+      serviceGrpcEndpoint: 10.10.2.1:9090
+      serviceHttpEndpoint: 10.10.2.1:9092
+      serviceMetricsEndpoint: 10.10.2.1:9102
+      location:
+        zone: zone-02
+        rack: rack-01
+      roles: [sbs-data, sbs-service-active]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node21-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000015
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node22
+      hostname: node22
+      managementAddress: 10.10.2.2
+      dataAddress: 10.20.2.2
+      dataEndpoint: 10.20.2.2:9091
+      adminEndpoint: 10.10.2.2:9093
+      metricsEndpoint: 10.10.2.2:9103
+      location:
+        zone: zone-02
+        rack: rack-02
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node22-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000016
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node23
+      hostname: node23
+      managementAddress: 10.10.2.3
+      dataAddress: 10.20.2.3
+      dataEndpoint: 10.20.2.3:9091
+      adminEndpoint: 10.10.2.3:9093
+      metricsEndpoint: 10.10.2.3:9103
+      location:
+        zone: zone-02
+        rack: rack-03
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node23-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000017
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node24
+      hostname: node24
+      managementAddress: 10.10.2.4
+      dataAddress: 10.20.2.4
+      dataEndpoint: 10.20.2.4:9091
+      adminEndpoint: 10.10.2.4:9093
+      metricsEndpoint: 10.10.2.4:9103
+      location:
+        zone: zone-02
+        rack: rack-04
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node24-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000018
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node25
+      hostname: node25
+      managementAddress: 10.10.2.5
+      dataAddress: 10.20.2.5
+      dataEndpoint: 10.20.2.5:9091
+      adminEndpoint: 10.10.2.5:9093
+      metricsEndpoint: 10.10.2.5:9103
+      location:
+        zone: zone-02
+        rack: rack-05
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node25-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000019
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node26
+      hostname: node26
+      managementAddress: 10.10.2.6
+      dataAddress: 10.20.2.6
+      dataEndpoint: 10.20.2.6:9091
+      adminEndpoint: 10.10.2.6:9093
+      metricsEndpoint: 10.10.2.6:9103
+      location:
+        zone: zone-02
+        rack: rack-06
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node26-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000001a
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node27
+      hostname: node27
+      managementAddress: 10.10.2.7
+      dataAddress: 10.20.2.7
+      dataEndpoint: 10.20.2.7:9091
+      adminEndpoint: 10.10.2.7:9093
+      metricsEndpoint: 10.10.2.7:9103
+      location:
+        zone: zone-02
+        rack: rack-07
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node27-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000001b
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node28
+      hostname: node28
+      managementAddress: 10.10.2.8
+      dataAddress: 10.20.2.8
+      dataEndpoint: 10.20.2.8:9091
+      adminEndpoint: 10.10.2.8:9093
+      metricsEndpoint: 10.10.2.8:9103
+      location:
+        zone: zone-02
+        rack: rack-08
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node28-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000001c
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node29
+      hostname: node29
+      managementAddress: 10.10.2.9
+      dataAddress: 10.20.2.9
+      dataEndpoint: 10.20.2.9:9091
+      adminEndpoint: 10.10.2.9:9093
+      metricsEndpoint: 10.10.2.9:9103
+      location:
+        zone: zone-02
+        rack: rack-09
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node29-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000001d
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node30
+      hostname: node30
+      managementAddress: 10.10.2.10
+      dataAddress: 10.20.2.10
+      dataEndpoint: 10.20.2.10:9091
+      adminEndpoint: 10.10.2.10:9093
+      metricsEndpoint: 10.10.2.10:9103
+      location:
+        zone: zone-02
+        rack: rack-10
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node30-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000001e
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node31
+      hostname: node31
+      managementAddress: 10.10.2.11
+      dataAddress: 10.20.2.11
+      dataEndpoint: 10.20.2.11:9091
+      adminEndpoint: 10.10.2.11:9093
+      metricsEndpoint: 10.10.2.11:9103
+      location:
+        zone: zone-02
+        rack: rack-11
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node31-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000001f
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node32
+      hostname: node32
+      managementAddress: 10.10.2.12
+      dataAddress: 10.20.2.12
+      dataEndpoint: 10.20.2.12:9091
+      adminEndpoint: 10.10.2.12:9093
+      metricsEndpoint: 10.10.2.12:9103
+      location:
+        zone: zone-02
+        rack: rack-12
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node32-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000020
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node33
+      hostname: node33
+      managementAddress: 10.10.2.13
+      dataAddress: 10.20.2.13
+      dataEndpoint: 10.20.2.13:9091
+      adminEndpoint: 10.10.2.13:9093
+      metricsEndpoint: 10.10.2.13:9103
+      location:
+        zone: zone-02
+        rack: rack-13
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node33-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000021
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node34
+      hostname: node34
+      managementAddress: 10.10.2.14
+      dataAddress: 10.20.2.14
+      dataEndpoint: 10.20.2.14:9091
+      adminEndpoint: 10.10.2.14:9093
+      metricsEndpoint: 10.10.2.14:9103
+      location:
+        zone: zone-02
+        rack: rack-14
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node34-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000022
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node35
+      hostname: node35
+      managementAddress: 10.10.2.15
+      dataAddress: 10.20.2.15
+      dataEndpoint: 10.20.2.15:9091
+      adminEndpoint: 10.10.2.15:9093
+      metricsEndpoint: 10.10.2.15:9103
+      location:
+        zone: zone-02
+        rack: rack-15
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node35-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000023
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node36
+      hostname: node36
+      managementAddress: 10.10.2.16
+      dataAddress: 10.20.2.16
+      dataEndpoint: 10.20.2.16:9091
+      adminEndpoint: 10.10.2.16:9093
+      metricsEndpoint: 10.10.2.16:9103
+      location:
+        zone: zone-02
+        rack: rack-16
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node36-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000024
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node37
+      hostname: node37
+      managementAddress: 10.10.2.17
+      dataAddress: 10.20.2.17
+      dataEndpoint: 10.20.2.17:9091
+      adminEndpoint: 10.10.2.17:9093
+      metricsEndpoint: 10.10.2.17:9103
+      location:
+        zone: zone-02
+        rack: rack-17
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node37-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000025
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node38
+      hostname: node38
+      managementAddress: 10.10.2.18
+      dataAddress: 10.20.2.18
+      dataEndpoint: 10.20.2.18:9091
+      adminEndpoint: 10.10.2.18:9093
+      metricsEndpoint: 10.10.2.18:9103
+      location:
+        zone: zone-02
+        rack: rack-18
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node38-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000026
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node39
+      hostname: node39
+      managementAddress: 10.10.2.19
+      dataAddress: 10.20.2.19
+      dataEndpoint: 10.20.2.19:9091
+      adminEndpoint: 10.10.2.19:9093
+      metricsEndpoint: 10.10.2.19:9103
+      location:
+        zone: zone-02
+        rack: rack-19
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node39-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000027
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node40
+      hostname: node40
+      managementAddress: 10.10.2.20
+      dataAddress: 10.20.2.20
+      dataEndpoint: 10.20.2.20:9091
+      adminEndpoint: 10.10.2.20:9093
+      metricsEndpoint: 10.10.2.20:9103
+      location:
+        zone: zone-02
+        rack: rack-20
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node40-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000028
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node41
+      hostname: node41
+      managementAddress: 10.10.3.1
+      dataAddress: 10.20.3.1
+      dataEndpoint: 10.20.3.1:9091
+      adminEndpoint: 10.10.3.1:9093
+      metricsEndpoint: 10.10.3.1:9103
+      serviceGrpcEndpoint: 10.10.3.1:9090
+      serviceHttpEndpoint: 10.10.3.1:9092
+      serviceMetricsEndpoint: 10.10.3.1:9102
+      location:
+        zone: zone-03
+        rack: rack-01
+      roles: [sbs-data, sbs-service-active]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node41-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000029
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node42
+      hostname: node42
+      managementAddress: 10.10.3.2
+      dataAddress: 10.20.3.2
+      dataEndpoint: 10.20.3.2:9091
+      adminEndpoint: 10.10.3.2:9093
+      metricsEndpoint: 10.10.3.2:9103
+      location:
+        zone: zone-03
+        rack: rack-02
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node42-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000002a
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node43
+      hostname: node43
+      managementAddress: 10.10.3.3
+      dataAddress: 10.20.3.3
+      dataEndpoint: 10.20.3.3:9091
+      adminEndpoint: 10.10.3.3:9093
+      metricsEndpoint: 10.10.3.3:9103
+      location:
+        zone: zone-03
+        rack: rack-03
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node43-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000002b
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node44
+      hostname: node44
+      managementAddress: 10.10.3.4
+      dataAddress: 10.20.3.4
+      dataEndpoint: 10.20.3.4:9091
+      adminEndpoint: 10.10.3.4:9093
+      metricsEndpoint: 10.10.3.4:9103
+      location:
+        zone: zone-03
+        rack: rack-04
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node44-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000002c
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node45
+      hostname: node45
+      managementAddress: 10.10.3.5
+      dataAddress: 10.20.3.5
+      dataEndpoint: 10.20.3.5:9091
+      adminEndpoint: 10.10.3.5:9093
+      metricsEndpoint: 10.10.3.5:9103
+      location:
+        zone: zone-03
+        rack: rack-05
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node45-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000002d
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node46
+      hostname: node46
+      managementAddress: 10.10.3.6
+      dataAddress: 10.20.3.6
+      dataEndpoint: 10.20.3.6:9091
+      adminEndpoint: 10.10.3.6:9093
+      metricsEndpoint: 10.10.3.6:9103
+      location:
+        zone: zone-03
+        rack: rack-06
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node46-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000002e
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node47
+      hostname: node47
+      managementAddress: 10.10.3.7
+      dataAddress: 10.20.3.7
+      dataEndpoint: 10.20.3.7:9091
+      adminEndpoint: 10.10.3.7:9093
+      metricsEndpoint: 10.10.3.7:9103
+      location:
+        zone: zone-03
+        rack: rack-07
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node47-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000002f
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node48
+      hostname: node48
+      managementAddress: 10.10.3.8
+      dataAddress: 10.20.3.8
+      dataEndpoint: 10.20.3.8:9091
+      adminEndpoint: 10.10.3.8:9093
+      metricsEndpoint: 10.10.3.8:9103
+      location:
+        zone: zone-03
+        rack: rack-08
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node48-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000030
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node49
+      hostname: node49
+      managementAddress: 10.10.3.9
+      dataAddress: 10.20.3.9
+      dataEndpoint: 10.20.3.9:9091
+      adminEndpoint: 10.10.3.9:9093
+      metricsEndpoint: 10.10.3.9:9103
+      location:
+        zone: zone-03
+        rack: rack-09
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node49-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000031
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node50
+      hostname: node50
+      managementAddress: 10.10.3.10
+      dataAddress: 10.20.3.10
+      dataEndpoint: 10.20.3.10:9091
+      adminEndpoint: 10.10.3.10:9093
+      metricsEndpoint: 10.10.3.10:9103
+      location:
+        zone: zone-03
+        rack: rack-10
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node50-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000032
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node51
+      hostname: node51
+      managementAddress: 10.10.3.11
+      dataAddress: 10.20.3.11
+      dataEndpoint: 10.20.3.11:9091
+      adminEndpoint: 10.10.3.11:9093
+      metricsEndpoint: 10.10.3.11:9103
+      location:
+        zone: zone-03
+        rack: rack-11
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node51-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000033
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node52
+      hostname: node52
+      managementAddress: 10.10.3.12
+      dataAddress: 10.20.3.12
+      dataEndpoint: 10.20.3.12:9091
+      adminEndpoint: 10.10.3.12:9093
+      metricsEndpoint: 10.10.3.12:9103
+      location:
+        zone: zone-03
+        rack: rack-12
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node52-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000034
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node53
+      hostname: node53
+      managementAddress: 10.10.3.13
+      dataAddress: 10.20.3.13
+      dataEndpoint: 10.20.3.13:9091
+      adminEndpoint: 10.10.3.13:9093
+      metricsEndpoint: 10.10.3.13:9103
+      location:
+        zone: zone-03
+        rack: rack-13
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node53-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000035
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node54
+      hostname: node54
+      managementAddress: 10.10.3.14
+      dataAddress: 10.20.3.14
+      dataEndpoint: 10.20.3.14:9091
+      adminEndpoint: 10.10.3.14:9093
+      metricsEndpoint: 10.10.3.14:9103
+      location:
+        zone: zone-03
+        rack: rack-14
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node54-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000036
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node55
+      hostname: node55
+      managementAddress: 10.10.3.15
+      dataAddress: 10.20.3.15
+      dataEndpoint: 10.20.3.15:9091
+      adminEndpoint: 10.10.3.15:9093
+      metricsEndpoint: 10.10.3.15:9103
+      location:
+        zone: zone-03
+        rack: rack-15
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node55-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000037
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node56
+      hostname: node56
+      managementAddress: 10.10.3.16
+      dataAddress: 10.20.3.16
+      dataEndpoint: 10.20.3.16:9091
+      adminEndpoint: 10.10.3.16:9093
+      metricsEndpoint: 10.10.3.16:9103
+      location:
+        zone: zone-03
+        rack: rack-16
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node56-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000038
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node57
+      hostname: node57
+      managementAddress: 10.10.3.17
+      dataAddress: 10.20.3.17
+      dataEndpoint: 10.20.3.17:9091
+      adminEndpoint: 10.10.3.17:9093
+      metricsEndpoint: 10.10.3.17:9103
+      location:
+        zone: zone-03
+        rack: rack-17
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node57-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000039
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node58
+      hostname: node58
+      managementAddress: 10.10.3.18
+      dataAddress: 10.20.3.18
+      dataEndpoint: 10.20.3.18:9091
+      adminEndpoint: 10.10.3.18:9093
+      metricsEndpoint: 10.10.3.18:9103
+      location:
+        zone: zone-03
+        rack: rack-18
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node58-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000003a
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node59
+      hostname: node59
+      managementAddress: 10.10.3.19
+      dataAddress: 10.20.3.19
+      dataEndpoint: 10.20.3.19:9091
+      adminEndpoint: 10.10.3.19:9093
+      metricsEndpoint: 10.10.3.19:9103
+      location:
+        zone: zone-03
+        rack: rack-19
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node59-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000003b
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node60
+      hostname: node60
+      managementAddress: 10.10.3.20
+      dataAddress: 10.20.3.20
+      dataEndpoint: 10.20.3.20:9091
+      adminEndpoint: 10.10.3.20:9093
+      metricsEndpoint: 10.10.3.20:9103
+      location:
+        zone: zone-03
+        rack: rack-20
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node60-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000003c
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node61
+      hostname: node61
+      managementAddress: 10.10.4.1
+      dataAddress: 10.20.4.1
+      dataEndpoint: 10.20.4.1:9091
+      adminEndpoint: 10.10.4.1:9093
+      metricsEndpoint: 10.10.4.1:9103
+      serviceGrpcEndpoint: 10.10.4.1:9090
+      serviceHttpEndpoint: 10.10.4.1:9092
+      serviceMetricsEndpoint: 10.10.4.1:9102
+      location:
+        zone: zone-04
+        rack: rack-01
+      roles: [sbs-data, sbs-service-standby]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node61-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000003d
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node62
+      hostname: node62
+      managementAddress: 10.10.4.2
+      dataAddress: 10.20.4.2
+      dataEndpoint: 10.20.4.2:9091
+      adminEndpoint: 10.10.4.2:9093
+      metricsEndpoint: 10.10.4.2:9103
+      location:
+        zone: zone-04
+        rack: rack-02
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node62-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000003e
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node63
+      hostname: node63
+      managementAddress: 10.10.4.3
+      dataAddress: 10.20.4.3
+      dataEndpoint: 10.20.4.3:9091
+      adminEndpoint: 10.10.4.3:9093
+      metricsEndpoint: 10.10.4.3:9103
+      location:
+        zone: zone-04
+        rack: rack-03
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node63-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000003f
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node64
+      hostname: node64
+      managementAddress: 10.10.4.4
+      dataAddress: 10.20.4.4
+      dataEndpoint: 10.20.4.4:9091
+      adminEndpoint: 10.10.4.4:9093
+      metricsEndpoint: 10.10.4.4:9103
+      location:
+        zone: zone-04
+        rack: rack-04
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node64-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000040
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node65
+      hostname: node65
+      managementAddress: 10.10.4.5
+      dataAddress: 10.20.4.5
+      dataEndpoint: 10.20.4.5:9091
+      adminEndpoint: 10.10.4.5:9093
+      metricsEndpoint: 10.10.4.5:9103
+      location:
+        zone: zone-04
+        rack: rack-05
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node65-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000041
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node66
+      hostname: node66
+      managementAddress: 10.10.4.6
+      dataAddress: 10.20.4.6
+      dataEndpoint: 10.20.4.6:9091
+      adminEndpoint: 10.10.4.6:9093
+      metricsEndpoint: 10.10.4.6:9103
+      location:
+        zone: zone-04
+        rack: rack-06
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node66-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000042
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node67
+      hostname: node67
+      managementAddress: 10.10.4.7
+      dataAddress: 10.20.4.7
+      dataEndpoint: 10.20.4.7:9091
+      adminEndpoint: 10.10.4.7:9093
+      metricsEndpoint: 10.10.4.7:9103
+      location:
+        zone: zone-04
+        rack: rack-07
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node67-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000043
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node68
+      hostname: node68
+      managementAddress: 10.10.4.8
+      dataAddress: 10.20.4.8
+      dataEndpoint: 10.20.4.8:9091
+      adminEndpoint: 10.10.4.8:9093
+      metricsEndpoint: 10.10.4.8:9103
+      location:
+        zone: zone-04
+        rack: rack-08
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node68-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000044
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node69
+      hostname: node69
+      managementAddress: 10.10.4.9
+      dataAddress: 10.20.4.9
+      dataEndpoint: 10.20.4.9:9091
+      adminEndpoint: 10.10.4.9:9093
+      metricsEndpoint: 10.10.4.9:9103
+      location:
+        zone: zone-04
+        rack: rack-09
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node69-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000045
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node70
+      hostname: node70
+      managementAddress: 10.10.4.10
+      dataAddress: 10.20.4.10
+      dataEndpoint: 10.20.4.10:9091
+      adminEndpoint: 10.10.4.10:9093
+      metricsEndpoint: 10.10.4.10:9103
+      location:
+        zone: zone-04
+        rack: rack-10
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node70-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000046
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node71
+      hostname: node71
+      managementAddress: 10.10.4.11
+      dataAddress: 10.20.4.11
+      dataEndpoint: 10.20.4.11:9091
+      adminEndpoint: 10.10.4.11:9093
+      metricsEndpoint: 10.10.4.11:9103
+      location:
+        zone: zone-04
+        rack: rack-11
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node71-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000047
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node72
+      hostname: node72
+      managementAddress: 10.10.4.12
+      dataAddress: 10.20.4.12
+      dataEndpoint: 10.20.4.12:9091
+      adminEndpoint: 10.10.4.12:9093
+      metricsEndpoint: 10.10.4.12:9103
+      location:
+        zone: zone-04
+        rack: rack-12
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node72-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000048
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node73
+      hostname: node73
+      managementAddress: 10.10.4.13
+      dataAddress: 10.20.4.13
+      dataEndpoint: 10.20.4.13:9091
+      adminEndpoint: 10.10.4.13:9093
+      metricsEndpoint: 10.10.4.13:9103
+      location:
+        zone: zone-04
+        rack: rack-13
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node73-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000049
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node74
+      hostname: node74
+      managementAddress: 10.10.4.14
+      dataAddress: 10.20.4.14
+      dataEndpoint: 10.20.4.14:9091
+      adminEndpoint: 10.10.4.14:9093
+      metricsEndpoint: 10.10.4.14:9103
+      location:
+        zone: zone-04
+        rack: rack-14
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node74-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000004a
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node75
+      hostname: node75
+      managementAddress: 10.10.4.15
+      dataAddress: 10.20.4.15
+      dataEndpoint: 10.20.4.15:9091
+      adminEndpoint: 10.10.4.15:9093
+      metricsEndpoint: 10.10.4.15:9103
+      location:
+        zone: zone-04
+        rack: rack-15
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node75-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000004b
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node76
+      hostname: node76
+      managementAddress: 10.10.4.16
+      dataAddress: 10.20.4.16
+      dataEndpoint: 10.20.4.16:9091
+      adminEndpoint: 10.10.4.16:9093
+      metricsEndpoint: 10.10.4.16:9103
+      location:
+        zone: zone-04
+        rack: rack-16
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node76-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000004c
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node77
+      hostname: node77
+      managementAddress: 10.10.4.17
+      dataAddress: 10.20.4.17
+      dataEndpoint: 10.20.4.17:9091
+      adminEndpoint: 10.10.4.17:9093
+      metricsEndpoint: 10.10.4.17:9103
+      location:
+        zone: zone-04
+        rack: rack-17
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node77-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000004d
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node78
+      hostname: node78
+      managementAddress: 10.10.4.18
+      dataAddress: 10.20.4.18
+      dataEndpoint: 10.20.4.18:9091
+      adminEndpoint: 10.10.4.18:9093
+      metricsEndpoint: 10.10.4.18:9103
+      location:
+        zone: zone-04
+        rack: rack-18
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node78-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000004e
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node79
+      hostname: node79
+      managementAddress: 10.10.4.19
+      dataAddress: 10.20.4.19
+      dataEndpoint: 10.20.4.19:9091
+      adminEndpoint: 10.10.4.19:9093
+      metricsEndpoint: 10.10.4.19:9103
+      location:
+        zone: zone-04
+        rack: rack-19
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node79-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000004f
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node80
+      hostname: node80
+      managementAddress: 10.10.4.20
+      dataAddress: 10.20.4.20
+      dataEndpoint: 10.20.4.20:9091
+      adminEndpoint: 10.10.4.20:9093
+      metricsEndpoint: 10.10.4.20:9103
+      location:
+        zone: zone-04
+        rack: rack-20
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node80-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000050
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node81
+      hostname: node81
+      managementAddress: 10.10.5.1
+      dataAddress: 10.20.5.1
+      dataEndpoint: 10.20.5.1:9091
+      adminEndpoint: 10.10.5.1:9093
+      metricsEndpoint: 10.10.5.1:9103
+      serviceGrpcEndpoint: 10.10.5.1:9090
+      serviceHttpEndpoint: 10.10.5.1:9092
+      serviceMetricsEndpoint: 10.10.5.1:9102
+      location:
+        zone: zone-05
+        rack: rack-01
+      roles: [sbs-data, sbs-service-standby]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node81-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000051
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node82
+      hostname: node82
+      managementAddress: 10.10.5.2
+      dataAddress: 10.20.5.2
+      dataEndpoint: 10.20.5.2:9091
+      adminEndpoint: 10.10.5.2:9093
+      metricsEndpoint: 10.10.5.2:9103
+      location:
+        zone: zone-05
+        rack: rack-02
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node82-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000052
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node83
+      hostname: node83
+      managementAddress: 10.10.5.3
+      dataAddress: 10.20.5.3
+      dataEndpoint: 10.20.5.3:9091
+      adminEndpoint: 10.10.5.3:9093
+      metricsEndpoint: 10.10.5.3:9103
+      location:
+        zone: zone-05
+        rack: rack-03
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node83-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000053
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node84
+      hostname: node84
+      managementAddress: 10.10.5.4
+      dataAddress: 10.20.5.4
+      dataEndpoint: 10.20.5.4:9091
+      adminEndpoint: 10.10.5.4:9093
+      metricsEndpoint: 10.10.5.4:9103
+      location:
+        zone: zone-05
+        rack: rack-04
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node84-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000054
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node85
+      hostname: node85
+      managementAddress: 10.10.5.5
+      dataAddress: 10.20.5.5
+      dataEndpoint: 10.20.5.5:9091
+      adminEndpoint: 10.10.5.5:9093
+      metricsEndpoint: 10.10.5.5:9103
+      location:
+        zone: zone-05
+        rack: rack-05
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node85-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000055
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node86
+      hostname: node86
+      managementAddress: 10.10.5.6
+      dataAddress: 10.20.5.6
+      dataEndpoint: 10.20.5.6:9091
+      adminEndpoint: 10.10.5.6:9093
+      metricsEndpoint: 10.10.5.6:9103
+      location:
+        zone: zone-05
+        rack: rack-06
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node86-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000056
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node87
+      hostname: node87
+      managementAddress: 10.10.5.7
+      dataAddress: 10.20.5.7
+      dataEndpoint: 10.20.5.7:9091
+      adminEndpoint: 10.10.5.7:9093
+      metricsEndpoint: 10.10.5.7:9103
+      location:
+        zone: zone-05
+        rack: rack-07
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node87-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000057
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node88
+      hostname: node88
+      managementAddress: 10.10.5.8
+      dataAddress: 10.20.5.8
+      dataEndpoint: 10.20.5.8:9091
+      adminEndpoint: 10.10.5.8:9093
+      metricsEndpoint: 10.10.5.8:9103
+      location:
+        zone: zone-05
+        rack: rack-08
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node88-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000058
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node89
+      hostname: node89
+      managementAddress: 10.10.5.9
+      dataAddress: 10.20.5.9
+      dataEndpoint: 10.20.5.9:9091
+      adminEndpoint: 10.10.5.9:9093
+      metricsEndpoint: 10.10.5.9:9103
+      location:
+        zone: zone-05
+        rack: rack-09
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node89-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000059
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node90
+      hostname: node90
+      managementAddress: 10.10.5.10
+      dataAddress: 10.20.5.10
+      dataEndpoint: 10.20.5.10:9091
+      adminEndpoint: 10.10.5.10:9093
+      metricsEndpoint: 10.10.5.10:9103
+      location:
+        zone: zone-05
+        rack: rack-10
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node90-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000005a
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node91
+      hostname: node91
+      managementAddress: 10.10.5.11
+      dataAddress: 10.20.5.11
+      dataEndpoint: 10.20.5.11:9091
+      adminEndpoint: 10.10.5.11:9093
+      metricsEndpoint: 10.10.5.11:9103
+      location:
+        zone: zone-05
+        rack: rack-11
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node91-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000005b
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node92
+      hostname: node92
+      managementAddress: 10.10.5.12
+      dataAddress: 10.20.5.12
+      dataEndpoint: 10.20.5.12:9091
+      adminEndpoint: 10.10.5.12:9093
+      metricsEndpoint: 10.10.5.12:9103
+      location:
+        zone: zone-05
+        rack: rack-12
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node92-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000005c
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node93
+      hostname: node93
+      managementAddress: 10.10.5.13
+      dataAddress: 10.20.5.13
+      dataEndpoint: 10.20.5.13:9091
+      adminEndpoint: 10.10.5.13:9093
+      metricsEndpoint: 10.10.5.13:9103
+      location:
+        zone: zone-05
+        rack: rack-13
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node93-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000005d
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node94
+      hostname: node94
+      managementAddress: 10.10.5.14
+      dataAddress: 10.20.5.14
+      dataEndpoint: 10.20.5.14:9091
+      adminEndpoint: 10.10.5.14:9093
+      metricsEndpoint: 10.10.5.14:9103
+      location:
+        zone: zone-05
+        rack: rack-14
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node94-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000005e
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node95
+      hostname: node95
+      managementAddress: 10.10.5.15
+      dataAddress: 10.20.5.15
+      dataEndpoint: 10.20.5.15:9091
+      adminEndpoint: 10.10.5.15:9093
+      metricsEndpoint: 10.10.5.15:9103
+      location:
+        zone: zone-05
+        rack: rack-15
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node95-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000005f
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node96
+      hostname: node96
+      managementAddress: 10.10.5.16
+      dataAddress: 10.20.5.16
+      dataEndpoint: 10.20.5.16:9091
+      adminEndpoint: 10.10.5.16:9093
+      metricsEndpoint: 10.10.5.16:9103
+      location:
+        zone: zone-05
+        rack: rack-16
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node96-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000060
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node97
+      hostname: node97
+      managementAddress: 10.10.5.17
+      dataAddress: 10.20.5.17
+      dataEndpoint: 10.20.5.17:9091
+      adminEndpoint: 10.10.5.17:9093
+      metricsEndpoint: 10.10.5.17:9103
+      location:
+        zone: zone-05
+        rack: rack-17
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node97-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000061
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node98
+      hostname: node98
+      managementAddress: 10.10.5.18
+      dataAddress: 10.20.5.18
+      dataEndpoint: 10.20.5.18:9091
+      adminEndpoint: 10.10.5.18:9093
+      metricsEndpoint: 10.10.5.18:9103
+      location:
+        zone: zone-05
+        rack: rack-18
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node98-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000062
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node99
+      hostname: node99
+      managementAddress: 10.10.5.19
+      dataAddress: 10.20.5.19
+      dataEndpoint: 10.20.5.19:9091
+      adminEndpoint: 10.10.5.19:9093
+      metricsEndpoint: 10.10.5.19:9103
+      location:
+        zone: zone-05
+        rack: rack-19
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node99-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000063
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node100
+      hostname: node100
+      managementAddress: 10.10.5.20
+      dataAddress: 10.20.5.20
+      dataEndpoint: 10.20.5.20:9091
+      adminEndpoint: 10.10.5.20:9093
+      metricsEndpoint: 10.10.5.20:9103
+      location:
+        zone: zone-05
+        rack: rack-20
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node100-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000064
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node101
+      hostname: node101
+      managementAddress: 10.10.6.1
+      dataAddress: 10.20.6.1
+      dataEndpoint: 10.20.6.1:9091
+      adminEndpoint: 10.10.6.1:9093
+      metricsEndpoint: 10.10.6.1:9103
+      location:
+        zone: zone-06
+        rack: rack-01
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node101-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000065
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node102
+      hostname: node102
+      managementAddress: 10.10.6.2
+      dataAddress: 10.20.6.2
+      dataEndpoint: 10.20.6.2:9091
+      adminEndpoint: 10.10.6.2:9093
+      metricsEndpoint: 10.10.6.2:9103
+      location:
+        zone: zone-06
+        rack: rack-02
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node102-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000066
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node103
+      hostname: node103
+      managementAddress: 10.10.6.3
+      dataAddress: 10.20.6.3
+      dataEndpoint: 10.20.6.3:9091
+      adminEndpoint: 10.10.6.3:9093
+      metricsEndpoint: 10.10.6.3:9103
+      location:
+        zone: zone-06
+        rack: rack-03
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node103-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000067
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node104
+      hostname: node104
+      managementAddress: 10.10.6.4
+      dataAddress: 10.20.6.4
+      dataEndpoint: 10.20.6.4:9091
+      adminEndpoint: 10.10.6.4:9093
+      metricsEndpoint: 10.10.6.4:9103
+      location:
+        zone: zone-06
+        rack: rack-04
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node104-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000068
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node105
+      hostname: node105
+      managementAddress: 10.10.6.5
+      dataAddress: 10.20.6.5
+      dataEndpoint: 10.20.6.5:9091
+      adminEndpoint: 10.10.6.5:9093
+      metricsEndpoint: 10.10.6.5:9103
+      location:
+        zone: zone-06
+        rack: rack-05
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node105-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000069
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node106
+      hostname: node106
+      managementAddress: 10.10.6.6
+      dataAddress: 10.20.6.6
+      dataEndpoint: 10.20.6.6:9091
+      adminEndpoint: 10.10.6.6:9093
+      metricsEndpoint: 10.10.6.6:9103
+      location:
+        zone: zone-06
+        rack: rack-06
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node106-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000006a
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node107
+      hostname: node107
+      managementAddress: 10.10.6.7
+      dataAddress: 10.20.6.7
+      dataEndpoint: 10.20.6.7:9091
+      adminEndpoint: 10.10.6.7:9093
+      metricsEndpoint: 10.10.6.7:9103
+      location:
+        zone: zone-06
+        rack: rack-07
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node107-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000006b
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node108
+      hostname: node108
+      managementAddress: 10.10.6.8
+      dataAddress: 10.20.6.8
+      dataEndpoint: 10.20.6.8:9091
+      adminEndpoint: 10.10.6.8:9093
+      metricsEndpoint: 10.10.6.8:9103
+      location:
+        zone: zone-06
+        rack: rack-08
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node108-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000006c
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node109
+      hostname: node109
+      managementAddress: 10.10.6.9
+      dataAddress: 10.20.6.9
+      dataEndpoint: 10.20.6.9:9091
+      adminEndpoint: 10.10.6.9:9093
+      metricsEndpoint: 10.10.6.9:9103
+      location:
+        zone: zone-06
+        rack: rack-09
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node109-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000006d
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node110
+      hostname: node110
+      managementAddress: 10.10.6.10
+      dataAddress: 10.20.6.10
+      dataEndpoint: 10.20.6.10:9091
+      adminEndpoint: 10.10.6.10:9093
+      metricsEndpoint: 10.10.6.10:9103
+      location:
+        zone: zone-06
+        rack: rack-10
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node110-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000006e
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node111
+      hostname: node111
+      managementAddress: 10.10.6.11
+      dataAddress: 10.20.6.11
+      dataEndpoint: 10.20.6.11:9091
+      adminEndpoint: 10.10.6.11:9093
+      metricsEndpoint: 10.10.6.11:9103
+      location:
+        zone: zone-06
+        rack: rack-11
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node111-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000006f
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node112
+      hostname: node112
+      managementAddress: 10.10.6.12
+      dataAddress: 10.20.6.12
+      dataEndpoint: 10.20.6.12:9091
+      adminEndpoint: 10.10.6.12:9093
+      metricsEndpoint: 10.10.6.12:9103
+      location:
+        zone: zone-06
+        rack: rack-12
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node112-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000070
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node113
+      hostname: node113
+      managementAddress: 10.10.6.13
+      dataAddress: 10.20.6.13
+      dataEndpoint: 10.20.6.13:9091
+      adminEndpoint: 10.10.6.13:9093
+      metricsEndpoint: 10.10.6.13:9103
+      location:
+        zone: zone-06
+        rack: rack-13
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node113-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000071
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node114
+      hostname: node114
+      managementAddress: 10.10.6.14
+      dataAddress: 10.20.6.14
+      dataEndpoint: 10.20.6.14:9091
+      adminEndpoint: 10.10.6.14:9093
+      metricsEndpoint: 10.10.6.14:9103
+      location:
+        zone: zone-06
+        rack: rack-14
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node114-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000072
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node115
+      hostname: node115
+      managementAddress: 10.10.6.15
+      dataAddress: 10.20.6.15
+      dataEndpoint: 10.20.6.15:9091
+      adminEndpoint: 10.10.6.15:9093
+      metricsEndpoint: 10.10.6.15:9103
+      location:
+        zone: zone-06
+        rack: rack-15
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node115-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000073
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node116
+      hostname: node116
+      managementAddress: 10.10.6.16
+      dataAddress: 10.20.6.16
+      dataEndpoint: 10.20.6.16:9091
+      adminEndpoint: 10.10.6.16:9093
+      metricsEndpoint: 10.10.6.16:9103
+      location:
+        zone: zone-06
+        rack: rack-16
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node116-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000074
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node117
+      hostname: node117
+      managementAddress: 10.10.6.17
+      dataAddress: 10.20.6.17
+      dataEndpoint: 10.20.6.17:9091
+      adminEndpoint: 10.10.6.17:9093
+      metricsEndpoint: 10.10.6.17:9103
+      location:
+        zone: zone-06
+        rack: rack-17
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node117-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000075
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node118
+      hostname: node118
+      managementAddress: 10.10.6.18
+      dataAddress: 10.20.6.18
+      dataEndpoint: 10.20.6.18:9091
+      adminEndpoint: 10.10.6.18:9093
+      metricsEndpoint: 10.10.6.18:9103
+      location:
+        zone: zone-06
+        rack: rack-18
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node118-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000076
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node119
+      hostname: node119
+      managementAddress: 10.10.6.19
+      dataAddress: 10.20.6.19
+      dataEndpoint: 10.20.6.19:9091
+      adminEndpoint: 10.10.6.19:9093
+      metricsEndpoint: 10.10.6.19:9103
+      location:
+        zone: zone-06
+        rack: rack-19
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node119-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000077
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node120
+      hostname: node120
+      managementAddress: 10.10.6.20
+      dataAddress: 10.20.6.20
+      dataEndpoint: 10.20.6.20:9091
+      adminEndpoint: 10.10.6.20:9093
+      metricsEndpoint: 10.10.6.20:9103
+      location:
+        zone: zone-06
+        rack: rack-20
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node120-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000078
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node121
+      hostname: node121
+      managementAddress: 10.10.7.1
+      dataAddress: 10.20.7.1
+      dataEndpoint: 10.20.7.1:9091
+      adminEndpoint: 10.10.7.1:9093
+      metricsEndpoint: 10.10.7.1:9103
+      location:
+        zone: zone-07
+        rack: rack-01
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node121-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000079
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node122
+      hostname: node122
+      managementAddress: 10.10.7.2
+      dataAddress: 10.20.7.2
+      dataEndpoint: 10.20.7.2:9091
+      adminEndpoint: 10.10.7.2:9093
+      metricsEndpoint: 10.10.7.2:9103
+      location:
+        zone: zone-07
+        rack: rack-02
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node122-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000007a
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node123
+      hostname: node123
+      managementAddress: 10.10.7.3
+      dataAddress: 10.20.7.3
+      dataEndpoint: 10.20.7.3:9091
+      adminEndpoint: 10.10.7.3:9093
+      metricsEndpoint: 10.10.7.3:9103
+      location:
+        zone: zone-07
+        rack: rack-03
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node123-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000007b
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node124
+      hostname: node124
+      managementAddress: 10.10.7.4
+      dataAddress: 10.20.7.4
+      dataEndpoint: 10.20.7.4:9091
+      adminEndpoint: 10.10.7.4:9093
+      metricsEndpoint: 10.10.7.4:9103
+      location:
+        zone: zone-07
+        rack: rack-04
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node124-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000007c
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node125
+      hostname: node125
+      managementAddress: 10.10.7.5
+      dataAddress: 10.20.7.5
+      dataEndpoint: 10.20.7.5:9091
+      adminEndpoint: 10.10.7.5:9093
+      metricsEndpoint: 10.10.7.5:9103
+      location:
+        zone: zone-07
+        rack: rack-05
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node125-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000007d
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node126
+      hostname: node126
+      managementAddress: 10.10.7.6
+      dataAddress: 10.20.7.6
+      dataEndpoint: 10.20.7.6:9091
+      adminEndpoint: 10.10.7.6:9093
+      metricsEndpoint: 10.10.7.6:9103
+      location:
+        zone: zone-07
+        rack: rack-06
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node126-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000007e
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node127
+      hostname: node127
+      managementAddress: 10.10.7.7
+      dataAddress: 10.20.7.7
+      dataEndpoint: 10.20.7.7:9091
+      adminEndpoint: 10.10.7.7:9093
+      metricsEndpoint: 10.10.7.7:9103
+      location:
+        zone: zone-07
+        rack: rack-07
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node127-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000007f
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node128
+      hostname: node128
+      managementAddress: 10.10.7.8
+      dataAddress: 10.20.7.8
+      dataEndpoint: 10.20.7.8:9091
+      adminEndpoint: 10.10.7.8:9093
+      metricsEndpoint: 10.10.7.8:9103
+      location:
+        zone: zone-07
+        rack: rack-08
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node128-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000080
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node129
+      hostname: node129
+      managementAddress: 10.10.7.9
+      dataAddress: 10.20.7.9
+      dataEndpoint: 10.20.7.9:9091
+      adminEndpoint: 10.10.7.9:9093
+      metricsEndpoint: 10.10.7.9:9103
+      location:
+        zone: zone-07
+        rack: rack-09
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node129-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000081
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node130
+      hostname: node130
+      managementAddress: 10.10.7.10
+      dataAddress: 10.20.7.10
+      dataEndpoint: 10.20.7.10:9091
+      adminEndpoint: 10.10.7.10:9093
+      metricsEndpoint: 10.10.7.10:9103
+      location:
+        zone: zone-07
+        rack: rack-10
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node130-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000082
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node131
+      hostname: node131
+      managementAddress: 10.10.7.11
+      dataAddress: 10.20.7.11
+      dataEndpoint: 10.20.7.11:9091
+      adminEndpoint: 10.10.7.11:9093
+      metricsEndpoint: 10.10.7.11:9103
+      location:
+        zone: zone-07
+        rack: rack-11
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node131-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000083
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node132
+      hostname: node132
+      managementAddress: 10.10.7.12
+      dataAddress: 10.20.7.12
+      dataEndpoint: 10.20.7.12:9091
+      adminEndpoint: 10.10.7.12:9093
+      metricsEndpoint: 10.10.7.12:9103
+      location:
+        zone: zone-07
+        rack: rack-12
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node132-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000084
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node133
+      hostname: node133
+      managementAddress: 10.10.7.13
+      dataAddress: 10.20.7.13
+      dataEndpoint: 10.20.7.13:9091
+      adminEndpoint: 10.10.7.13:9093
+      metricsEndpoint: 10.10.7.13:9103
+      location:
+        zone: zone-07
+        rack: rack-13
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node133-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000085
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node134
+      hostname: node134
+      managementAddress: 10.10.7.14
+      dataAddress: 10.20.7.14
+      dataEndpoint: 10.20.7.14:9091
+      adminEndpoint: 10.10.7.14:9093
+      metricsEndpoint: 10.10.7.14:9103
+      location:
+        zone: zone-07
+        rack: rack-14
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node134-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000086
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node135
+      hostname: node135
+      managementAddress: 10.10.7.15
+      dataAddress: 10.20.7.15
+      dataEndpoint: 10.20.7.15:9091
+      adminEndpoint: 10.10.7.15:9093
+      metricsEndpoint: 10.10.7.15:9103
+      location:
+        zone: zone-07
+        rack: rack-15
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node135-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000087
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node136
+      hostname: node136
+      managementAddress: 10.10.7.16
+      dataAddress: 10.20.7.16
+      dataEndpoint: 10.20.7.16:9091
+      adminEndpoint: 10.10.7.16:9093
+      metricsEndpoint: 10.10.7.16:9103
+      location:
+        zone: zone-07
+        rack: rack-16
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node136-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000088
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node137
+      hostname: node137
+      managementAddress: 10.10.7.17
+      dataAddress: 10.20.7.17
+      dataEndpoint: 10.20.7.17:9091
+      adminEndpoint: 10.10.7.17:9093
+      metricsEndpoint: 10.10.7.17:9103
+      location:
+        zone: zone-07
+        rack: rack-17
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node137-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000089
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node138
+      hostname: node138
+      managementAddress: 10.10.7.18
+      dataAddress: 10.20.7.18
+      dataEndpoint: 10.20.7.18:9091
+      adminEndpoint: 10.10.7.18:9093
+      metricsEndpoint: 10.10.7.18:9103
+      location:
+        zone: zone-07
+        rack: rack-18
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node138-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000008a
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node139
+      hostname: node139
+      managementAddress: 10.10.7.19
+      dataAddress: 10.20.7.19
+      dataEndpoint: 10.20.7.19:9091
+      adminEndpoint: 10.10.7.19:9093
+      metricsEndpoint: 10.10.7.19:9103
+      location:
+        zone: zone-07
+        rack: rack-19
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node139-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000008b
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node140
+      hostname: node140
+      managementAddress: 10.10.7.20
+      dataAddress: 10.20.7.20
+      dataEndpoint: 10.20.7.20:9091
+      adminEndpoint: 10.10.7.20:9093
+      metricsEndpoint: 10.10.7.20:9103
+      location:
+        zone: zone-07
+        rack: rack-20
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node140-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000008c
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node141
+      hostname: node141
+      managementAddress: 10.10.8.1
+      dataAddress: 10.20.8.1
+      dataEndpoint: 10.20.8.1:9091
+      adminEndpoint: 10.10.8.1:9093
+      metricsEndpoint: 10.10.8.1:9103
+      location:
+        zone: zone-08
+        rack: rack-01
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node141-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000008d
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node142
+      hostname: node142
+      managementAddress: 10.10.8.2
+      dataAddress: 10.20.8.2
+      dataEndpoint: 10.20.8.2:9091
+      adminEndpoint: 10.10.8.2:9093
+      metricsEndpoint: 10.10.8.2:9103
+      location:
+        zone: zone-08
+        rack: rack-02
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node142-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000008e
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node143
+      hostname: node143
+      managementAddress: 10.10.8.3
+      dataAddress: 10.20.8.3
+      dataEndpoint: 10.20.8.3:9091
+      adminEndpoint: 10.10.8.3:9093
+      metricsEndpoint: 10.10.8.3:9103
+      location:
+        zone: zone-08
+        rack: rack-03
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node143-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000008f
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node144
+      hostname: node144
+      managementAddress: 10.10.8.4
+      dataAddress: 10.20.8.4
+      dataEndpoint: 10.20.8.4:9091
+      adminEndpoint: 10.10.8.4:9093
+      metricsEndpoint: 10.10.8.4:9103
+      location:
+        zone: zone-08
+        rack: rack-04
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node144-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000090
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node145
+      hostname: node145
+      managementAddress: 10.10.8.5
+      dataAddress: 10.20.8.5
+      dataEndpoint: 10.20.8.5:9091
+      adminEndpoint: 10.10.8.5:9093
+      metricsEndpoint: 10.10.8.5:9103
+      location:
+        zone: zone-08
+        rack: rack-05
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node145-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000091
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node146
+      hostname: node146
+      managementAddress: 10.10.8.6
+      dataAddress: 10.20.8.6
+      dataEndpoint: 10.20.8.6:9091
+      adminEndpoint: 10.10.8.6:9093
+      metricsEndpoint: 10.10.8.6:9103
+      location:
+        zone: zone-08
+        rack: rack-06
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node146-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000092
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node147
+      hostname: node147
+      managementAddress: 10.10.8.7
+      dataAddress: 10.20.8.7
+      dataEndpoint: 10.20.8.7:9091
+      adminEndpoint: 10.10.8.7:9093
+      metricsEndpoint: 10.10.8.7:9103
+      location:
+        zone: zone-08
+        rack: rack-07
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node147-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000093
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node148
+      hostname: node148
+      managementAddress: 10.10.8.8
+      dataAddress: 10.20.8.8
+      dataEndpoint: 10.20.8.8:9091
+      adminEndpoint: 10.10.8.8:9093
+      metricsEndpoint: 10.10.8.8:9103
+      location:
+        zone: zone-08
+        rack: rack-08
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node148-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000094
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node149
+      hostname: node149
+      managementAddress: 10.10.8.9
+      dataAddress: 10.20.8.9
+      dataEndpoint: 10.20.8.9:9091
+      adminEndpoint: 10.10.8.9:9093
+      metricsEndpoint: 10.10.8.9:9103
+      location:
+        zone: zone-08
+        rack: rack-09
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node149-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000095
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node150
+      hostname: node150
+      managementAddress: 10.10.8.10
+      dataAddress: 10.20.8.10
+      dataEndpoint: 10.20.8.10:9091
+      adminEndpoint: 10.10.8.10:9093
+      metricsEndpoint: 10.10.8.10:9103
+      location:
+        zone: zone-08
+        rack: rack-10
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node150-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000096
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node151
+      hostname: node151
+      managementAddress: 10.10.8.11
+      dataAddress: 10.20.8.11
+      dataEndpoint: 10.20.8.11:9091
+      adminEndpoint: 10.10.8.11:9093
+      metricsEndpoint: 10.10.8.11:9103
+      location:
+        zone: zone-08
+        rack: rack-11
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node151-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000097
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node152
+      hostname: node152
+      managementAddress: 10.10.8.12
+      dataAddress: 10.20.8.12
+      dataEndpoint: 10.20.8.12:9091
+      adminEndpoint: 10.10.8.12:9093
+      metricsEndpoint: 10.10.8.12:9103
+      location:
+        zone: zone-08
+        rack: rack-12
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node152-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000098
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node153
+      hostname: node153
+      managementAddress: 10.10.8.13
+      dataAddress: 10.20.8.13
+      dataEndpoint: 10.20.8.13:9091
+      adminEndpoint: 10.10.8.13:9093
+      metricsEndpoint: 10.10.8.13:9103
+      location:
+        zone: zone-08
+        rack: rack-13
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node153-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-000000000099
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node154
+      hostname: node154
+      managementAddress: 10.10.8.14
+      dataAddress: 10.20.8.14
+      dataEndpoint: 10.20.8.14:9091
+      adminEndpoint: 10.10.8.14:9093
+      metricsEndpoint: 10.10.8.14:9103
+      location:
+        zone: zone-08
+        rack: rack-14
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node154-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000009a
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node155
+      hostname: node155
+      managementAddress: 10.10.8.15
+      dataAddress: 10.20.8.15
+      dataEndpoint: 10.20.8.15:9091
+      adminEndpoint: 10.10.8.15:9093
+      metricsEndpoint: 10.10.8.15:9103
+      location:
+        zone: zone-08
+        rack: rack-15
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node155-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000009b
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node156
+      hostname: node156
+      managementAddress: 10.10.8.16
+      dataAddress: 10.20.8.16
+      dataEndpoint: 10.20.8.16:9091
+      adminEndpoint: 10.10.8.16:9093
+      metricsEndpoint: 10.10.8.16:9103
+      location:
+        zone: zone-08
+        rack: rack-16
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node156-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000009c
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node157
+      hostname: node157
+      managementAddress: 10.10.8.17
+      dataAddress: 10.20.8.17
+      dataEndpoint: 10.20.8.17:9091
+      adminEndpoint: 10.10.8.17:9093
+      metricsEndpoint: 10.10.8.17:9103
+      location:
+        zone: zone-08
+        rack: rack-17
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node157-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000009d
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node158
+      hostname: node158
+      managementAddress: 10.10.8.18
+      dataAddress: 10.20.8.18
+      dataEndpoint: 10.20.8.18:9091
+      adminEndpoint: 10.10.8.18:9093
+      metricsEndpoint: 10.10.8.18:9103
+      location:
+        zone: zone-08
+        rack: rack-18
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node158-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000009e
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node159
+      hostname: node159
+      managementAddress: 10.10.8.19
+      dataAddress: 10.20.8.19
+      dataEndpoint: 10.20.8.19:9091
+      adminEndpoint: 10.10.8.19:9093
+      metricsEndpoint: 10.10.8.19:9103
+      location:
+        zone: zone-08
+        rack: rack-19
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node159-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-00000000009f
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false
+    - id: node160
+      hostname: node160
+      managementAddress: 10.10.8.20
+      dataAddress: 10.20.8.20
+      dataEndpoint: 10.20.8.20:9091
+      adminEndpoint: 10.10.8.20:9093
+      metricsEndpoint: 10.10.8.20:9103
+      location:
+        zone: zone-08
+        rack: rack-20
+      roles: [sbs-data]
+      storageClaims:
+        - id: payload-primary
+          deviceById: /dev/disk/by-id/namrbd-node160-payload-primary
+          filesystemUUID: 00000000-0000-4000-8000-0000000000a0
+          mountPath: /srv/namrbd/payload-primary
+          minimumFreeBytes: 107374182400
+          reservedBytes: 10737418240
+          shards: 8
+          weight: 100
+          destructiveProvisioning: false

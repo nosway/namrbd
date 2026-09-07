@@ -20,6 +20,18 @@ func NewServer(next service.SBSClient) *Server {
 	return &Server{next: next}
 }
 
+func (s *Server) MaterializeVolume(ctx context.Context, req *sbsv1.MaterializeVolumeRequest) (*sbsv1.MaterializeVolumeResponse, error) {
+	next, ok := s.next.(service.VolumeMaterializerSBSClient)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, service.ErrNotSupported.Error())
+	}
+	resp, err := next.MaterializeVolume(ctx, fromProtoMaterializeVolumeRequest(req))
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+	return toProtoMaterializeVolumeResponse(resp), nil
+}
+
 func (s *Server) OpenVolume(ctx context.Context, req *sbsv1.OpenVolumeRequest) (*sbsv1.OpenVolumeResponse, error) {
 	resp, err := s.next.OpenVolume(ctx, fromProtoOpenVolumeRequest(req))
 	if err != nil {
@@ -165,6 +177,32 @@ func (s *Server) ApplyISCSIWriterFence(ctx context.Context, req *sbsv1.ApplyISCS
 		Status: resp.Status, Applied: resp.Applied, Fence: toProtoISCSIWriterFence(resp.Fence),
 		StaleWriterRejectedCount: resp.StaleWriterRejectedCount,
 	}, nil
+}
+
+func (s *Server) ApplyCompressionPolicy(ctx context.Context, req *sbsv1.ApplyCompressionPolicyRequest) (*sbsv1.ApplyCompressionPolicyResponse, error) {
+	next, ok := s.next.(service.CompressionPolicySBSClient)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, service.ErrNotSupported.Error())
+	}
+	resp, err := next.ApplyCompressionPolicy(ctx, &service.ApplyCompressionPolicyRequest{Policy: fromProtoCompressionPolicy(req.GetPolicy())})
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+	return &sbsv1.ApplyCompressionPolicyResponse{
+		Status: resp.Status, Applied: resp.Applied, Runtime: toProtoCompressionRuntimeStatus(resp.Runtime),
+	}, nil
+}
+
+func (s *Server) GetCompressionRuntimeStatus(ctx context.Context, req *sbsv1.GetCompressionRuntimeStatusRequest) (*sbsv1.GetCompressionRuntimeStatusResponse, error) {
+	next, ok := s.next.(service.CompressionPolicySBSClient)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, service.ErrNotSupported.Error())
+	}
+	resp, err := next.GetCompressionRuntimeStatus(ctx, &service.GetCompressionRuntimeStatusRequest{VolumeID: req.GetVolumeId()})
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+	return &sbsv1.GetCompressionRuntimeStatusResponse{Runtime: toProtoCompressionRuntimeStatus(resp.Runtime)}, nil
 }
 
 func toGRPCError(err error) error {

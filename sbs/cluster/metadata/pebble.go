@@ -43,6 +43,10 @@ func (kv *PebbleKV) Get(_ context.Context, key string) ([]byte, bool, error) {
 	return append([]byte(nil), raw...), true, nil
 }
 
+func (kv *PebbleKV) BatchGet(ctx context.Context, keys []string) (map[string][]byte, error) {
+	return pebbleBatchGet(ctx, kv, keys)
+}
+
 func (kv *PebbleKV) Set(_ context.Context, key string, value []byte) error {
 	return kv.db.Set([]byte(key), append([]byte(nil), value...), pebble.Sync)
 }
@@ -69,6 +73,12 @@ func (kv *PebbleKV) RunInTransaction(ctx context.Context, fn func(tx kvReadWrite
 	return batch.Commit(pebble.Sync)
 }
 
+func (kv *PebbleKV) RunInReadSnapshot(ctx context.Context, fn func(snapshot kvReadSnapshot) error) error {
+	snapshot := kv.db.NewSnapshot()
+	defer snapshot.Close()
+	return fn(&pebbleReadSnapshot{snapshot: snapshot})
+}
+
 func (kv *PebbleKV) List(_ context.Context, prefix, cursor string, limit int) ([]string, string, error) {
 	iter, err := kv.db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte(prefix),
@@ -78,7 +88,10 @@ func (kv *PebbleKV) List(_ context.Context, prefix, cursor string, limit int) ([
 		return nil, "", err
 	}
 	defer iter.Close()
+	return listPebbleKeys(iter, cursor, limit)
+}
 
+func listPebbleKeys(iter *pebble.Iterator, cursor string, limit int) ([]string, string, error) {
 	keys := make([]string, 0)
 	nextCursor := ""
 	started := cursor == ""
@@ -106,6 +119,56 @@ type pebbleTxn struct {
 	db     *pebble.DB
 	batch  *pebble.Batch
 	writes map[string][]byte
+}
+
+type pebbleReadSnapshot struct {
+	snapshot *pebble.Snapshot
+}
+
+func (snapshot *pebbleReadSnapshot) Get(_ context.Context, key string) ([]byte, bool, error) {
+	raw, closer, err := snapshot.snapshot.Get([]byte(key))
+	if err == pebble.ErrNotFound {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	defer closer.Close()
+	return append([]byte(nil), raw...), true, nil
+}
+
+func (snapshot *pebbleReadSnapshot) BatchGet(ctx context.Context, keys []string) (map[string][]byte, error) {
+	return pebbleBatchGet(ctx, snapshot, keys)
+}
+
+func (snapshot *pebbleReadSnapshot) List(_ context.Context, prefix, cursor string, limit int) ([]string, string, error) {
+	iter, err := snapshot.snapshot.NewIter(&pebble.IterOptions{
+		LowerBound: []byte(prefix),
+		UpperBound: []byte(prefix + "\xff"),
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	defer iter.Close()
+	return listPebbleKeys(iter, cursor, limit)
+}
+
+type pebbleGetter interface {
+	Get(context.Context, string) ([]byte, bool, error)
+}
+
+func pebbleBatchGet(ctx context.Context, getter pebbleGetter, keys []string) (map[string][]byte, error) {
+	values := make(map[string][]byte, len(keys))
+	for _, key := range keys {
+		value, found, err := getter.Get(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			values[key] = value
+		}
+	}
+	return values, nil
 }
 
 func (tx *pebbleTxn) Get(_ context.Context, key string) ([]byte, bool, error) {

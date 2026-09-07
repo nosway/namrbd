@@ -167,6 +167,72 @@ func fromProtoErrorCode(c sbsv1.ErrorCode) service.SBSErrorCode {
 	}
 }
 
+func toProtoMaterializeVolumeRequest(req *service.MaterializeVolumeRequest) *sbsv1.MaterializeVolumeRequest {
+	if req == nil {
+		return nil
+	}
+	return &sbsv1.MaterializeVolumeRequest{
+		VolumeId:                 service.CanonicalVolumeID(uint64(req.Spec.ID)),
+		Name:                     req.Spec.Name,
+		Prefix:                   req.Spec.Prefix,
+		SizeBytes:                req.Spec.SizeBytes,
+		BlockSize:                req.Spec.BlockSize,
+		AllocationChunkSizeBytes: req.Spec.ChunkSizeBytes,
+		AllocationPageBytes:      req.Spec.ExtentPageBytes,
+		Context:                  toProtoRequestContext(req.Context),
+	}
+}
+
+func fromProtoMaterializeVolumeRequest(req *sbsv1.MaterializeVolumeRequest) *service.MaterializeVolumeRequest {
+	if req == nil {
+		return nil
+	}
+	parsedID, _ := service.ParseVolumeID(req.GetVolumeId())
+	return &service.MaterializeVolumeRequest{
+		Spec: service.VolumeSpec{
+			ID:              service.HexVolumeID(parsedID),
+			Name:            req.GetName(),
+			Prefix:          req.GetPrefix(),
+			SizeBytes:       req.GetSizeBytes(),
+			BlockSize:       req.GetBlockSize(),
+			ChunkSizeBytes:  req.GetAllocationChunkSizeBytes(),
+			ExtentPageBytes: req.GetAllocationPageBytes(),
+		},
+		Context: fromProtoRequestContext(req.GetContext()),
+	}
+}
+
+func toProtoMaterializeVolumeResponse(resp *service.MaterializeVolumeResponse) *sbsv1.MaterializeVolumeResponse {
+	if resp == nil {
+		return nil
+	}
+	return &sbsv1.MaterializeVolumeResponse{
+		Status:                   resp.Status,
+		VolumeId:                 service.CanonicalVolumeID(uint64(resp.Spec.ID)),
+		SizeBytes:                resp.Spec.SizeBytes,
+		BlockSize:                resp.Spec.BlockSize,
+		AllocationChunkSizeBytes: resp.Spec.ChunkSizeBytes,
+		AllocationPageBytes:      resp.Spec.ExtentPageBytes,
+	}
+}
+
+func fromProtoMaterializeVolumeResponse(resp *sbsv1.MaterializeVolumeResponse) *service.MaterializeVolumeResponse {
+	if resp == nil {
+		return nil
+	}
+	parsedID, _ := service.ParseVolumeID(resp.GetVolumeId())
+	return &service.MaterializeVolumeResponse{
+		Status: resp.GetStatus(),
+		Spec: service.VolumeSpec{
+			ID:              service.HexVolumeID(parsedID),
+			SizeBytes:       resp.GetSizeBytes(),
+			BlockSize:       resp.GetBlockSize(),
+			ChunkSizeBytes:  resp.GetAllocationChunkSizeBytes(),
+			ExtentPageBytes: resp.GetAllocationPageBytes(),
+		},
+	}
+}
+
 func toProtoISCSIWriterFence(f service.ISCSIWriterFence) *sbsv1.ISCSIWriterFence {
 	return &sbsv1.ISCSIWriterFence{
 		VolumeId: f.VolumeID, ExportId: f.ExportID, ExportLeaseId: f.ExportLeaseID,
@@ -181,6 +247,44 @@ func fromProtoISCSIWriterFence(f *sbsv1.ISCSIWriterFence) service.ISCSIWriterFen
 	return service.ISCSIWriterFence{
 		VolumeID: f.GetVolumeId(), ExportID: f.GetExportId(), ExportLeaseID: f.GetExportLeaseId(),
 		ExportEpoch: f.GetExportEpoch(), ActiveGatewayID: f.GetActiveGatewayId(), RegistryRevision: f.GetRegistryRevision(),
+	}
+}
+
+func toProtoCompressionPolicy(p service.CompressionPolicy) *sbsv1.CompressionPolicy {
+	return &sbsv1.CompressionPolicy{
+		VolumeId: p.VolumeID, PolicyId: p.PolicyID, PolicyRevision: p.PolicyRevision,
+		Codec: p.Codec, Level: p.Level, MinimumInputBytes: p.MinimumInputBytes,
+		ChecksumEnabled: p.ChecksumEnabled, Enabled: p.Enabled,
+	}
+}
+
+func fromProtoCompressionPolicy(p *sbsv1.CompressionPolicy) service.CompressionPolicy {
+	if p == nil {
+		return service.CompressionPolicy{}
+	}
+	return service.CompressionPolicy{
+		VolumeID: p.GetVolumeId(), PolicyID: p.GetPolicyId(), PolicyRevision: p.GetPolicyRevision(),
+		Codec: p.GetCodec(), Level: p.GetLevel(), MinimumInputBytes: p.GetMinimumInputBytes(),
+		ChecksumEnabled: p.GetChecksumEnabled(), Enabled: p.GetEnabled(),
+	}
+}
+
+func toProtoCompressionRuntimeStatus(s service.CompressionRuntimeStatus) *sbsv1.CompressionRuntimeStatus {
+	return &sbsv1.CompressionRuntimeStatus{
+		VolumeId: s.VolumeID, PolicyId: s.PolicyID, PolicyRevision: s.PolicyRevision, Applied: s.Applied,
+		CompressedBytes: s.CompressedBytes, UncompressedBytes: s.UncompressedBytes,
+		LegacyDecodeCount: s.LegacyDecodeCount, ChecksumFailureCount: s.ChecksumFailureCount,
+	}
+}
+
+func fromProtoCompressionRuntimeStatus(s *sbsv1.CompressionRuntimeStatus) service.CompressionRuntimeStatus {
+	if s == nil {
+		return service.CompressionRuntimeStatus{}
+	}
+	return service.CompressionRuntimeStatus{
+		VolumeID: s.GetVolumeId(), PolicyID: s.GetPolicyId(), PolicyRevision: s.GetPolicyRevision(), Applied: s.GetApplied(),
+		CompressedBytes: s.GetCompressedBytes(), UncompressedBytes: s.GetUncompressedBytes(),
+		LegacyDecodeCount: s.GetLegacyDecodeCount(), ChecksumFailureCount: s.GetChecksumFailureCount(),
 	}
 }
 

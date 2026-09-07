@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -117,6 +118,54 @@ func TestClientCreateOpenWriteReadRestart(t *testing.T) {
 	}
 	if writeResp2.CommitID != writeResp.CommitID || writeResp2.VolumeRevision != writeResp.VolumeRevision {
 		t.Fatalf("expected same write result after restart: before=%+v after=%+v", writeResp, writeResp2)
+	}
+}
+
+func TestClientMaterializeVolumeIsIdempotentAndRejectsImmutableMismatch(t *testing.T) {
+	client, err := Open(Config{Path: filepath.Join(t.TempDir(), "pebble")})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer client.Close()
+
+	req := &service.MaterializeVolumeRequest{
+		Spec: service.VolumeSpec{
+			ID:              service.HexVolumeID(0x00a1b2c3),
+			Name:            "sbs-00a1b2c3",
+			Prefix:          "sbs-00a1b2c3",
+			SizeBytes:       1 << 20,
+			BlockSize:       4096,
+			ChunkSizeBytes:  65536,
+			ExtentPageBytes: 4 << 20,
+		},
+		Context: service.SBSRequestContext{RequestID: "materialize-1", GatewayID: "gw-a"},
+	}
+	first, err := client.MaterializeVolume(context.Background(), req)
+	if err != nil {
+		t.Fatalf("MaterializeVolume first: %v", err)
+	}
+	second, err := client.MaterializeVolume(context.Background(), req)
+	if err != nil {
+		t.Fatalf("MaterializeVolume replay: %v", err)
+	}
+	if first.Spec != second.Spec || first.Status != "ok" || second.Status != "ok" {
+		t.Fatalf("materialize replay changed response: first=%+v second=%+v", first, second)
+	}
+
+	expanded := *req
+	expanded.Spec = req.Spec
+	expanded.Spec.SizeBytes += 4096
+	if _, err := client.MaterializeVolume(context.Background(), &expanded); err != nil {
+		t.Fatalf("MaterializeVolume expansion: %v", err)
+	}
+
+	changed := expanded
+	changed.Spec = expanded.Spec
+	changed.Spec.SizeBytes = req.Spec.SizeBytes
+	_, err = client.MaterializeVolume(context.Background(), &changed)
+	var sbsErr *service.SBSError
+	if !errors.As(err, &sbsErr) || sbsErr.Code != service.SBSErrorCodeBadRequest || !strings.Contains(sbsErr.Message, service.ErrVolumeGeometryChange.Error()) {
+		t.Fatalf("geometry mismatch err=%v want bad_request wrapping ErrVolumeGeometryChange", err)
 	}
 }
 
@@ -893,6 +942,121 @@ func TestClientSweepChunkGarbageHonorsProtectedRefs(t *testing.T) {
 		t.Fatalf("Get deleted chunk err=%v", err)
 	} else if found {
 		t.Fatalf("expected unprotected chunk to be deleted")
+	}
+}
+
+func TestClientInspectPhysicalChunksUsesExactPointReadsWithoutMutation(t *testing.T) {
+	client, err := Open(Config{Path: filepath.Join(t.TempDir(), "physical-inspect")})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer client.Close()
+	spec, err := client.CreateVolume(context.Background(), service.VolumeSpec{
+		ID: service.HexVolumeID(123), Name: "physical-inspect", SizeBytes: 64, BlockSize: 4, ChunkSizeBytes: 16, ExtentPageBytes: 32,
+	})
+	if err != nil {
+		t.Fatalf("CreateVolume: %v", err)
+	}
+	key := store.BuildChunkKey(spec.Prefix, 9)
+	if err := client.objects.Put(context.Background(), key, make([]byte, 16)); err != nil {
+		t.Fatalf("Put physical chunk: %v", err)
+	}
+
+	result, err := client.InspectPhysicalChunks(context.Background(), service.CanonicalVolumeID(uint64(spec.ID)), []service.PhysicalChunkRef{{ChunkID: 10}, {ChunkID: 9}, {ChunkID: 9}})
+	if err != nil {
+		t.Fatalf("InspectPhysicalChunks: %v", err)
+	}
+	if result.RequestedCount != 2 || result.ObjectGetCount != 2 || result.FoundCount != 1 || result.MissingCount != 1 || !reflect.DeepEqual(result.FoundRefs, []service.PhysicalChunkRef{{ChunkID: 9}}) || !reflect.DeepEqual(result.MissingRefs, []service.PhysicalChunkRef{{ChunkID: 10}}) {
+		t.Fatalf("inspection result=%+v", result)
+	}
+	if _, found, err := client.objects.Get(context.Background(), key); err != nil || !found {
+		t.Fatalf("physical chunk changed by inspection found=%v err=%v", found, err)
+	}
+	if _, err := client.InspectPhysicalChunks(context.Background(), service.CanonicalVolumeID(uint64(spec.ID)), []service.PhysicalChunkRef{{StoreID: "unexpected", ChunkID: 9}}); err == nil {
+		t.Fatalf("store-qualified physical ref was accepted")
+	}
+}
+
+func TestClientDeletePhysicalChunksRequiresExactPresentBatch(t *testing.T) {
+	client, err := Open(Config{Path: filepath.Join(t.TempDir(), "physical-delete")})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer client.Close()
+	spec, err := client.CreateVolume(context.Background(), service.VolumeSpec{
+		ID: service.HexVolumeID(123), Name: "physical-delete", SizeBytes: 64, BlockSize: 4, ChunkSizeBytes: 16, ExtentPageBytes: 32,
+	})
+	if err != nil {
+		t.Fatalf("CreateVolume: %v", err)
+	}
+	for _, chunkID := range []uint64{9, 10, 11} {
+		if err := client.objects.Put(context.Background(), store.BuildChunkKey(spec.Prefix, chunkID), make([]byte, 16)); err != nil {
+			t.Fatalf("Put physical chunk %d: %v", chunkID, err)
+		}
+	}
+
+	result, err := client.DeletePhysicalChunks(context.Background(), service.CanonicalVolumeID(uint64(spec.ID)), []service.PhysicalChunkRef{{ChunkID: 9}, {ChunkID: 12}})
+	if !errors.Is(err, ErrPhysicalChunkDeletePrecondition) || result.ObjectGetCount != 2 || result.FoundCount != 1 || result.MissingCount != 1 || result.DeleteAttemptCount != 0 || result.PayloadStorageMutationCount != 0 {
+		t.Fatalf("precondition result=%+v err=%v", result, err)
+	}
+	if _, found, getErr := client.objects.Get(context.Background(), store.BuildChunkKey(spec.Prefix, 9)); getErr != nil || !found {
+		t.Fatalf("precondition failure mutated chunk 9 found=%v err=%v", found, getErr)
+	}
+	for _, invalid := range [][]service.PhysicalChunkRef{
+		{{ChunkID: 10}, {ChunkID: 9}},
+		{{ChunkID: 9}, {ChunkID: 9}},
+		{{StoreID: "unexpected", ChunkID: 9}},
+	} {
+		if _, err := client.DeletePhysicalChunks(context.Background(), service.CanonicalVolumeID(uint64(spec.ID)), invalid); err == nil {
+			t.Fatalf("invalid exact batch was accepted: %+v", invalid)
+		}
+	}
+
+	result, err = client.DeletePhysicalChunks(context.Background(), service.CanonicalVolumeID(uint64(spec.ID)), []service.PhysicalChunkRef{{ChunkID: 9}, {ChunkID: 10}})
+	if err != nil {
+		t.Fatalf("DeletePhysicalChunks: %v", err)
+	}
+	if result.RequestedCount != 2 || result.ObjectGetCount != 2 || result.FoundCount != 2 || result.MissingCount != 0 || result.DeleteAttemptCount != 2 || result.DeletedCount != 2 || result.PayloadStorageMutationCount != 2 || !reflect.DeepEqual(result.DeletedRefs, []service.PhysicalChunkRef{{ChunkID: 9}, {ChunkID: 10}}) {
+		t.Fatalf("delete result=%+v", result)
+	}
+	for _, chunkID := range []uint64{9, 10} {
+		if _, found, getErr := client.objects.Get(context.Background(), store.BuildChunkKey(spec.Prefix, chunkID)); getErr != nil || found {
+			t.Fatalf("deleted chunk %d found=%v err=%v", chunkID, found, getErr)
+		}
+	}
+	if _, found, getErr := client.objects.Get(context.Background(), store.BuildChunkKey(spec.Prefix, 11)); getErr != nil || !found {
+		t.Fatalf("non-candidate chunk 11 changed found=%v err=%v", found, getErr)
+	}
+}
+
+func TestClientInspectChunkGarbageDoesNotDelete(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "pebble")
+	client, err := Open(Config{Path: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	spec, err := client.CreateVolume(context.Background(), service.VolumeSpec{
+		ID: 101, Name: "vol-a", Prefix: "vol-a", SizeBytes: 4096 * 8, BlockSize: 4096,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.objects.Put(context.Background(), store.BuildChunkKey(spec.Prefix, 1), []byte("garbage")); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.meta.PutChunkGarbage(context.Background(), service.AllocationChunkGarbageRecord{VolumeID: spec.ID, ChunkID: 1}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.InspectChunkGarbageCandidates(context.Background(), service.CanonicalVolumeID(uint64(spec.ID)), 16, []service.PhysicalChunkRef{{ChunkID: 1}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.InspectionOnly || result.ScannedCount != 1 || result.CandidateCount != 1 || result.DeletableCount != 1 || result.DeletedCount != 0 {
+		t.Fatalf("inspection result=%+v", result)
+	}
+	if _, found, err := client.objects.Get(context.Background(), store.BuildChunkKey(spec.Prefix, 1)); err != nil || !found {
+		t.Fatalf("inspection removed payload found=%t err=%v", found, err)
 	}
 }
 

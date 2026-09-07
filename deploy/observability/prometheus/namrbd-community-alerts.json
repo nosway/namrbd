@@ -218,6 +218,45 @@
           }
         },
         {
+          "alert": "NAMRBDSBSClusterSummaryRebuildRequired",
+          "expr": "sbs_service_cluster_summary_rebuild_required > 0",
+          "for": "5m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD bounded cluster summary requires rebuild",
+            "description": "The aggregate projection is missing or inconsistent. Inspect its source and baseline revisions and rebuild state; do not substitute an unbounded metadata scan."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSClusterSummaryStale",
+          "expr": "sbs_service_cluster_summary_stale > 0",
+          "for": "10m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD bounded cluster summary is stale",
+            "description": "The complete cluster summary has remained older than its freshness policy. Compare source revisions and use bounded page or point inspection."
+          }
+        },
+        {
+          "alert": "NAMRBDSBSFleetObservationUnhealthy",
+          "expr": "sum(sbs_service_fleet_health{health_code=~\"SBS_HOST_CHECK_FAILED|SBS_CONFIG_DRIFT|SBS_STRAY_NODE|SBS_STORAGE_CLAIM_MISMATCH|SBS_FLEET_CHECK_STALE\"}) > 0",
+          "for": "10m",
+          "labels": {
+            "severity": "warning",
+            "component": "sbs-service"
+          },
+          "annotations": {
+            "summary": "NAMRBD fleet observation reports drift or incomplete evidence",
+            "description": "The signed fleet observation reports a failed host check, config drift, stray node, storage claim mismatch, or stale collection."
+          }
+        },
+        {
           "alert": "NAMRBDSBSDataLowAvailableRatio",
           "expr": "(sbs_data_store_capacity_bytes > 0) and ((sbs_data_store_available_bytes / sbs_data_store_capacity_bytes) < 0.10)",
           "for": "10m",

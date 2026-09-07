@@ -391,23 +391,34 @@ type MutationPageWindowRecord struct {
 	DataChunks  uint64 `json:"data_chunks,omitempty"`
 }
 
+// MutationRetiredReplicaTarget records the node-local physical namespace that
+// becomes stale after a placement transition. Physical chunk objects are
+// shared by replica sessions on one node, so NodeID is the cleanup boundary;
+// SourceReplicaIDs are retained only as audit evidence.
+type MutationRetiredReplicaTarget struct {
+	NodeID           string   `json:"node_id"`
+	SourceReplicaIDs []string `json:"source_replica_ids"`
+}
+
 type MutationOperationRecord struct {
-	OperationID             string                     `json:"operation_id"`
-	VolumeID                string                     `json:"volume_id"`
-	Kind                    string                     `json:"kind"`
-	State                   MutationOperationState     `json:"state"`
-	PlacementRevision       uint64                     `json:"placement_revision,omitempty"`
-	AllocationRevision      uint64                     `json:"allocation_revision,omitempty"`
-	WriterFencingEpoch      uint64                     `json:"writer_fencing_epoch,omitempty"`
-	IdempotencyKey          string                     `json:"idempotency_key,omitempty"`
-	AffectedExtentIDs       []uint64                   `json:"affected_extent_ids,omitempty"`
-	AffectedPageNos         []uint64                   `json:"affected_page_nos,omitempty"`
-	CompletedPageNos        []uint64                   `json:"completed_page_nos,omitempty"`
-	RetryPageWindows        []MutationPageWindowRecord `json:"retry_page_windows,omitempty"`
-	RetiredPhysicalChunkIDs []uint64                   `json:"retired_physical_chunk_ids,omitempty"`
-	StartedAtUnix           int64                      `json:"started_at_unix,omitempty"`
-	LastUpdatedAtUnix       int64                      `json:"last_updated_at_unix,omitempty"`
-	ErrorMessage            string                     `json:"error_message,omitempty"`
+	OperationID                   string                         `json:"operation_id"`
+	VolumeID                      string                         `json:"volume_id"`
+	Kind                          string                         `json:"kind"`
+	State                         MutationOperationState         `json:"state"`
+	PlacementRevision             uint64                         `json:"placement_revision,omitempty"`
+	AllocationRevision            uint64                         `json:"allocation_revision,omitempty"`
+	WriterFencingEpoch            uint64                         `json:"writer_fencing_epoch,omitempty"`
+	IdempotencyKey                string                         `json:"idempotency_key,omitempty"`
+	AffectedExtentIDs             []uint64                       `json:"affected_extent_ids,omitempty"`
+	AffectedPageNos               []uint64                       `json:"affected_page_nos,omitempty"`
+	CompletedPageNos              []uint64                       `json:"completed_page_nos,omitempty"`
+	RetryPageWindows              []MutationPageWindowRecord     `json:"retry_page_windows,omitempty"`
+	RetiredPhysicalChunkIDs       []uint64                       `json:"retired_physical_chunk_ids,omitempty"`
+	RetiredReplicaTargetsResolved bool                           `json:"retired_replica_targets_resolved,omitempty"`
+	RetiredReplicaTargets         []MutationRetiredReplicaTarget `json:"retired_replica_targets,omitempty"`
+	StartedAtUnix                 int64                          `json:"started_at_unix,omitempty"`
+	LastUpdatedAtUnix             int64                          `json:"last_updated_at_unix,omitempty"`
+	ErrorMessage                  string                         `json:"error_message,omitempty"`
 }
 
 type NodeHealthDetailRecord struct {

@@ -1,5 +1,25 @@
 # Release Artifacts
 
+## v1.1.0
+
+The `v1.1.0` GitHub release publishes a Linux AMD64 archive containing the
+public command binaries and license metadata, SHA-256 checksums, an SPDX JSON
+SBOM, and GitHub build provenance. The release workflow first verifies that the
+tag, `version.Current`, this artifact section, and the dated changelog section
+all identify the same version.
+
+Container images are not v1.1.0 release outputs. Build them from the tagged
+source and record an immutable registry digest before deployment; do not infer
+an image digest from a source tag or from the CSI chart's unpublished evidence
+candidate.
+
+The supported v1.1 volume claim is the replicated userspace gateway and SBS
+path. The exact logical 160-node fixture and 18-host/160-process software
+evidence do not qualify 160 independent physical servers. See
+[`docs-src/feature-status.md`](docs-src/feature-status.md) and
+[`CHANGELOG.md`](CHANGELOG.md) for integration status, migration requirements,
+and known limits.
+
 ## v1.0.0
 
 `v1.0.0` is a source release. GitHub provides automatic source archives for
@@ -11,7 +31,7 @@ The supported v1.0 volume claim is the replicated userspace gateway path. See
 [`docs-src/feature-status.md`](docs-src/feature-status.md) and
 [`CHANGELOG.md`](CHANGELOG.md) for integration status and known limits.
 
-## Future Tagged Releases
+## Tagged Release Contract
 
 The public release workflow runs the exported-source test boundary and creates:
 
@@ -28,5 +48,6 @@ outputs.
 
 Before tagging a release, maintainers must also verify the public source export,
 documentation render, support boundary, migration notes, security policy, and
-known limitations. A passing source build does not promote an integration or
-Advanced feature to supported status.
+known limitations. `make release-version-check RELEASE_TAG=vX.Y.Z` guards the
+tag-to-source identity. A passing source build does not promote an integration
+or advanced feature to supported status.

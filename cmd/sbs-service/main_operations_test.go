@@ -13,13 +13,117 @@ import (
 	adminv1 "github.com/nosway/namrbd/sbs/admin/v1"
 	clustermeta "github.com/nosway/namrbd/sbs/cluster/metadata"
 
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+type listForbiddenKV struct {
+	clustermeta.KV
+	listCalls int
+}
+
+func (kv *listForbiddenKV) List(context.Context, string, string, int) ([]string, string, error) {
+	kv.listCalls++
+	return nil, "", nil
+}
+
+func TestGetOperationByRequestIdentityUsesBoundedPointReads(t *testing.T) {
+	ctx := context.Background()
+	srv := newTestMaintenanceServer(t)
+	created, wasCreated, err := srv.ops.createNodeDrainAudited(ctx, "node-a", "evacuation_pending", adminv1.OperationState_OPERATION_STATE_RUNNING, operationAudit{
+		RequestID: "drain-request-1",
+		Actor:     "phase-j",
+		Reason:    "response-loss-fixture",
+	})
+	if err != nil || !wasCreated {
+		t.Fatalf("createNodeDrainAudited created=%t err=%v", wasCreated, err)
+	}
+
+	guard := &listForbiddenKV{KV: srv.kv}
+	srv.ops = newOperationStore(guard, defaultMetadataRoot)
+	resp, err := srv.GetOperationByRequestIdentity(ctx, &adminv1.GetOperationByRequestIdentityRequest{
+		Cluster:      &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"},
+		Kind:         "node.drain",
+		TargetNodeId: "node-a",
+		RequestId:    "drain-request-1",
+	})
+	if err != nil {
+		t.Fatalf("GetOperationByRequestIdentity: %v", err)
+	}
+	if !resp.GetFound() || resp.GetOperation().GetOperationId() != created.GetOperationId() {
+		t.Fatalf("identity response=%+v created=%+v", resp, created)
+	}
+	if resp.GetOperation().GetRequestId() != "drain-request-1" {
+		t.Fatalf("request_id=%q", resp.GetOperation().GetRequestId())
+	}
+
+	missing, err := srv.GetOperationByRequestIdentity(ctx, &adminv1.GetOperationByRequestIdentityRequest{
+		Cluster:      &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"},
+		Kind:         "node.drain",
+		TargetNodeId: "node-a",
+		RequestId:    "drain-request-missing",
+	})
+	if err != nil || missing.GetFound() || missing.GetOperation() != nil {
+		t.Fatalf("missing identity response=%+v err=%v", missing, err)
+	}
+	if err := srv.kv.Set(ctx, nodeDrainRequestIdentityKey(defaultMetadataRoot, "node-a", "drain-request-corrupt"), []byte(`{"schema":"sbs-node-drain-request-identity/v1","operation_id":"op-missing","kind":"node.drain","target_node_id":"node-a","request_id":"drain-request-corrupt"}`)); err != nil {
+		t.Fatalf("write corrupt identity: %v", err)
+	}
+	if _, err := srv.GetOperationByRequestIdentity(ctx, &adminv1.GetOperationByRequestIdentityRequest{
+		Cluster:      &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"},
+		Kind:         "node.drain",
+		TargetNodeId: "node-a",
+		RequestId:    "drain-request-corrupt",
+	}); err == nil {
+		t.Fatal("corrupt identity lookup succeeded; want fail closed")
+	}
+	if guard.listCalls != 0 {
+		t.Fatalf("identity lookup called List %d times", guard.listCalls)
+	}
+}
+
+func TestDrainNodeRequestIDReplayReturnsExistingOperation(t *testing.T) {
+	ctx := context.Background()
+	srv := newTestMaintenanceServer(t)
+	srv.leader = &leaderLeaseManager{}
+	srv.leader.isLeader.Store(true)
+	if err := srv.repo.PutNodeMembership(ctx, clustermeta.NodeMembershipRecord{
+		NodeID:            "node-a",
+		LifecycleState:    clustermeta.NodeLifecycleActive,
+		DesiredState:      string(clustermeta.NodeLifecycleActive),
+		HealthState:       clustermeta.NodeHealthHealthy,
+		ObservedState:     string(clustermeta.NodeHealthHealthy),
+		LastHeartbeatUnix: 1,
+	}); err != nil {
+		t.Fatalf("PutNodeMembership: %v", err)
+	}
+	req := &adminv1.DrainNodeRequest{
+		Cluster: &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"},
+		NodeId:  "node-a",
+		Meta:    &adminv1.RequestMeta{RequestId: "drain-replay-1", Actor: "phase-j", Reason: "response-loss-fixture"},
+	}
+	first, err := srv.DrainNode(ctx, req)
+	if err != nil || !first.GetOperation().GetAccepted() {
+		t.Fatalf("first DrainNode response=%+v err=%v", first, err)
+	}
+	second, err := srv.DrainNode(ctx, req)
+	if err != nil {
+		t.Fatalf("replayed DrainNode: %v", err)
+	}
+	if second.GetOperation().GetAccepted() || second.GetOperation().GetOperationId() != first.GetOperation().GetOperationId() {
+		t.Fatalf("replayed DrainNode response=%+v first=%+v", second, first)
+	}
+	if !strings.Contains(second.GetOperation().GetMessage(), "already accepted") {
+		t.Fatalf("replay message=%q", second.GetOperation().GetMessage())
+	}
 }
 
 func TestGetOperationFallsBackToMutationOperation(t *testing.T) {
@@ -1040,8 +1144,11 @@ func TestListOperationsIncludesMutationOperations(t *testing.T) {
 	}
 	defer srv.cache.Close()
 
-	resp, err := srv.ListOperations(ctx, &adminv1.ListOperationsRequest{
-		Cluster: &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"},
+	legacyCtx, cancelLegacy := context.WithTimeout(ctx, time.Second)
+	defer cancelLegacy()
+	resp, err := srv.ListOperations(legacyCtx, &adminv1.ListOperationsRequest{
+		Cluster:   &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"},
+		Admission: &adminv1.ExpensiveCallAdmission{Reason: "legacy operation test", RecordBudget: 100},
 	})
 	if err != nil {
 		t.Fatalf("ListOperations: %v", err)
@@ -1108,10 +1215,13 @@ func TestListOperationsFiltersMutationOperationsByKindAndState(t *testing.T) {
 	}
 	defer srv.cache.Close()
 
-	resp, err := srv.ListOperations(ctx, &adminv1.ListOperationsRequest{
-		Cluster: &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"},
-		Kind:    "transition",
-		State:   adminv1.OperationState_OPERATION_STATE_RUNNING,
+	legacyCtx, cancelLegacy := context.WithTimeout(ctx, time.Second)
+	defer cancelLegacy()
+	resp, err := srv.ListOperations(legacyCtx, &adminv1.ListOperationsRequest{
+		Cluster:   &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"},
+		Kind:      "transition",
+		State:     adminv1.OperationState_OPERATION_STATE_RUNNING,
+		Admission: &adminv1.ExpensiveCallAdmission{Reason: "legacy operation filter test", RecordBudget: 100},
 	})
 	if err != nil {
 		t.Fatalf("ListOperations: %v", err)
@@ -1121,6 +1231,229 @@ func TestListOperationsFiltersMutationOperationsByKindAndState(t *testing.T) {
 	}
 	if resp.GetOperations()[0].GetOperationId() != "transition-pl-1" {
 		t.Fatalf("operation=%v", resp.GetOperations()[0])
+	}
+}
+
+func TestListOperationsPagePinsRevisionAndBoundsSources(t *testing.T) {
+	ctx := context.Background()
+	kv, err := clustermeta.OpenPebbleKV(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenPebbleKV: %v", err)
+	}
+	defer kv.Close()
+	repo := clustermeta.NewRepository(kv, defaultMetadataRoot)
+	mutation := clustermeta.MutationOperationRecord{
+		OperationID: "mutation-page-1", VolumeID: "00a1b2c3", Kind: "transition",
+		State: clustermeta.MutationOperationRunning, StartedAtUnix: 1000, LastUpdatedAtUnix: 1001,
+	}
+	if err := repo.PutMutationOperation(ctx, mutation); err != nil {
+		t.Fatal(err)
+	}
+	promoteMaintenanceIndexForOperationPage(t, repo, "epoch-operation-page")
+	srv := &server{
+		clusterID: "test-cluster", sbsClusterID: "test-sbs", root: defaultMetadataRoot,
+		kv: kv, repo: repo, ops: newOperationStore(kv, defaultMetadataRoot), now: func() time.Time { return time.Unix(2000, 0) },
+	}
+	if _, err := srv.ops.create("node.drain", "node-a", "", "running", adminv1.OperationState_OPERATION_STATE_RUNNING); err != nil {
+		t.Fatal(err)
+	}
+	first, err := srv.ListOperationsPage(ctx, &adminv1.ListOperationsPageRequest{PageSize: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.GetOperations()) != 1 || first.GetOperations()[0].GetKind() != "node.drain" || first.GetNextPageToken() == "" || first.GetProjectionRevision() == "" || first.GetScannedRecords() != 1 {
+		t.Fatalf("first page=%+v", first)
+	}
+	second, err := srv.ListOperationsPage(ctx, &adminv1.ListOperationsPageRequest{PageSize: 1, PageToken: first.GetNextPageToken()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.GetOperations()) != 1 || second.GetOperations()[0].GetOperationId() != mutation.OperationID || second.GetProjectionRevision() != first.GetProjectionRevision() {
+		t.Fatalf("second page=%+v", second)
+	}
+	if _, err := srv.ListOperationsPage(ctx, &adminv1.ListOperationsPageRequest{PageSize: 1, PageToken: first.GetNextPageToken(), Kind: "repair"}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("filter mismatch code=%s err=%v", status.Code(err), err)
+	}
+	filtered, err := srv.ListOperationsPage(ctx, &adminv1.ListOperationsPageRequest{
+		PageSize: 512, Kind: "transition", State: adminv1.OperationState_OPERATION_STATE_RUNNING,
+		UpdatedAfter: timestamppb.New(time.Unix(999, 0)), UpdatedBefore: timestamppb.New(time.Unix(1002, 0)),
+	})
+	if err != nil || len(filtered.GetOperations()) != 1 || filtered.GetOperations()[0].GetOperationId() != mutation.OperationID {
+		t.Fatalf("filtered page=%+v err=%v", filtered, err)
+	}
+	mutation.State = clustermeta.MutationOperationCommitted
+	mutation.LastUpdatedAtUnix++
+	if err := repo.PutMutationOperation(ctx, mutation); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.ListOperationsPage(ctx, &adminv1.ListOperationsPageRequest{PageSize: 1, PageToken: first.GetNextPageToken()}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("stale token code=%s err=%v", status.Code(err), err)
+	}
+	if _, err := srv.ListOperationsPage(ctx, &adminv1.ListOperationsPageRequest{PageSize: 513}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("oversized page code=%s err=%v", status.Code(err), err)
+	}
+	if _, err := srv.ListOperationsPage(ctx, &adminv1.ListOperationsPageRequest{PageSize: 1, State: adminv1.OperationState(99)}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("unknown state code=%s err=%v", status.Code(err), err)
+	}
+}
+
+func TestGetMutationOperationUsesPointIndexesOnly(t *testing.T) {
+	ctx := context.Background()
+	base, err := clustermeta.OpenPebbleKV(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	repo := clustermeta.NewRepository(base, defaultMetadataRoot)
+	parent := clustermeta.MutationOperationRecord{
+		OperationID: "transition-point", VolumeID: "00a1b2c3", Kind: "transition", State: clustermeta.MutationOperationRunning,
+		AffectedPageNos: []uint64{1}, LastUpdatedAtUnix: 100,
+	}
+	child := clustermeta.MutationOperationRecord{
+		OperationID: "transition-point-page-1", VolumeID: "00a1b2c3", Kind: "transition_batch", State: clustermeta.MutationOperationRunning,
+		IdempotencyKey: parent.OperationID, AffectedPageNos: []uint64{1}, LastUpdatedAtUnix: 101,
+	}
+	if err := repo.PutMutationOperation(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.PutMutationOperation(ctx, child); err != nil {
+		t.Fatal(err)
+	}
+	promoteMaintenanceIndexForOperationPage(t, repo, "epoch-operation-point")
+	guard := &listForbiddenKV{KV: base}
+	srv := &server{
+		clusterID: "test-cluster", sbsClusterID: "test-sbs", root: defaultMetadataRoot,
+		kv: guard, repo: clustermeta.NewRepository(guard, defaultMetadataRoot), ops: newOperationStore(guard, defaultMetadataRoot),
+	}
+	resp, err := srv.GetOperation(ctx, &adminv1.GetOperationRequest{OperationId: parent.OperationID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(resp.GetOperation().GetPhase(), "batches=1") || guard.listCalls != 0 {
+		t.Fatalf("point phase=%q list_calls=%d", resp.GetOperation().GetPhase(), guard.listCalls)
+	}
+}
+
+func promoteMaintenanceIndexForOperationPage(t *testing.T, repo *clustermeta.Repository, epoch string) {
+	t.Helper()
+	ctx := context.Background()
+	completed := false
+	for attempt := 0; attempt < 64; attempt++ {
+		page, err := repo.RunMaintenanceIndexRebuildPage(ctx, epoch, 128, 128)
+		if err != nil {
+			t.Fatalf("RunMaintenanceIndexRebuildPage: %v", err)
+		}
+		if page.Completed {
+			completed = true
+			break
+		}
+	}
+	if !completed {
+		t.Fatal("maintenance index rebuild did not complete")
+	}
+	if _, err := repo.PromoteMaintenanceIndexRebuild(ctx, epoch); err != nil {
+		t.Fatalf("PromoteMaintenanceIndexRebuild: %v", err)
+	}
+}
+
+func TestPhaseADCurrentObservationRecordsExistingOperationListAndDrainError(t *testing.T) {
+	ctx := context.Background()
+	kv, err := clustermeta.OpenPebbleKV(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenPebbleKV: %v", err)
+	}
+	defer kv.Close()
+
+	repo := clustermeta.NewRepository(kv, defaultMetadataRoot)
+	if err := repo.PutVolumeState(ctx, clustermeta.VolumeState{
+		VolumeID: "00a1b2c3",
+		Epoch:    5,
+		Revision: 12,
+		Status:   clustermeta.VolumeStatusHealthy,
+	}); err != nil {
+		t.Fatalf("PutVolumeState: %v", err)
+	}
+	for _, rec := range []clustermeta.MutationOperationRecord{
+		{OperationID: "transition-pl-1", VolumeID: "00a1b2c3", Kind: "transition", State: clustermeta.MutationOperationRunning, StartedAtUnix: 1000, LastUpdatedAtUnix: 1001},
+		{OperationID: "payload-gc-00a1b2c3", VolumeID: "00a1b2c3", Kind: "payload_gc", State: clustermeta.MutationOperationCommitted, StartedAtUnix: 1002, LastUpdatedAtUnix: 1003},
+	} {
+		if err := repo.PutMutationOperation(ctx, rec); err != nil {
+			t.Fatalf("PutMutationOperation(%s): %v", rec.OperationID, err)
+		}
+	}
+
+	srv := &server{
+		clusterID:    "test-cluster",
+		sbsClusterID: "test-sbs",
+		nodeID:       "svc-1",
+		root:         defaultMetadataRoot,
+		startedAt:    time.Now(),
+		kv:           kv,
+		repo:         repo,
+		ops:          newOperationStore(kv, defaultMetadataRoot),
+		cache:        newReplicaClientCache(),
+		maint:        newMaintenanceSettings(),
+	}
+	defer srv.cache.Close()
+
+	legacyCtx, cancelLegacy := context.WithTimeout(ctx, time.Second)
+	defer cancelLegacy()
+	resp, err := srv.ListOperations(legacyCtx, &adminv1.ListOperationsRequest{
+		Cluster:   &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"},
+		Kind:      "node.drain",
+		Admission: &adminv1.ExpensiveCallAdmission{Reason: "legacy drain operation test", RecordBudget: 100},
+	})
+	if err != nil {
+		t.Fatalf("ListOperations: %v", err)
+	}
+	if len(resp.GetOperations()) != 0 {
+		t.Fatalf("filtered operations=%v want none", resp.GetOperations())
+	}
+
+	srv.observePhaseADDrainError(
+		withPhaseADDrainObservation(ctx, "op-drain-observed", "node-a"),
+		"compute_progress_evaluate_extent_health", "ignored-node", "00a1b2c3", 7, clustermeta.ErrNotFound,
+	)
+	observed := srv.phaseADCurrentObservability.snapshot()
+	if observed.OperationListRequestsByFilter["kind"] != 1 {
+		t.Fatalf("kind-filter requests=%d want=1", observed.OperationListRequestsByFilter["kind"])
+	}
+	if observed.OperationListMutationScanned != 2 || observed.OperationListMutationReturned != 0 {
+		t.Fatalf("mutation scanned/returned=%d/%d want=2/0", observed.OperationListMutationScanned, observed.OperationListMutationReturned)
+	}
+	if got := observed.DrainErrorsByStageAndClass["compute_progress_evaluate_extent_health:metadata_not_found"]; got != 1 {
+		t.Fatalf("drain observation count=%d want=1", got)
+	}
+	if observed.LastDrainError.OperationID != "op-drain-observed" || observed.LastDrainError.NodeID != "node-a" || observed.LastDrainError.VolumeID != "00a1b2c3" || observed.LastDrainError.ExtentID != 7 || observed.LastDrainError.ErrorClass != "metadata_not_found" {
+		t.Fatalf("last drain observation=%+v", observed.LastDrainError)
+	}
+
+	recorder := httptest.NewRecorder()
+	observabilityMux(srv).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/debug/phase-ad/current-observation", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("observation endpoint status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var fromEndpoint phaseADCurrentObservabilitySnapshot
+	if err := json.Unmarshal(recorder.Body.Bytes(), &fromEndpoint); err != nil {
+		t.Fatalf("decode observation endpoint: %v", err)
+	}
+	if fromEndpoint.OperationListMutationScanned != 2 || fromEndpoint.LastDrainError.OperationID != "op-drain-observed" {
+		t.Fatalf("endpoint observation=%+v", fromEndpoint)
+	}
+
+	metricsRecorder := httptest.NewRecorder()
+	observabilityMux(srv).ServeHTTP(metricsRecorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if metricsRecorder.Code != http.StatusOK {
+		t.Fatalf("metrics status=%d body=%s", metricsRecorder.Code, metricsRecorder.Body.String())
+	}
+	for _, want := range []string{
+		`sbs_service_phase_ad_operation_list_requests_total{filter="kind"} 1`,
+		`sbs_service_phase_ad_operation_list_records_total{source="mutation_scanned"} 2`,
+		`sbs_service_phase_ad_drain_observation_errors_total{stage="compute_progress_evaluate_extent_health",class="metadata_not_found"} 1`,
+	} {
+		if !strings.Contains(metricsRecorder.Body.String(), want) {
+			t.Fatalf("metrics missing %q in\n%s", want, metricsRecorder.Body.String())
+		}
 	}
 }
 
@@ -1313,10 +1646,13 @@ func TestGetOperationShowsTransitionBatchProgress(t *testing.T) {
 		t.Fatalf("GetOperation: %v", err)
 	}
 	phase := resp.GetOperation().GetPhase()
-	for _, want := range []string{"batches=2", "completed=1", "running=1", "recent=1", "small=2", "pages=2", "completed_pages=1", "remaining_retry_pages=1", "remaining_retry_batches=1"} {
+	for _, want := range []string{"batches=2", "completed=1", "running=1", "small=2", "pages=2", "completed_pages=1", "remaining_retry_pages=1", "remaining_retry_batches=1"} {
 		if !strings.Contains(phase, want) {
 			t.Fatalf("phase=%q missing %q", phase, want)
 		}
+	}
+	if strings.Contains(phase, "recent=") {
+		t.Fatalf("point operation phase must not derive recent writes from volume history: %q", phase)
 	}
 
 	batchResp, err := srv.GetOperation(ctx, &adminv1.GetOperationRequest{
@@ -1763,6 +2099,11 @@ func TestObservabilityEndpointsExposeAllocationAwareTransitionBacklog(t *testing
 	if got := summary["dev_metadata_owner"]; got != "local-pebble" {
 		t.Fatalf("dev_metadata_owner=%v want=local-pebble", got)
 	}
+	seedClusterSummaryAggregateForTest(t, srv.repo, 12, clustermeta.SummaryCounters{
+		RepairBacklog:       1,
+		RepairBacklogBytes:  4,
+		RepairBacklogChunks: 1,
+	})
 
 	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	metricsRec := httptest.NewRecorder()
@@ -2597,6 +2938,20 @@ func TestObservabilityEndpointsExposeRetiredPayloadBacklog(t *testing.T) {
 	if got := summary["transition_oldest_failed_batch_age_seconds"]; got.(float64) < 60 {
 		t.Fatalf("transition_oldest_failed_batch_age_seconds=%v want>=60", got)
 	}
+	seedClusterSummaryAggregateForTest(t, srv.repo, 12, clustermeta.SummaryCounters{
+		RetiredPayloadBacklogBytes:  4,
+		RetiredPayloadBacklogChunks: 1,
+		RetiredPayloadFailedBatches: 1,
+		TransitionFailedBatches:     1,
+		TransitionRecentBatches:     1,
+		TransitionSmallBatches:      1,
+		TransitionRequeued:          1,
+		TransitionRetryPages:        1,
+		TransitionRetryWindows:      1,
+		TransitionRetryWindowBytes:  8,
+		TransitionRetryWindowChunks: 2,
+		MaintenanceCooldownVolumes:  1,
+	})
 
 	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	metricsRec := httptest.NewRecorder()
@@ -2619,11 +2974,11 @@ func TestObservabilityEndpointsExposeRetiredPayloadBacklog(t *testing.T) {
 		"sbs_service_transition_retry_window_bytes 8",
 		"sbs_service_transition_retry_window_chunks 2",
 		"sbs_service_maintenance_cooldown_volumes 1",
-		"sbs_service_maintenance_cooldown_max_remaining_seconds 8",
-		"sbs_service_nodes_with_probe_failures 1",
-		"sbs_service_max_consecutive_probe_failures 2",
-		"sbs_service_nodes_in_recovery_cooldown 1",
-		"sbs_service_max_recovery_cooldown_remaining_seconds 7",
+		"sbs_service_maintenance_cooldown_max_remaining_seconds 0",
+		"sbs_service_nodes_with_probe_failures 0",
+		"sbs_service_max_consecutive_probe_failures 0",
+		"sbs_service_nodes_in_recovery_cooldown 0",
+		"sbs_service_max_recovery_cooldown_remaining_seconds 0",
 		"sbs_service_transition_oldest_failed_batch_age_seconds ",
 		"sbs_service_throttle_config{kind=\"payload_gc\"} 3",
 		"sbs_service_pause_state{kind=\"payload_gc\"} 1",

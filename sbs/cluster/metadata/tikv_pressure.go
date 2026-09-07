@@ -34,7 +34,12 @@ type TiKVPressure struct {
 	batchGets      atomic.Int64
 	batchGetKeys   atomic.Int64
 	batchGetChunks atomic.Int64
+	batchGetNanos  atomic.Int64
 	pointGets      atomic.Int64
+	pointGetNanos  atomic.Int64
+	rangePages     atomic.Int64
+	rangePageNanos atomic.Int64
+	hotCandidates  atomic.Int64
 	// fullScans stays at zero. Bounded List pages are not full scans; an
 	// unbounded enumeration introduced later must increment this counter.
 	fullScans  atomic.Int64
@@ -51,6 +56,11 @@ type TiKVPressureSnapshot struct {
 	PointGetCount      int64 `json:"tikv_point_get_count"`
 	FullScanCount      int64 `json:"tikv_full_scan_count"`
 	TxnRetryCount      int64 `json:"tikv_txn_retry_count"`
+	RangePageCount     int64 `json:"tikv_range_page_count"`
+	PointGetNanos      int64 `json:"tikv_point_get_duration_nanos"`
+	BatchGetNanos      int64 `json:"tikv_batch_get_duration_nanos"`
+	RangePageNanos     int64 `json:"tikv_range_page_duration_nanos"`
+	HotCandidateCount  int64 `json:"tikv_hot_region_candidate_count"`
 }
 
 // TiKVPressureSnapshotNow returns the current counts.
@@ -62,6 +72,11 @@ func TiKVPressureSnapshotNow() TiKVPressureSnapshot {
 		PointGetCount:      tikvPressure.pointGets.Load(),
 		FullScanCount:      tikvPressure.fullScans.Load(),
 		TxnRetryCount:      tikvPressure.txnRetries.Load(),
+		RangePageCount:     tikvPressure.rangePages.Load(),
+		PointGetNanos:      tikvPressure.pointGetNanos.Load(),
+		BatchGetNanos:      tikvPressure.batchGetNanos.Load(),
+		RangePageNanos:     tikvPressure.rangePageNanos.Load(),
+		HotCandidateCount:  tikvPressure.hotCandidates.Load(),
 	}
 }
 
@@ -71,7 +86,12 @@ func ResetTiKVPressureForTest() {
 	tikvPressure.batchGets.Store(0)
 	tikvPressure.batchGetKeys.Store(0)
 	tikvPressure.batchGetChunks.Store(0)
+	tikvPressure.batchGetNanos.Store(0)
 	tikvPressure.pointGets.Store(0)
+	tikvPressure.pointGetNanos.Store(0)
+	tikvPressure.rangePages.Store(0)
+	tikvPressure.rangePageNanos.Store(0)
+	tikvPressure.hotCandidates.Store(0)
 	tikvPressure.fullScans.Store(0)
 	tikvPressure.txnRetries.Store(0)
 }

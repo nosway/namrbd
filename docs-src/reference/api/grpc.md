@@ -8,17 +8,18 @@ methods.
 
 | Proto source | Service | RPCs | Messages | Enums | Intended audience |
 | --- | --- | ---: | ---: | ---: | --- |
-| `proto/sbs/admin/v1/admin.proto` | `sbs.admin.v1.AdminService` | 175 | 416 | 11 | Control-plane clients; edition-combined schema |
-| `proto/sbs/admin/v1/operations.proto` | `sbs.admin.v1.OperationsService` | 2 | 5 | 1 | Control-plane clients |
-| `proto/sbs/v1/volume.proto` | `sbs.v1.VolumeService` | 15 | 34 | 3 | Gateway-to-SBS data path |
+| `proto/sbs/admin/v1/admin.proto` | `sbs.admin.v1.AdminService` | 237 | 561 | 16 | Control-plane clients; edition-combined schema |
+| `proto/sbs/admin/v1/operations.proto` | `sbs.admin.v1.OperationsService` | 4 | 9 | 1 | Control-plane clients |
+| `proto/sbs/v1/volume.proto` | `sbs.v1.VolumeService` | 18 | 42 | 3 | Gateway-to-SBS data path |
 | `proto/sbs/internalapi/v1/chunk_id_allocator.proto` | `sbs.internalapi.v1.ChunkIDAllocatorService` | 1 | 2 | 0 | Internal only |
 | `proto/sbs/internalapi/v1/ec_metadata.proto` | `sbs.internalapi.v1.ECMetadataService` | 6 | 18 | 0 | Internal only |
+| `proto/sbs/internalapi/v1/persistent_reservation.proto` | `sbs.internalapi.v1.PersistentReservationAuthorityService` | 2 | 5 | 0 | Internal only; Enterprise implementation |
 | `proto/sbs/internalapi/v1/placement_apply.proto` | `sbs.internalapi.v1.PlacementApplyService` | 1 | 4 | 1 | Internal only |
 | `proto/sbs/internalapi/v1/placement_resolver.proto` | `sbs.internalapi.v1.PlacementResolverService` | 4 | 15 | 3 | Internal only |
 | `proto/sbs/internalapi/v1/write_session.proto` | `sbs.internalapi.v1.WriteSessionService` | 12 | 29 | 2 | Internal only |
 | `proto/sbs/internalapi/v1/payload_encryption.proto` | No service | 0 | 1 | 0 | Internal message schema |
 
-The repository total is 8 services, 216 RPCs, 524 messages, and 21 enums.
+The repository total is 9 services, 285 RPCs, 686 messages, and 26 enums.
 Source-relative generated Go files live under `sbs/admin/v1`,
 `sbs/internalapi/v1`, and `sbs/v1`. Generation is configured by `buf.yaml` and
 `buf.gen.yaml`.
@@ -27,7 +28,7 @@ Source-relative generated Go files live under `sbs/admin/v1`,
 
 | Process | Default endpoint | Registered services | Registration source |
 | --- | --- | --- | --- |
-| `sbs-service` | `0.0.0.0:9443` | Admin, Operations, Volume proxy, PlacementApply, WriteSession, ECMetadata, ChunkIDAllocator, PlacementResolver | `cmd/sbs-service/main.go` |
+| `sbs-service` | `0.0.0.0:9443` | Admin, Operations, Volume proxy, PlacementApply, WriteSession, ECMetadata, ChunkIDAllocator, PlacementResolver, PersistentReservationAuthority | `cmd/sbs-service/main.go` |
 | `sbs-data` | `0.0.0.0:9444` | Volume | `cmd/sbs-data/main.go` |
 | `namrbd-csi-driver` | `unix:///tmp/namrbd-csi.sock` | CSI Identity, Controller, Node | `cmd/namrbd-csi-driver/main.go` |
 
@@ -74,6 +75,31 @@ AdminService does not define one common error-detail message. Method-specific
 implementations in `cmd/sbs-service/*.go` use standard gRPC status codes, so a
 generated structural reference must be accompanied by a reviewed status,
 idempotency, and retry table rather than inferring semantics from message names.
+
+## Bounded enumeration contract
+
+Normal fleet reads use page or point methods rather than completing every
+record family in one request. `ListVolumesPage`, `ListRepairsPage`,
+`ListRebalancesPage`, and `ListOperationsPage` return an opaque continuation
+token bound to the selected filters and a source/projection revision. A token
+from another filter or an obsolete revision fails instead of restarting or
+silently completing the list. The corresponding `sbsctl` commands default to
+128 records per page and reject sizes above 512.
+
+The retained unpaged `ListVolumes`, `ListRepairs`, `ListRebalances`, and
+`ListOperations` RPCs are explicit expensive compatibility paths. Calls must
+carry `ExpensiveCallAdmission` with a non-empty operator reason, a record budget
+between 1 and 1,000,000, and a request deadline. Missing admission fails with
+`FAILED_PRECONDITION`; exhausting the admitted record budget fails with
+`RESOURCE_EXHAUSTED`. Clients must not use those RPCs for periodic polling.
+
+`GetClusterStatusResponse` also exposes the bounded cluster-summary health,
+reason, partial/stale/rebuild-required state, source and baseline revisions,
+freshness age, and aggregate node counts. Missing or stale aggregate state does
+not authorize a legacy scan fallback. `SetMaintenanceThrottleRequest` and its
+response include `max_total_concurrent_movements`, which bounds the combined
+repair, rebalance, and drain movement population in addition to per-kind
+limits.
 
 ## CSI boundary
 

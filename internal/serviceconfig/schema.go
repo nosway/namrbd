@@ -124,10 +124,14 @@ type GatewayConfig struct {
 	Etcd *EtcdConfig `yaml:"etcd,omitempty"`
 
 	// SBSAdminEndpoint is the sbs-service admin API this gateway consumes its
-	// published views from.
+	// internal authority and, when no split endpoint is configured, published
+	// views from. The historical field name is retained for config compatibility.
 	SBSAdminEndpoint string `yaml:"sbs_admin_endpoint"`
-	MetadataBackend  string `yaml:"metadata_backend,omitempty"`
-	DataBackendMode  string `yaml:"data_backend_mode,omitempty"`
+	// SBSAuthenticatedAdminEndpoint selects the Enterprise mTLS AdminService
+	// listener while SBSAdminEndpoint remains the internal service endpoint.
+	SBSAuthenticatedAdminEndpoint string `yaml:"sbs_authenticated_admin_endpoint,omitempty"`
+	MetadataBackend               string `yaml:"metadata_backend,omitempty"`
+	DataBackendMode               string `yaml:"data_backend_mode,omitempty"`
 
 	Cache     GatewayCacheConfig     `yaml:"cache"`
 	Reconcile GatewayReconcileConfig `yaml:"reconcile"`
@@ -240,16 +244,27 @@ type SBSServiceConfig struct {
 	HTTPListen  string `yaml:"http_listen,omitempty"`
 	PayloadRoot string `yaml:"payload_root,omitempty"`
 
-	TiKV         TiKVConfig      `yaml:"tikv"`
-	Leader       SBSLeaderConfig `yaml:"leader"`
-	Health       SBSHealthConfig `yaml:"health"`
-	WriteEffects SBSWriteEffects `yaml:"write_effects"`
+	TiKV         TiKVConfig       `yaml:"tikv"`
+	Leader       SBSLeaderConfig  `yaml:"leader"`
+	Health       SBSHealthConfig  `yaml:"health"`
+	Summary      SBSSummaryConfig `yaml:"summary"`
+	WriteEffects SBSWriteEffects  `yaml:"write_effects"`
 
 	Observability ObservabilityConfig `yaml:"observability"`
 
 	// Dependency availability thresholds. Omitted means the shipped
 	// defaults; see docs/phase-aa-entry-plan.md Section 4.
 	Dependency *depavail.Thresholds `yaml:"dependency,omitempty"`
+}
+
+// SBSSummaryConfig controls the fleet-wide cutover from legacy completion to
+// the AD sharded cluster aggregate. Shadow keeps the legacy serving path; the
+// expensive parity comparator remains an explicit diagnostic rather than a
+// periodic request path.
+type SBSSummaryConfig struct {
+	State                           string `yaml:"state"`
+	FreshnessDegradedSeconds        int    `yaml:"freshness_degraded_seconds"`
+	FreshnessRebuildRequiredSeconds int    `yaml:"freshness_rebuild_required_seconds"`
 }
 
 // TiKVConfig is the SBS metadata authority connection and its scan budget.

@@ -84,33 +84,23 @@ func TestPrecedenceFileEnvCLI(t *testing.T) {
 	})
 }
 
-func TestLegacyEnvironmentAliasIsOneRecordedOverride(t *testing.T) {
+func TestLegacyEnvironmentAliasIsRejectedAtV11(t *testing.T) {
 	path := installed(t, "sbs-service.yaml")
-	res, err := Load(path, RegistryFor(ProcessSBSService), envMap(map[string]string{
+	_, err := Load(path, RegistryFor(ProcessSBSService), envMap(map[string]string{
 		"NAMRBD_NODE_ID": "legacy-service-node",
 	}), nil)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if res.File.SBSService.NodeID != "legacy-service-node" {
-		t.Fatalf("node_id=%q", res.File.SBSService.NodeID)
-	}
-	summary := res.Summarize(nil)
-	if summary.EnvOverrideCount != 1 || summary.WarningCount == 0 {
-		t.Fatalf("summary=%+v", summary)
-	}
-	if !strings.Contains(strings.Join(summary.Warnings, "\n"), "removed in v1.1.0") {
-		t.Fatalf("warnings=%v", summary.Warnings)
+	if err == nil || !strings.Contains(err.Error(), "removed environment variable(s) NAMRBD_NODE_ID: use NAMRBD_SBS_SERVICE_NODE_ID") {
+		t.Fatalf("error=%v", err)
 	}
 }
 
-func TestLargeScaleRejectsCanonicalLegacyConflict(t *testing.T) {
+func TestLargeScaleRejectsRemovedLegacyEvenWhenCanonicalIsSet(t *testing.T) {
 	path := installed(t, "sbs-data.yaml")
 	_, err := Load(path, RegistryFor(ProcessSBSData), envMap(map[string]string{
 		"NAMRBD_SBS_DATA_PATH": "/canonical",
 		"NAMRBD_SBS_DATA_DIR":  "/legacy",
 	}), nil)
-	if err == nil || !strings.Contains(err.Error(), "large_scale requires one unambiguous value") {
+	if err == nil || !strings.Contains(err.Error(), "removed environment variable(s) NAMRBD_SBS_DATA_DIR: use NAMRBD_SBS_DATA_PATH") {
 		t.Fatalf("error=%v", err)
 	}
 }

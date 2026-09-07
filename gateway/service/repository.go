@@ -36,8 +36,11 @@ const (
 type VolumeProtectedStateKind string
 
 const (
-	VolumeProtectedStateSealed         VolumeProtectedStateKind = "sealed"
-	ProtectedWriteReasonSealedReadOnly                          = "worm_sealed_read_only"
+	VolumeProtectedStateSealed                     VolumeProtectedStateKind = "sealed"
+	ProtectedWriteReasonSealedReadOnly                                      = "worm_sealed_read_only"
+	ProtectedWriteReasonDRStandbyReadOnly                                   = "dr_standby_read_only"
+	ProtectedWriteReasonDROldPrimaryFenced                                  = "dr_old_primary_fenced"
+	ProtectedWriteReasonDROldPrimaryReseedRequired                          = "dr_old_primary_reseed_required"
 )
 
 type VolumeProtectedState struct {

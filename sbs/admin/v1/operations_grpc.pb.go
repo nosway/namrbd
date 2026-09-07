@@ -19,8 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OperationsService_GetOperation_FullMethodName   = "/sbs.admin.v1.OperationsService/GetOperation"
-	OperationsService_ListOperations_FullMethodName = "/sbs.admin.v1.OperationsService/ListOperations"
+	OperationsService_GetOperation_FullMethodName                  = "/sbs.admin.v1.OperationsService/GetOperation"
+	OperationsService_GetOperationByRequestIdentity_FullMethodName = "/sbs.admin.v1.OperationsService/GetOperationByRequestIdentity"
+	OperationsService_ListOperations_FullMethodName                = "/sbs.admin.v1.OperationsService/ListOperations"
+	OperationsService_ListOperationsPage_FullMethodName            = "/sbs.admin.v1.OperationsService/ListOperationsPage"
 )
 
 // OperationsServiceClient is the client API for OperationsService service.
@@ -28,7 +30,13 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type OperationsServiceClient interface {
 	GetOperation(ctx context.Context, in *GetOperationRequest, opts ...grpc.CallOption) (*GetOperationResponse, error)
+	// GetOperationByRequestIdentity is a bounded identity lookup for a
+	// previously accepted node drain. It is deliberately separate from the
+	// legacy history-completing ListOperations RPC so a lost start response can
+	// be recovered without reissuing the mutation.
+	GetOperationByRequestIdentity(ctx context.Context, in *GetOperationByRequestIdentityRequest, opts ...grpc.CallOption) (*GetOperationByRequestIdentityResponse, error)
 	ListOperations(ctx context.Context, in *ListOperationsRequest, opts ...grpc.CallOption) (*ListOperationsResponse, error)
+	ListOperationsPage(ctx context.Context, in *ListOperationsPageRequest, opts ...grpc.CallOption) (*ListOperationsPageResponse, error)
 }
 
 type operationsServiceClient struct {
@@ -49,10 +57,30 @@ func (c *operationsServiceClient) GetOperation(ctx context.Context, in *GetOpera
 	return out, nil
 }
 
+func (c *operationsServiceClient) GetOperationByRequestIdentity(ctx context.Context, in *GetOperationByRequestIdentityRequest, opts ...grpc.CallOption) (*GetOperationByRequestIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOperationByRequestIdentityResponse)
+	err := c.cc.Invoke(ctx, OperationsService_GetOperationByRequestIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *operationsServiceClient) ListOperations(ctx context.Context, in *ListOperationsRequest, opts ...grpc.CallOption) (*ListOperationsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListOperationsResponse)
 	err := c.cc.Invoke(ctx, OperationsService_ListOperations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operationsServiceClient) ListOperationsPage(ctx context.Context, in *ListOperationsPageRequest, opts ...grpc.CallOption) (*ListOperationsPageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOperationsPageResponse)
+	err := c.cc.Invoke(ctx, OperationsService_ListOperationsPage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +92,13 @@ func (c *operationsServiceClient) ListOperations(ctx context.Context, in *ListOp
 // for forward compatibility.
 type OperationsServiceServer interface {
 	GetOperation(context.Context, *GetOperationRequest) (*GetOperationResponse, error)
+	// GetOperationByRequestIdentity is a bounded identity lookup for a
+	// previously accepted node drain. It is deliberately separate from the
+	// legacy history-completing ListOperations RPC so a lost start response can
+	// be recovered without reissuing the mutation.
+	GetOperationByRequestIdentity(context.Context, *GetOperationByRequestIdentityRequest) (*GetOperationByRequestIdentityResponse, error)
 	ListOperations(context.Context, *ListOperationsRequest) (*ListOperationsResponse, error)
+	ListOperationsPage(context.Context, *ListOperationsPageRequest) (*ListOperationsPageResponse, error)
 	mustEmbedUnimplementedOperationsServiceServer()
 }
 
@@ -78,8 +112,14 @@ type UnimplementedOperationsServiceServer struct{}
 func (UnimplementedOperationsServiceServer) GetOperation(context.Context, *GetOperationRequest) (*GetOperationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOperation not implemented")
 }
+func (UnimplementedOperationsServiceServer) GetOperationByRequestIdentity(context.Context, *GetOperationByRequestIdentityRequest) (*GetOperationByRequestIdentityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetOperationByRequestIdentity not implemented")
+}
 func (UnimplementedOperationsServiceServer) ListOperations(context.Context, *ListOperationsRequest) (*ListOperationsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListOperations not implemented")
+}
+func (UnimplementedOperationsServiceServer) ListOperationsPage(context.Context, *ListOperationsPageRequest) (*ListOperationsPageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOperationsPage not implemented")
 }
 func (UnimplementedOperationsServiceServer) mustEmbedUnimplementedOperationsServiceServer() {}
 func (UnimplementedOperationsServiceServer) testEmbeddedByValue()                           {}
@@ -120,6 +160,24 @@ func _OperationsService_GetOperation_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OperationsService_GetOperationByRequestIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOperationByRequestIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperationsServiceServer).GetOperationByRequestIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperationsService_GetOperationByRequestIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperationsServiceServer).GetOperationByRequestIdentity(ctx, req.(*GetOperationByRequestIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _OperationsService_ListOperations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListOperationsRequest)
 	if err := dec(in); err != nil {
@@ -138,6 +196,24 @@ func _OperationsService_ListOperations_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OperationsService_ListOperationsPage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOperationsPageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperationsServiceServer).ListOperationsPage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperationsService_ListOperationsPage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperationsServiceServer).ListOperationsPage(ctx, req.(*ListOperationsPageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OperationsService_ServiceDesc is the grpc.ServiceDesc for OperationsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -150,8 +226,16 @@ var OperationsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _OperationsService_GetOperation_Handler,
 		},
 		{
+			MethodName: "GetOperationByRequestIdentity",
+			Handler:    _OperationsService_GetOperationByRequestIdentity_Handler,
+		},
+		{
 			MethodName: "ListOperations",
 			Handler:    _OperationsService_ListOperations_Handler,
+		},
+		{
+			MethodName: "ListOperationsPage",
+			Handler:    _OperationsService_ListOperationsPage_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -44,23 +44,25 @@ func installedGatewayConfig(t *testing.T, edit func(string) string) string {
 
 func freshBinding() (gatewayConfigBinding, func() (string, string, uint, time.Duration)) {
 	var (
-		listen     = ":9701"
-		gatewayID  = "default-id"
-		inflight   = uint(128)
-		volumeTTL  = 5 * time.Second
-		dataListen = ":9700"
-		etcdEP     = "127.0.0.1:2379"
-		etcdRoot   = ""
-		adminEP    = ""
-		certFile   = ""
-		keyFile    = ""
-		serverName = ""
-		tlsEnable  = false
+		listen      = ":9701"
+		gatewayID   = "default-id"
+		inflight    = uint(128)
+		volumeTTL   = 5 * time.Second
+		dataListen  = ":9700"
+		etcdEP      = "127.0.0.1:2379"
+		etcdRoot    = ""
+		adminEP     = ""
+		authAdminEP = ""
+		certFile    = ""
+		keyFile     = ""
+		serverName  = ""
+		tlsEnable   = false
 	)
 	b := gatewayConfigBinding{
 		ListenAddr: &listen, DataListenAddr: &dataListen, GatewayID: &gatewayID,
 		EtcdEndpoints: &etcdEP, EtcdRoot: &etcdRoot, SBSAdminEndpoint: &adminEP,
-		MaxInflightRequests: &inflight, VolumeCacheTTL: &volumeTTL,
+		SBSAuthenticatedAdminEndpoint: &authAdminEP,
+		MaxInflightRequests:           &inflight, VolumeCacheTTL: &volumeTTL,
 		TLSEnable: &tlsEnable, TLSCertFile: &certFile, TLSKeyFile: &keyFile, TLSServerName: &serverName,
 	}
 	return b, func() (string, string, uint, time.Duration) { return listen, gatewayID, inflight, volumeTTL }
@@ -116,31 +118,27 @@ func TestGatewayCanonicalEnvironmentOverridesConfig(t *testing.T) {
 	path := installedGatewayConfig(t, nil)
 	res, err := serviceconfig.Load(path, serviceconfig.RegistryFor(serviceconfig.ProcessGateway),
 		gatewayEnvLookup(map[string]string{
-			"NAMRBD_GATEWAY_CONTROL_LISTEN": "127.0.0.1:19701",
-			"NAMRBD_SBS_SERVICE_ENDPOINT":   "sbs-service:9443",
+			"NAMRBD_GATEWAY_CONTROL_LISTEN":           "127.0.0.1:19701",
+			"NAMRBD_SBS_SERVICE_ENDPOINT":             "sbs-service:9443",
+			"NAMRBD_SBS_AUTHENTICATED_ADMIN_ENDPOINT": "sbs-admin:9444",
 		}), nil)
 	if err != nil {
 		t.Fatalf("load canonical environment: %v", err)
 	}
-	if res.File.Gateway.Listen != "127.0.0.1:19701" || res.File.Gateway.SBSAdminEndpoint != "sbs-service:9443" {
+	if res.File.Gateway.Listen != "127.0.0.1:19701" || res.File.Gateway.SBSAdminEndpoint != "sbs-service:9443" || res.File.Gateway.SBSAuthenticatedAdminEndpoint != "sbs-admin:9444" {
 		t.Fatalf("gateway=%+v", res.File.Gateway)
 	}
 }
 
-func TestGatewayLegacyEnvironmentAliasesRemainV10Compatible(t *testing.T) {
-	res, err := serviceconfig.Load(installedGatewayConfig(t, nil), serviceconfig.RegistryFor(serviceconfig.ProcessGateway),
+func TestGatewayLegacyEnvironmentAliasesAreRejectedAtV11(t *testing.T) {
+	_, err := serviceconfig.Load(installedGatewayConfig(t, nil), serviceconfig.RegistryFor(serviceconfig.ProcessGateway),
 		gatewayEnvLookup(map[string]string{
 			"NAMRBD_GATEWAY_LISTEN":             "127.0.0.1:19701",
 			"NAMRBD_GATEWAY_SBS_ADMIN_ENDPOINT": "legacy-service:9443",
 		}), nil)
-	if err != nil {
-		t.Fatalf("load legacy environment: %v", err)
-	}
-	if res.File.Gateway.Listen != "127.0.0.1:19701" || res.File.Gateway.SBSAdminEndpoint != "legacy-service:9443" {
-		t.Fatalf("gateway=%+v", res.File.Gateway)
-	}
-	if len(res.Warnings) != 2 {
-		t.Fatalf("warnings=%v", res.Warnings)
+	if err == nil || !strings.Contains(err.Error(), "removed environment variable") ||
+		!strings.Contains(err.Error(), "use NAMRBD_GATEWAY_CONTROL_LISTEN") {
+		t.Fatalf("error=%v", err)
 	}
 }
 
@@ -199,7 +197,8 @@ func TestEveryGatewayConfigFieldIsAccountedFor(t *testing.T) {
 		"gateway.data_disable",
 		"gateway.tls.enable", "gateway.tls.cert_file", "gateway.tls.key.file", "gateway.tls.server_name",
 		"gateway.etcd.endpoints", "gateway.etcd.root",
-		"gateway.sbs_admin_endpoint", "gateway.metadata_backend", "gateway.data_backend_mode",
+		"gateway.sbs_admin_endpoint", "gateway.sbs_authenticated_admin_endpoint",
+		"gateway.metadata_backend", "gateway.data_backend_mode",
 		"gateway.cache.volume_ttl_seconds", "gateway.cache.zero_evidence_ttl_seconds",
 		"gateway.cache.open_reuse_ttl_seconds", "gateway.cache.chunk_id_allocation_cache_size",
 		"gateway.cache.write_plan_ttl_seconds", "gateway.cache.begin_write_volume_state_ttl_seconds",

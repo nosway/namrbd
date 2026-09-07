@@ -19,6 +19,8 @@ var ErrNotFound = errors.New("metadata record not found")
 var ErrCASConflict = errors.New("metadata compare-and-set conflict")
 var ErrMembershipProjectionStale = errors.New("membership projection is stale")
 var ErrMembershipProjectionChanged = errors.New("membership projection changed during page read")
+var ErrProtectedDeletionRejected = errors.New("protected subject deletion rejected")
+var ErrSnapshotSubjectRegistrationRequiresTransaction = errors.New("snapshot subject registration requires transactional metadata")
 
 const membershipMutationMaxAttempts = 5
 
@@ -34,6 +36,21 @@ type KV interface {
 	Set(ctx context.Context, key string, value []byte) error
 	Delete(ctx context.Context, key string) error
 	List(ctx context.Context, prefix, cursor string, limit int) ([]string, string, error)
+}
+
+// ProtectedSubjectDeletionGuard is an edition-neutral hook used by an
+// Enterprise WORM authority. Keeping the interface in metadata avoids making
+// Community builds import Enterprise policy code.
+type ProtectedSubjectDeletionGuard interface {
+	ValidateSubjectDeletion(ctx context.Context, subjectType string, volumeID uint64, subjectID, callerRole string) error
+}
+
+// SnapshotSubjectRegistrar lets an Enterprise lifecycle authority attach its
+// subject record to snapshot creation without making Community metadata import
+// Enterprise policy code. The writer belongs to the same transaction that
+// persists the SnapshotRecord and its idempotency indexes.
+type SnapshotSubjectRegistrar interface {
+	RegisterSnapshotSubject(ctx context.Context, writer ReadWriter, snapshot SnapshotRecord) error
 }
 
 type transactionalKV interface {
@@ -240,6 +257,10 @@ type Repository struct {
 	membershipCacheRevision         uint64
 	membershipCacheRecords          []NodeMembershipRecord
 	now                             func() time.Time
+	deletionGuardMu                 sync.RWMutex
+	deletionGuard                   ProtectedSubjectDeletionGuard
+	snapshotSubjectRegistrarMu      sync.RWMutex
+	snapshotSubjectRegistrar        SnapshotSubjectRegistrar
 }
 
 func NewRepository(kv kvStore, root string) *Repository {
@@ -254,6 +275,30 @@ func NewRepository(kv kvStore, root string) *Repository {
 		nativeAllocationVolumesObserved: make(map[string]struct{}),
 		now:                             time.Now,
 	}
+}
+
+func (r *Repository) SetProtectedSubjectDeletionGuard(guard ProtectedSubjectDeletionGuard) {
+	r.deletionGuardMu.Lock()
+	defer r.deletionGuardMu.Unlock()
+	r.deletionGuard = guard
+}
+
+func (r *Repository) protectedSubjectDeletionGuard() ProtectedSubjectDeletionGuard {
+	r.deletionGuardMu.RLock()
+	defer r.deletionGuardMu.RUnlock()
+	return r.deletionGuard
+}
+
+func (r *Repository) SetSnapshotSubjectRegistrar(registrar SnapshotSubjectRegistrar) {
+	r.snapshotSubjectRegistrarMu.Lock()
+	defer r.snapshotSubjectRegistrarMu.Unlock()
+	r.snapshotSubjectRegistrar = registrar
+}
+
+func (r *Repository) snapshotRegistrar() SnapshotSubjectRegistrar {
+	r.snapshotSubjectRegistrarMu.RLock()
+	defer r.snapshotSubjectRegistrarMu.RUnlock()
+	return r.snapshotSubjectRegistrar
 }
 
 func (r *Repository) SetNativeAllocationFastPath(enabled bool) {
@@ -275,12 +320,96 @@ func (r *Repository) SetSkipNormalizedExtentRevisionBump(enabled bool) {
 }
 
 func (r *Repository) PutVolumeState(ctx context.Context, rec VolumeState) error {
-	return r.putJSON(ctx, volumeStateKey(r.root, rec.VolumeID), rec)
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		before, err := readVolumeState(ctx, store, r.root, rec.VolumeID)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		catalogChanged := errors.Is(err, ErrNotFound) || before.Status != rec.Status || before.RedundancyBackend != rec.RedundancyBackend || before.TopologyMode != rec.TopologyMode
+		if err := writeVolumeState(ctx, store, r.root, rec); err != nil {
+			return err
+		}
+		beforeCounters := summaryVolumeContribution(before, err == nil, VolumeSpecRecord{}, false)
+		afterCounters := summaryVolumeContribution(rec, true, VolumeSpecRecord{}, false)
+		if beforeCounters != afterCounters {
+			var spec VolumeSpecRecord
+			specFound, specErr := getOptionalJSONStore(ctx, store, volumeSpecKey(r.root, rec.VolumeID), &spec)
+			if specErr != nil {
+				return specErr
+			}
+			beforeCounters = summaryVolumeContribution(before, err == nil, spec, specFound)
+			afterCounters = summaryVolumeContribution(rec, true, spec, specFound)
+			if err := applySummaryRecordMutation(ctx, store, r.root, summarySubject("volume", rec.VolumeID), beforeCounters, afterCounters, r.now()); err != nil {
+				return err
+			}
+		}
+		if catalogChanged {
+			return advanceVolumeCatalogRevision(ctx, store, r.root, r.now())
+		}
+		return nil
+	})
+}
+
+// PutVolumeAuthority creates or replaces the state/spec authority pair and its
+// derived counters in one transaction. Control-plane create paths use this
+// method so a crash cannot publish only one half of the volume authority.
+func (r *Repository) PutVolumeAuthority(ctx context.Context, state VolumeState, spec VolumeSpecRecord) error {
+	if r == nil || state.VolumeID == "" || spec.VolumeID == "" || state.VolumeID != spec.VolumeID {
+		return fmt.Errorf("volume authority requires matching state and spec identities")
+	}
+	canonical, err := CanonicalVolumeID(state.VolumeID)
+	if err != nil || canonical != state.VolumeID {
+		return fmt.Errorf("invalid volume authority identity %q", state.VolumeID)
+	}
+	runner, ok := r.kv.(transactionalKV)
+	if !ok {
+		return ErrSummaryTransactionRequired
+	}
+	now := r.now()
+	return runner.RunInTransaction(ctx, func(store kvReadWriter) error {
+		var beforeState VolumeState
+		stateFound, err := getOptionalJSONStore(ctx, store, volumeStateKey(r.root, state.VolumeID), &beforeState)
+		if err != nil {
+			return err
+		}
+		var beforeSpec VolumeSpecRecord
+		specFound, err := getOptionalJSONStore(ctx, store, volumeSpecKey(r.root, state.VolumeID), &beforeSpec)
+		if err != nil {
+			return err
+		}
+		if err := writeVolumeState(ctx, store, r.root, state); err != nil {
+			return err
+		}
+		if err := putJSONStore(ctx, store, volumeSpecKey(r.root, spec.VolumeID), spec); err != nil {
+			return err
+		}
+		if err := applySummaryRecordMutation(ctx, store, r.root, summarySubject("volume", state.VolumeID), summaryVolumeContribution(beforeState, stateFound, beforeSpec, specFound), summaryVolumeContribution(state, true, spec, true), now); err != nil {
+			return err
+		}
+		return advanceVolumeCatalogRevision(ctx, store, r.root, now)
+	})
 }
 
 func (r *Repository) DeleteVolumeState(ctx context.Context, volumeID string) error {
 	r.forgetNativeAllocationVolume(volumeID)
-	return r.kv.Delete(ctx, volumeStateKey(r.root, volumeID))
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		before, err := readVolumeState(ctx, store, r.root, volumeID)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		if err := store.Delete(ctx, volumeStateKey(r.root, volumeID)); err != nil {
+			return err
+		}
+		var spec VolumeSpecRecord
+		specFound, specErr := getOptionalJSONStore(ctx, store, volumeSpecKey(r.root, volumeID), &spec)
+		if specErr != nil {
+			return specErr
+		}
+		if err := applySummaryRecordMutation(ctx, store, r.root, summarySubject("volume", volumeID), summaryVolumeContribution(before, err == nil, spec, specFound), SummaryCounters{}, r.now()); err != nil {
+			return err
+		}
+		return advanceVolumeCatalogRevision(ctx, store, r.root, r.now())
+	})
 }
 
 func (r *Repository) GetVolumeState(ctx context.Context, volumeID string) (VolumeState, error) {
@@ -292,7 +421,9 @@ func (r *Repository) GetVolumeState(ctx context.Context, volumeID string) (Volum
 }
 
 func (r *Repository) PutVolumeSpec(ctx context.Context, rec VolumeSpecRecord) error {
-	return r.putJSON(ctx, volumeSpecKey(r.root, rec.VolumeID), rec)
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		return writeVolumeSpec(ctx, store, r.root, rec, r.now())
+	})
 }
 
 func (r *Repository) GetVolumeSpec(ctx context.Context, volumeID string) (VolumeSpecRecord, error) {
@@ -340,7 +471,7 @@ func (r *Repository) ExpandVolume(ctx context.Context, volumeID string, targetSi
 		if state.Revision == 0 {
 			state.Revision = 1
 		}
-		if err := writeVolumeSpec(ctx, store, r.root, spec); err != nil {
+		if err := writeVolumeSpec(ctx, store, r.root, spec, r.now()); err != nil {
 			return err
 		}
 		if err := writeVolumeState(ctx, store, r.root, state); err != nil {
@@ -365,7 +496,70 @@ func (r *Repository) ExpandVolume(ctx context.Context, volumeID string, targetSi
 }
 
 func (r *Repository) DeleteVolumeSpec(ctx context.Context, volumeID string) error {
-	return r.kv.Delete(ctx, volumeSpecKey(r.root, volumeID))
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		before, err := readVolumeSpec(ctx, store, r.root, volumeID)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		if err := store.Delete(ctx, volumeSpecKey(r.root, volumeID)); err != nil {
+			return err
+		}
+		var state VolumeState
+		stateFound, stateErr := getOptionalJSONStore(ctx, store, volumeStateKey(r.root, volumeID), &state)
+		if stateErr != nil {
+			return stateErr
+		}
+		if err := applySummaryRecordMutation(ctx, store, r.root, summarySubject("volume", volumeID), summaryVolumeContribution(state, stateFound, before, err == nil), summaryVolumeContribution(state, stateFound, VolumeSpecRecord{}, false), r.now()); err != nil {
+			return err
+		}
+		return advanceVolumeCatalogRevision(ctx, store, r.root, r.now())
+	})
+}
+
+// DeleteVolumeAuthority removes the state/spec pair and its derived counters
+// atomically after the caller has removed subordinate volume artifacts.
+func (r *Repository) DeleteVolumeAuthority(ctx context.Context, volumeID string) error {
+	if r == nil {
+		return fmt.Errorf("volume authority repository is required")
+	}
+	canonical, err := CanonicalVolumeID(volumeID)
+	if err != nil || canonical != volumeID {
+		return fmt.Errorf("invalid volume authority identity %q", volumeID)
+	}
+	runner, ok := r.kv.(transactionalKV)
+	if !ok {
+		return ErrSummaryTransactionRequired
+	}
+	now := r.now()
+	err = runner.RunInTransaction(ctx, func(store kvReadWriter) error {
+		var beforeState VolumeState
+		stateFound, err := getOptionalJSONStore(ctx, store, volumeStateKey(r.root, volumeID), &beforeState)
+		if err != nil {
+			return err
+		}
+		var beforeSpec VolumeSpecRecord
+		specFound, err := getOptionalJSONStore(ctx, store, volumeSpecKey(r.root, volumeID), &beforeSpec)
+		if err != nil {
+			return err
+		}
+		if !stateFound && !specFound {
+			return nil
+		}
+		if err := store.Delete(ctx, volumeStateKey(r.root, volumeID)); err != nil {
+			return err
+		}
+		if err := store.Delete(ctx, volumeSpecKey(r.root, volumeID)); err != nil {
+			return err
+		}
+		if err := applySummaryRecordMutation(ctx, store, r.root, summarySubject("volume", volumeID), summaryVolumeContribution(beforeState, stateFound, beforeSpec, specFound), SummaryCounters{}, now); err != nil {
+			return err
+		}
+		return advanceVolumeCatalogRevision(ctx, store, r.root, now)
+	})
+	if err == nil {
+		r.forgetNativeAllocationVolume(volumeID)
+	}
+	return err
 }
 
 func (r *Repository) CreateSnapshotRecord(ctx context.Context, rec SnapshotRecord) (SnapshotRecord, bool, error) {
@@ -393,28 +587,35 @@ func (r *Repository) CreateSnapshotRecord(ctx context.Context, rec SnapshotRecor
 		rec.UpdatedAtUnix = rec.CreatedAtUnix
 	}
 
+	registrar := r.snapshotRegistrar()
 	if txkv, ok := r.kv.(transactionalKV); ok {
 		var out SnapshotRecord
 		var replay bool
 		err := txkv.RunInTransaction(ctx, func(tx kvReadWriter) error {
 			var err error
-			out, replay, err = r.createSnapshotRecordWithStore(ctx, tx, rec)
+			out, replay, err = r.createSnapshotRecordWithStore(ctx, tx, rec, registrar)
 			return err
 		})
 		return out, replay, err
 	}
+	if registrar != nil {
+		return SnapshotRecord{}, false, ErrSnapshotSubjectRegistrationRequiresTransaction
+	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.createSnapshotRecordWithStore(ctx, r.kv, rec)
+	return r.createSnapshotRecordWithStore(ctx, r.kv, rec, nil)
 }
 
-func (r *Repository) createSnapshotRecordWithStore(ctx context.Context, store kvReadWriter, rec SnapshotRecord) (SnapshotRecord, bool, error) {
+func (r *Repository) createSnapshotRecordWithStore(ctx context.Context, store kvReadWriter, rec SnapshotRecord, registrar SnapshotSubjectRegistrar) (SnapshotRecord, bool, error) {
 	if rec.IdempotencyKey != "" {
 		var idem SnapshotIdempotencyRecord
 		err := getJSONStore(ctx, store, snapshotIdempotencyKey(r.root, rec.SourceVolumeID, rec.IdempotencyKey), &idem)
 		if err == nil {
 			existing, err := readSnapshotRecord(ctx, store, r.root, idem.SnapshotID)
+			if err == nil && registrar != nil {
+				err = registrar.RegisterSnapshotSubject(ctx, store, existing)
+			}
 			return existing, true, err
 		}
 		if !errors.Is(err, ErrNotFound) {
@@ -445,6 +646,11 @@ func (r *Repository) createSnapshotRecordWithStore(ctx context.Context, store kv
 			CreatedAtUnix:    rec.CreatedAtUnix,
 			LastObservedUnix: rec.UpdatedAtUnix,
 		}); err != nil {
+			return SnapshotRecord{}, false, err
+		}
+	}
+	if registrar != nil {
+		if err := registrar.RegisterSnapshotSubject(ctx, store, rec); err != nil {
 			return SnapshotRecord{}, false, err
 		}
 	}
@@ -512,11 +718,30 @@ func (r *Repository) ListSnapshotRecords(ctx context.Context, sourceVolumeID str
 }
 
 func (r *Repository) MarkSnapshotState(ctx context.Context, snapshotID string, state SnapshotState, errorMessage string) (SnapshotRecord, error) {
+	return r.MarkSnapshotStateAuthorized(ctx, snapshotID, state, errorMessage, "")
+}
+
+func (r *Repository) MarkSnapshotStateAuthorized(ctx context.Context, snapshotID string, state SnapshotState, errorMessage, callerRole string) (SnapshotRecord, error) {
 	if err := validateSnapshotID(snapshotID); err != nil {
 		return SnapshotRecord{}, err
 	}
 	if state == "" {
 		return SnapshotRecord{}, fmt.Errorf("snapshot state is required")
+	}
+	if state == SnapshotStateDeleted {
+		if guard := r.protectedSubjectDeletionGuard(); guard != nil {
+			record, err := r.GetSnapshotRecord(ctx, snapshotID)
+			if err != nil {
+				return SnapshotRecord{}, err
+			}
+			volumeID, err := volumeid.ParseLowercase(record.SourceVolumeID)
+			if err != nil {
+				return SnapshotRecord{}, fmt.Errorf("parse snapshot source volume: %w", err)
+			}
+			if err := guard.ValidateSubjectDeletion(ctx, "snapshot", volumeID, snapshotID, callerRole); err != nil {
+				return SnapshotRecord{}, fmt.Errorf("%w: snapshot=%s: %w", ErrProtectedDeletionRejected, snapshotID, err)
+			}
+		}
 	}
 	if txkv, ok := r.kv.(transactionalKV); ok {
 		var out SnapshotRecord
@@ -802,7 +1027,9 @@ func (r *Repository) ListVolumeStates(ctx context.Context) ([]VolumeState, error
 }
 
 func (r *Repository) PutExtentMapping(ctx context.Context, rec ExtentMappingRecord) error {
-	return r.putJSON(ctx, extentMappingKey(r.root, rec.VolumeID, rec.ExtentID), rec)
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		return r.putExtentMappingWithPlacementIndex(ctx, store, rec)
+	})
 }
 
 func (r *Repository) PutAllocationPage(ctx context.Context, rec AllocationPageRecord) error {
@@ -1138,7 +1365,9 @@ func (r *Repository) ListCompatibleAllocationPages(ctx context.Context, volumeID
 }
 
 func (r *Repository) DeleteExtentMapping(ctx context.Context, volumeID string, extentID uint64) error {
-	return r.kv.Delete(ctx, extentMappingKey(r.root, volumeID, extentID))
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		return r.deleteExtentMappingWithPlacementIndex(ctx, store, volumeID, extentID)
+	})
 }
 
 func (r *Repository) GetExtentMapping(ctx context.Context, volumeID string, extentID uint64) (ExtentMappingRecord, error) {
@@ -1168,11 +1397,15 @@ func (r *Repository) ListExtentMappings(ctx context.Context, volumeID string) ([
 }
 
 func (r *Repository) PutReplicaSet(ctx context.Context, rec ReplicaSetState) error {
-	return r.putJSON(ctx, replicaSetKey(r.root, rec.VolumeID, rec.ReplicaSetID), rec)
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		return r.putReplicaSetWithPlacementIndex(ctx, store, rec)
+	})
 }
 
 func (r *Repository) DeleteReplicaSet(ctx context.Context, volumeID, replicaSetID string) error {
-	return r.kv.Delete(ctx, replicaSetKey(r.root, volumeID, replicaSetID))
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		return r.deleteReplicaSetWithPlacementIndex(ctx, store, volumeID, replicaSetID)
+	})
 }
 
 func (r *Repository) GetReplicaSet(ctx context.Context, volumeID, replicaSetID string) (ReplicaSetState, error) {
@@ -1206,7 +1439,9 @@ func (r *Repository) PutIdempotencyRecord(ctx context.Context, rec IdempotencyRe
 }
 
 func (r *Repository) PutMutationOperation(ctx context.Context, rec MutationOperationRecord) error {
-	return r.putJSON(ctx, mutationOperationKey(r.root, rec.VolumeID, rec.OperationID), rec)
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		return r.writeMutationOperationWithIndex(ctx, store, rec)
+	})
 }
 
 func (r *Repository) PutWriteIntent(ctx context.Context, record IdempotencyRecord, operation MutationOperationRecord) error {
@@ -1233,7 +1468,7 @@ func (r *Repository) PutWriteIntentBatch(ctx context.Context, intents []WriteInt
 			if err := writeIdempotencyRecord(ctx, store, r.root, intent.IdempotencyRecord); err != nil {
 				return err
 			}
-			if err := writeMutationOperation(ctx, store, r.root, intent.MutationOperation); err != nil {
+			if err := r.writeMutationOperationWithIndex(ctx, store, intent.MutationOperation); err != nil {
 				return err
 			}
 		}
@@ -1252,7 +1487,7 @@ func (r *Repository) putWriteIntent(ctx context.Context, record IdempotencyRecor
 		if err := writeIdempotencyRecord(ctx, store, r.root, record); err != nil {
 			return err
 		}
-		return writeMutationOperation(ctx, store, r.root, operation)
+		return r.writeMutationOperationWithIndex(ctx, store, operation)
 	}
 	if txkv, ok := r.kv.(transactionalKV); ok {
 		return txkv.RunInTransaction(ctx, apply)
@@ -1280,7 +1515,9 @@ func hasDuplicateWriteIntentKeys(intents []WriteIntentRecord) bool {
 }
 
 func (r *Repository) DeleteMutationOperation(ctx context.Context, volumeID, operationID string) error {
-	return r.kv.Delete(ctx, mutationOperationKey(r.root, volumeID, operationID))
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		return r.deleteMutationOperationWithIndex(ctx, store, volumeID, operationID)
+	})
 }
 
 func (r *Repository) GetMutationOperation(ctx context.Context, volumeID, operationID string) (MutationOperationRecord, error) {
@@ -1315,6 +1552,21 @@ func (r *Repository) ListMutationOperations(ctx context.Context, volumeID string
 }
 
 func (r *Repository) FindMutationOperationByID(ctx context.Context, operationID string) (MutationOperationRecord, error) {
+	indexed, indexedErr := r.GetMutationOperationByID(ctx, operationID)
+	if indexedErr == nil {
+		return indexed, nil
+	}
+	if !errors.Is(indexedErr, ErrNotFound) {
+		return MutationOperationRecord{}, indexedErr
+	}
+	if _, stateErr := r.GetMaintenanceIndexState(ctx); stateErr == nil {
+		return MutationOperationRecord{}, ErrNotFound
+	} else if !errors.Is(stateErr, ErrNotFound) {
+		return MutationOperationRecord{}, stateErr
+	}
+	// Compatibility bridge for records written before AD-IMPL-004A. The
+	// 004B ready-state promotion disables this expensive fallback after every
+	// legacy operation has an operation-by-id record.
 	keys, err := r.listAll(ctx, mutationOperationsRootPrefix(r.root))
 	if err != nil {
 		return MutationOperationRecord{}, err
@@ -1480,6 +1732,7 @@ func (r *Repository) applyNodeMembershipMutation(ctx context.Context, store kvRe
 	rec := cloneNodeMembershipRecord(requested)
 	var existing NodeMembershipRecord
 	err := getJSONStore(ctx, store, nodeMembershipKey(r.root, rec.NodeID), &existing)
+	existingFound := err == nil
 	switch {
 	case err == nil:
 		if expectedGeneration != nil && existing.Generation != *expectedGeneration {
@@ -1507,6 +1760,9 @@ func (r *Repository) applyNodeMembershipMutation(ctx context.Context, store kvRe
 	state.MembershipUpdatedAtUnixNano = now.UnixNano()
 	rec.MembershipRevision = state.MembershipRevision
 	if err := putJSONStore(ctx, store, nodeMembershipKey(r.root, rec.NodeID), rec); err != nil {
+		return NodeMembershipRecord{}, MembershipProjectionState{}, false, err
+	}
+	if err := applySummaryRecordMutation(ctx, store, r.root, summarySubject("membership", rec.NodeID), summaryMembershipContribution(existing, existingFound), summaryMembershipContribution(rec, true), now); err != nil {
 		return NodeMembershipRecord{}, MembershipProjectionState{}, false, err
 	}
 	if err := putJSONStore(ctx, store, membershipProjectionNodeKey(r.root, rec.NodeID), rec); err != nil {
@@ -1638,6 +1894,24 @@ func (r *Repository) ListMembershipProjectionPage(ctx context.Context, cursor st
 	if err := r.ensureMembershipProjection(ctx); err != nil {
 		return MembershipProjectionPage{}, err
 	}
+	return r.listMembershipProjectionPageReady(ctx, cursor, limit, includeTombstones)
+}
+
+// ListMembershipProjectionPageReadOnly never bootstraps or repairs the
+// projection. Operator polling must surface a missing projection instead of
+// turning a GET into a cluster-wide rebuild and metadata mutation.
+func (r *Repository) ListMembershipProjectionPageReadOnly(ctx context.Context, cursor string, limit int, includeTombstones bool) (MembershipProjectionPage, error) {
+	if r == nil {
+		return MembershipProjectionPage{}, ErrNotFound
+	}
+	var state MembershipProjectionState
+	if err := r.getJSON(ctx, membershipProjectionStateKey(r.root), &state); err != nil {
+		return MembershipProjectionPage{}, err
+	}
+	return r.listMembershipProjectionPageReady(ctx, cursor, limit, includeTombstones)
+}
+
+func (r *Repository) listMembershipProjectionPageReady(ctx context.Context, cursor string, limit int, includeTombstones bool) (MembershipProjectionPage, error) {
 	if limit <= 0 {
 		limit = MembershipProjectionPageDefault
 	}
@@ -2020,11 +2294,42 @@ func cloneNodeMembershipRecords(records []NodeMembershipRecord) []NodeMembership
 }
 
 func (r *Repository) PutPlacementTransition(ctx context.Context, rec PlacementTransitionRecord) error {
-	return r.putJSON(ctx, placementTransitionKey(r.root, rec.VolumeID, rec.PlacementRef), rec)
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		return r.putPlacementTransitionWithDrainProgress(ctx, store, rec)
+	})
 }
 
 func (r *Repository) DeletePlacementTransition(ctx context.Context, volumeID, placementRef string) error {
-	return r.kv.Delete(ctx, placementTransitionKey(r.root, volumeID, placementRef))
+	return r.applyIndexedWrite(ctx, func(store kvReadWriter) error {
+		var before PlacementTransitionRecord
+		transitionFound, err := getOptionalJSONStore(ctx, store, placementTransitionKey(r.root, volumeID, placementRef), &before)
+		if err != nil {
+			return err
+		}
+		workID := MaintenanceWorkID(volumeID, placementRef)
+		var work MaintenanceWorkRecord
+		found, err := getOptionalJSONStore(ctx, store, maintenanceWorkKey(r.root, workID), &work)
+		if err != nil {
+			return err
+		}
+		if found {
+			if err := validateMaintenanceWorkRecord(work); err != nil {
+				return err
+			}
+			if indexedMaintenanceWorkState(work.State) {
+				if err := deleteMaintenanceWorkIndexStore(ctx, store, r.root, maintenanceWorkIndexRecord(work), r.now().UTC()); err != nil {
+					return err
+				}
+			}
+			if err := store.Delete(ctx, maintenanceWorkKey(r.root, workID)); err != nil {
+				return err
+			}
+		}
+		if err := store.Delete(ctx, placementTransitionKey(r.root, volumeID, placementRef)); err != nil {
+			return err
+		}
+		return applySummaryRecordMutation(ctx, store, r.root, summarySubject("placement-transition", volumeID, placementRef), summaryTransitionContribution(before, transitionFound), SummaryCounters{}, r.now())
+	})
 }
 
 func (r *Repository) GetPlacementTransition(ctx context.Context, volumeID, placementRef string) (PlacementTransitionRecord, error) {
@@ -2235,6 +2540,10 @@ func cloneMutationOperationRecord(in MutationOperationRecord) MutationOperationR
 	in.CompletedPageNos = append([]uint64(nil), in.CompletedPageNos...)
 	in.RetryPageWindows = append([]MutationPageWindowRecord(nil), in.RetryPageWindows...)
 	in.RetiredPhysicalChunkIDs = append([]uint64(nil), in.RetiredPhysicalChunkIDs...)
+	in.RetiredReplicaTargets = append([]MutationRetiredReplicaTarget(nil), in.RetiredReplicaTargets...)
+	for i := range in.RetiredReplicaTargets {
+		in.RetiredReplicaTargets[i].SourceReplicaIDs = append([]string(nil), in.RetiredReplicaTargets[i].SourceReplicaIDs...)
+	}
 	return in
 }
 
@@ -3016,7 +3325,7 @@ func (r *Repository) commitECFullStripeWriteWithStore(ctx context.Context, store
 	operation.AffectedPageNos = append([]uint64(nil), req.AffectedPageNos...)
 	operation.RetiredPhysicalChunkIDs = append([]uint64(nil), req.RetiredPhysicalChunkIDs...)
 	operation.LastUpdatedAtUnix = time.Now().Unix()
-	if err := writeMutationOperation(ctx, store, r.root, operation); err != nil {
+	if err := r.writeMutationOperationWithIndex(ctx, store, operation); err != nil {
 		return VolumeState{}, IdempotencyRecord{}, err
 	}
 	if err := r.writeRetiredECObjects(ctx, store, retiredObjects, operation.LastUpdatedAtUnix); err != nil {
@@ -3157,7 +3466,7 @@ func (r *Repository) commitECDiscardWithStore(ctx context.Context, store kvReadW
 	operation.AffectedPageNos = append([]uint64(nil), req.AffectedPageNos...)
 	operation.RetiredPhysicalChunkIDs = append([]uint64(nil), req.RetiredPhysicalChunkIDs...)
 	operation.LastUpdatedAtUnix = nowUnix
-	if err := writeMutationOperation(ctx, store, r.root, operation); err != nil {
+	if err := r.writeMutationOperationWithIndex(ctx, store, operation); err != nil {
 		return VolumeState{}, IdempotencyRecord{}, err
 	}
 	if err := r.writeRetiredECObjects(ctx, store, retiredObjects, nowUnix); err != nil {
@@ -4044,7 +4353,7 @@ func (r *Repository) finalizeWriteMutationOperationFromSnapshot(ctx context.Cont
 	operation.AffectedPageNos = append([]uint64(nil), req.AffectedPageNos...)
 	operation.RetiredPhysicalChunkIDs = append([]uint64(nil), req.RetiredPhysicalChunkIDs...)
 	operation.LastUpdatedAtUnix = time.Now().Unix()
-	return writeMutationOperation(ctx, store, r.root, operation)
+	return r.writeMutationOperationWithIndex(ctx, store, operation)
 }
 
 func (r *Repository) persistCommittedAllocationPages(ctx context.Context, store kvReadWriter, req ApplyCommittedWriteEffectsRequest) error {
@@ -4455,7 +4764,7 @@ func (r *Repository) CommitPrimaryFailover(ctx context.Context, req CommitPrimar
 			if err := writeVolumeState(ctx, tx, r.root, state); err != nil {
 				return err
 			}
-			if err := writeReplicaSet(ctx, tx, r.root, replicaSet); err != nil {
+			if err := r.putReplicaSetWithPlacementIndex(ctx, tx, replicaSet); err != nil {
 				return err
 			}
 			return nil
@@ -4489,7 +4798,7 @@ func (r *Repository) CommitPrimaryFailover(ctx context.Context, req CommitPrimar
 	if err := writeVolumeState(ctx, r.kv, r.root, state); err != nil {
 		return VolumeState{}, ReplicaSetState{}, err
 	}
-	if err := writeReplicaSet(ctx, r.kv, r.root, replicaSet); err != nil {
+	if err := r.putReplicaSetWithPlacementIndex(ctx, r.kv, replicaSet); err != nil {
 		return VolumeState{}, ReplicaSetState{}, err
 	}
 	return state, replicaSet, nil
@@ -4572,8 +4881,24 @@ func readVolumeSpec(ctx context.Context, store kvReadWriter, root, volumeID stri
 	return rec, nil
 }
 
-func writeVolumeSpec(ctx context.Context, store kvReadWriter, root string, rec VolumeSpecRecord) error {
-	return putJSONStore(ctx, store, volumeSpecKey(root, rec.VolumeID), rec)
+func writeVolumeSpec(ctx context.Context, store kvReadWriter, root string, rec VolumeSpecRecord, now time.Time) error {
+	var before VolumeSpecRecord
+	found, err := getOptionalJSONStore(ctx, store, volumeSpecKey(root, rec.VolumeID), &before)
+	if err != nil {
+		return err
+	}
+	if err := putJSONStore(ctx, store, volumeSpecKey(root, rec.VolumeID), rec); err != nil {
+		return err
+	}
+	var state VolumeState
+	stateFound, err := getOptionalJSONStore(ctx, store, volumeStateKey(root, rec.VolumeID), &state)
+	if err != nil {
+		return err
+	}
+	if err := applySummaryRecordMutation(ctx, store, root, summarySubject("volume", rec.VolumeID), summaryVolumeContribution(state, stateFound, before, found), summaryVolumeContribution(state, stateFound, rec, true), now); err != nil {
+		return err
+	}
+	return advanceVolumeCatalogRevision(ctx, store, root, now)
 }
 
 func readReplicaSet(ctx context.Context, store kvReadWriter, root, volumeID, replicaSetID string) (ReplicaSetState, error) {

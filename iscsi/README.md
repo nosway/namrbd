@@ -20,4 +20,3 @@ Tests should cover SCSI sense mapping, authentication, generation/fencing,
 registry reconciliation, bounded reload behavior, disconnect/reconnect, and
 cleanup. Protocol success does not substitute for payload readback and
 single-writer verification.
-

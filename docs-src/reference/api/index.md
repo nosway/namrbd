@@ -13,7 +13,8 @@ from being mistaken for one shared server.
 - [namrbd-gateway v1](rest/namrbd-gateway-v1.openapi.json) — stable volume,
   discovery, health, readiness, and metrics operations.
 - [sbs-service observability v1](rest/sbs-service-observability-v1.openapi.json)
-  — the read-only Phase-Y views and operational health surfaces.
+  — the read-only operations views, bounded fleet aggregate, and
+  revision-pinned node/volume page and point surfaces.
 - [sbs-data operational v1](rest/sbs-data-operational-v1.openapi.json) —
   health, readiness, metrics, summary, and store-health observations.
 - [namrbd-iscsi-gateway observability v1](rest/namrbd-iscsi-gateway-observability-v1.openapi.json)

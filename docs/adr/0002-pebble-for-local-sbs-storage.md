@@ -78,4 +78,3 @@ readback. Deployment evidence must also cover crash/restart, disk-full behavior,
 compaction pressure, and the target filesystem/device. Revisit if payload size
 or workload evidence shows that a file/object engine plus a transactional local
 index produces materially safer or more predictable operation.
-

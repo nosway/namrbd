@@ -247,6 +247,141 @@ func TestMembershipProjectionAdminContract(t *testing.T) {
 	}
 }
 
+func TestListNodesPinsRevisionAndRejectsInvalidPageContract(t *testing.T) {
+	oldTracker := dependencyTracker
+	dependencyTracker = depavail.NewTracker(depavail.DefaultThresholds())
+	t.Cleanup(func() { dependencyTracker = oldTracker })
+
+	ctx := context.Background()
+	srv := newTestMaintenanceServer(t)
+	srv.leader = &leaderLeaseManager{}
+	srv.leader.isLeader.Store(true)
+	cluster := &adminv1.ClusterRef{ClusterId: "test-cluster", SbsClusterId: "test-sbs"}
+	for _, nodeID := range []string{"node-page-a", "node-page-b", "node-page-c"} {
+		if _, err := srv.JoinNode(ctx, &adminv1.JoinNodeRequest{
+			Cluster: cluster, Meta: &adminv1.RequestMeta{Actor: "operator-a", Reason: "page fixture"},
+			NodeId: nodeID, GrpcEndpoint: nodeID + ":9461", AdminHttpEndpoint: nodeID + ":9082", Zone: "zone-a",
+		}); err != nil {
+			t.Fatalf("JoinNode(%s): %v", nodeID, err)
+		}
+	}
+	first, err := srv.ListNodes(ctx, &adminv1.ListNodesRequest{Cluster: cluster, PageSize: 2})
+	if err != nil {
+		t.Fatalf("ListNodes(first): %v", err)
+	}
+	if len(first.GetNodes()) != 2 || first.GetNextPageToken() == "" || first.GetMembershipProjectionRevision() != 3 {
+		t.Fatalf("first page=%+v", first)
+	}
+	second, err := srv.ListNodes(ctx, &adminv1.ListNodesRequest{Cluster: cluster, PageSize: 2, PageToken: first.GetNextPageToken()})
+	if err != nil {
+		t.Fatalf("ListNodes(second): %v", err)
+	}
+	if len(second.GetNodes()) != 1 || second.GetNextPageToken() != "" || second.GetMembershipProjectionRevision() != first.GetMembershipProjectionRevision() {
+		t.Fatalf("second page=%+v", second)
+	}
+	if _, err := srv.ListNodes(ctx, &adminv1.ListNodesRequest{Cluster: cluster, PageSize: 2, PageToken: first.GetNextPageToken(), IncludeTombstones: true}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("filter mismatch code=%s err=%v", status.Code(err), err)
+	}
+	if _, err := srv.ListNodes(ctx, &adminv1.ListNodesRequest{Cluster: cluster, PageSize: 513}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("oversized page code=%s err=%v", status.Code(err), err)
+	}
+	if _, err := srv.ListNodes(ctx, &adminv1.ListNodesRequest{Cluster: cluster, PageSize: 2, PageToken: "not-a-token"}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("malformed token code=%s err=%v", status.Code(err), err)
+	}
+	if _, err := srv.JoinNode(ctx, &adminv1.JoinNodeRequest{
+		Cluster: cluster, Meta: &adminv1.RequestMeta{Actor: "operator-a", Reason: "invalidate token"},
+		NodeId: "node-page-d", GrpcEndpoint: "node-page-d:9461", AdminHttpEndpoint: "node-page-d:9082", Zone: "zone-a",
+	}); err != nil {
+		t.Fatalf("JoinNode(node-page-d): %v", err)
+	}
+	if _, err := srv.ListNodes(ctx, &adminv1.ListNodesRequest{Cluster: cluster, PageSize: 2, PageToken: first.GetNextPageToken()}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("stale token code=%s err=%v", status.Code(err), err)
+	}
+}
+
+func TestListVolumesPageUsesCatalogFenceAndSpecOnlyProjection(t *testing.T) {
+	ctx := context.Background()
+	srv := newTestMaintenanceServer(t)
+	fixtures := []struct {
+		id     string
+		status clustermeta.VolumeStatus
+	}{
+		{id: "00a1b2d1", status: clustermeta.VolumeStatusHealthy},
+		{id: "00a1b2d2", status: clustermeta.VolumeStatusDegraded},
+	}
+	for _, fixture := range fixtures {
+		if err := srv.repo.PutVolumeSpec(ctx, clustermeta.VolumeSpecRecord{
+			VolumeID: fixture.id, SizeBytes: 1 << 20, BlockSize: 4096,
+			RedundancyBackend: clustermeta.RedundancyBackendReplicated, TopologyMode: "zone",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := srv.repo.PutVolumeState(ctx, clustermeta.VolumeState{
+			VolumeID: fixture.id, Epoch: 1, Revision: 1, Status: fixture.status,
+			RedundancyBackend: clustermeta.RedundancyBackendReplicated, TopologyMode: "zone",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := srv.ListVolumesPage(ctx, &adminv1.ListVolumesPageRequest{PageSize: 1}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("pre-rebuild code=%s err=%v", status.Code(err), err)
+	}
+	for {
+		page, err := srv.repo.RunVolumeCatalogRebuildPage(ctx, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page.Ready {
+			break
+		}
+	}
+	first, err := srv.ListVolumesPage(ctx, &adminv1.ListVolumesPageRequest{
+		PageSize: 1, RedundancyBackend: clustermeta.RedundancyBackendReplicated, TopologyMode: "zone",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.GetVolumes()) != 1 || first.GetNextPageToken() == "" || first.GetCatalogRevision() == 0 || first.GetScannedRecords() != 1 || first.GetProjectionHealth() != "healthy" {
+		t.Fatalf("first page=%+v", first)
+	}
+	if first.GetVolumes()[0].GetVolumeRevision() != 0 || first.GetVolumes()[0].GetRepairBacklog() != 0 || first.GetVolumes()[0].GetTransitionRecentBatches() != 0 {
+		t.Fatalf("paged list must remain spec-only: %+v", first.GetVolumes()[0])
+	}
+	second, err := srv.ListVolumesPage(ctx, &adminv1.ListVolumesPageRequest{
+		PageSize: 1, PageToken: first.GetNextPageToken(), RedundancyBackend: clustermeta.RedundancyBackendReplicated, TopologyMode: "zone",
+	})
+	if err != nil || len(second.GetVolumes()) != 1 || second.GetCatalogRevision() != first.GetCatalogRevision() {
+		t.Fatalf("second page=%+v err=%v", second, err)
+	}
+	if second.GetNextPageToken() != "" {
+		last, err := srv.ListVolumesPage(ctx, &adminv1.ListVolumesPageRequest{
+			PageSize: 1, PageToken: second.GetNextPageToken(), RedundancyBackend: clustermeta.RedundancyBackendReplicated, TopologyMode: "zone",
+		})
+		if err != nil || len(last.GetVolumes()) != 0 || last.GetNextPageToken() != "" || last.GetCatalogRevision() != first.GetCatalogRevision() {
+			t.Fatalf("terminal page=%+v err=%v", last, err)
+		}
+	}
+	if _, err := srv.ListVolumesPage(ctx, &adminv1.ListVolumesPageRequest{PageSize: 1, PageToken: first.GetNextPageToken(), TopologyMode: "rack"}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("filter mismatch code=%s err=%v", status.Code(err), err)
+	}
+	state, err := srv.repo.GetVolumeState(ctx, fixtures[1].id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Status = clustermeta.VolumeStatusHealthy
+	if err := srv.repo.PutVolumeState(ctx, state); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.ListVolumesPage(ctx, &adminv1.ListVolumesPageRequest{
+		PageSize: 1, PageToken: first.GetNextPageToken(), RedundancyBackend: clustermeta.RedundancyBackendReplicated, TopologyMode: "zone",
+	}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("stale token code=%s err=%v", status.Code(err), err)
+	}
+	if _, err := srv.ListVolumesPage(ctx, &adminv1.ListVolumesPageRequest{PageSize: 513}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("oversized page code=%s err=%v", status.Code(err), err)
+	}
+}
+
 func TestServiceSpecFromVolumeSpecRecordPreservesProtectedState(t *testing.T) {
 	record := volumeSpecRecord{
 		VolumeID:        "00000075",
@@ -535,16 +670,17 @@ func TestGetMaintenanceStatusReflectsThrottleAndPauseState(t *testing.T) {
 	}
 	if got := initial.GetThrottle(); got.GetAuthority() != "sbs-service-maintenance-throttle" ||
 		got.GetGeneration() != 1 || got.GetMaxConcurrentRepairs() != 1 ||
-		got.GetMaxConcurrentRebalances() != 1 || got.GetMaxConcurrentDrains() != 1 {
+		got.GetMaxConcurrentRebalances() != 1 || got.GetMaxConcurrentDrains() != 1 || got.GetMaxTotalConcurrentMovements() != 1 {
 		t.Fatalf("unexpected initial maintenance throttle: %+v", got)
 	}
 
 	if _, err := srv.SetMaintenanceThrottle(ctx, &adminv1.SetMaintenanceThrottleRequest{
-		Cluster:                 cluster,
-		Meta:                    &adminv1.RequestMeta{Actor: "tester", Reason: "phase-o-budget"},
-		MaxConcurrentRepairs:    3,
-		MaxConcurrentRebalances: 2,
-		MaxConcurrentDrains:     1,
+		Cluster:                     cluster,
+		Meta:                        &adminv1.RequestMeta{Actor: "tester", Reason: "phase-o-budget"},
+		MaxConcurrentRepairs:        3,
+		MaxConcurrentRebalances:     2,
+		MaxConcurrentDrains:         1,
+		MaxTotalConcurrentMovements: 1,
 	}); err != nil {
 		t.Fatalf("SetMaintenanceThrottle: %v", err)
 	}
@@ -554,7 +690,7 @@ func TestGetMaintenanceStatusReflectsThrottleAndPauseState(t *testing.T) {
 	}
 	if got := afterThrottle.GetThrottle(); got.GetGeneration() != 2 ||
 		got.GetMaxConcurrentRepairs() != 3 || got.GetMaxConcurrentRebalances() != 2 ||
-		got.GetMaxConcurrentDrains() != 1 {
+		got.GetMaxConcurrentDrains() != 1 || got.GetMaxTotalConcurrentMovements() != 1 {
 		t.Fatalf("unexpected throttled maintenance state: %+v", got)
 	}
 
@@ -2475,46 +2611,12 @@ func TestCreateVolumeFromSnapshotMaterializesVolumeAndHonorsIdempotency(t *testi
 		}
 		return nil
 	}
-	adminHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/debug/materialize-volume" {
-			http.NotFound(w, r)
-			return
-		}
-		sizeBytes, err := strconv.ParseUint(r.URL.Query().Get("size_bytes"), 10, 64)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		blockSize, err := strconv.ParseUint(r.URL.Query().Get("block_size"), 10, 32)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		chunkSize, err := strconv.ParseUint(r.URL.Query().Get("allocation_chunk_size_bytes"), 10, 32)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		pageBytes, err := strconv.ParseUint(r.URL.Query().Get("allocation_page_bytes"), 10, 32)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		volumeID := r.URL.Query().Get("volume_id")
-		if err := ensureLocalVolumeAndReplicas(volumeID, sizeBytes, blockSize, chunkSize, pageBytes); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "volume_id": volumeID})
-	}))
-	t.Cleanup(adminHTTP.Close)
 	if err := srv.repo.PutNodeMembership(ctx, clustermeta.NodeMembershipRecord{
-		NodeID:            "node-a",
-		LifecycleState:    clustermeta.NodeLifecycleActive,
-		HealthState:       clustermeta.NodeHealthHealthy,
-		Zone:              "zone-a",
-		AdminHTTPEndpoint: adminHTTP.URL,
-		SBSEndpoints:      []clustermeta.SBSEndpoint{{Address: "node-a", Port: 19001}},
+		NodeID:         "node-a",
+		LifecycleState: clustermeta.NodeLifecycleActive,
+		HealthState:    clustermeta.NodeHealthHealthy,
+		Zone:           "zone-a",
+		SBSEndpoints:   []clustermeta.SBSEndpoint{{Address: "node-a", Port: 19001}},
 	}); err != nil {
 		t.Fatalf("PutNodeMembership: %v", err)
 	}
@@ -5161,6 +5263,121 @@ func TestRefreshDrainOperationCancelsWhenNodeIsActiveAgain(t *testing.T) {
 	}
 }
 
+func TestPhaseADDrainUsesNodeIndexAndPersistedPointProgress(t *testing.T) {
+	ctx := context.Background()
+	srv := newTestMaintenanceServer(t)
+	for _, node := range []struct {
+		id    string
+		zone  string
+		state clustermeta.NodeLifecycleState
+	}{
+		{"node-a", "zone-a", clustermeta.NodeLifecycleDraining},
+		{"node-b", "zone-b", clustermeta.NodeLifecycleActive},
+		{"node-c", "zone-c", clustermeta.NodeLifecycleActive},
+		{"node-d", "zone-d", clustermeta.NodeLifecycleActive},
+	} {
+		if err := srv.repo.PutNodeMembership(ctx, clustermeta.NodeMembershipRecord{
+			NodeID: node.id, Zone: node.zone, LifecycleState: node.state,
+			HealthState: clustermeta.NodeHealthHealthy, LastHeartbeatUnix: time.Now().Unix(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := srv.repo.PutExtentMapping(ctx, clustermeta.ExtentMappingRecord{
+		VolumeID: "00000071", ExtentID: 2, LogicalOffset: 4096,
+		LengthBytes: 4096, PlacementRef: "pl-affected", Revision: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range []struct {
+		volumeID     string
+		placement    string
+		replicaSet   string
+		replicaNodes []string
+	}{
+		{"00000071", "pl-affected", "rs-affected", []string{"node-a", "node-b", "node-c"}},
+		{"00000072", "pl-unrelated", "rs-unrelated", []string{"node-b", "node-c", "node-d"}},
+	} {
+		if err := srv.repo.PutVolumeState(ctx, clustermeta.VolumeState{VolumeID: fixture.volumeID, Epoch: 1, Revision: 1, Status: clustermeta.VolumeStatusHealthy}); err != nil {
+			t.Fatal(err)
+		}
+		if err := srv.repo.PutExtentMapping(ctx, clustermeta.ExtentMappingRecord{VolumeID: fixture.volumeID, ExtentID: 1, LengthBytes: 4096, PlacementRef: fixture.placement, Revision: 1}); err != nil {
+			t.Fatal(err)
+		}
+		replicas := make([]clustermeta.ReplicaDescriptor, 0, len(fixture.replicaNodes))
+		for index, nodeID := range fixture.replicaNodes {
+			role := clustermeta.ReplicaRoleSecondary
+			if index == 0 {
+				role = clustermeta.ReplicaRolePrimary
+			}
+			replicas = append(replicas, clustermeta.ReplicaDescriptor{NodeID: nodeID, ReplicaID: fixture.replicaSet + "-" + nodeID, Role: role, FailureDomain: "zone-" + nodeID})
+		}
+		if err := srv.repo.PutReplicaSet(ctx, clustermeta.ReplicaSetState{
+			VolumeID: fixture.volumeID, ReplicaSetID: fixture.replicaSet, PlacementRef: fixture.placement,
+			Epoch: 1, PrimaryReplicaID: replicas[0].ReplicaID, Replicas: replicas, WriteQuorum: 2, ReadQuorum: 1,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for attempt := 0; attempt < 20; attempt++ {
+		page, err := srv.repo.RunMaintenanceIndexRebuildPage(ctx, "epoch-drain-ready", 512, 512)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page.Completed {
+			break
+		}
+		if attempt == 19 {
+			t.Fatal("maintenance index rebuild did not complete")
+		}
+	}
+	if _, err := srv.repo.PromoteMaintenanceIndexRebuild(ctx, "epoch-drain-ready"); err != nil {
+		t.Fatal(err)
+	}
+	op, err := srv.ops.create("node.drain", "node-a", "", "evacuation_pending", adminv1.OperationState_OPERATION_STATE_RUNNING)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.enqueueDrainTransitions(withPhaseADDrainObservation(ctx, op.GetOperationId(), "node-a"), "node-a"); err != nil {
+		t.Fatalf("bounded enqueue: %v", err)
+	}
+	progress, err := srv.repo.GetDrainProgress(ctx, "node-a")
+	if err == nil && !progress.EnqueueCompleted {
+		if err := srv.enqueueDrainTransitions(withPhaseADDrainObservation(ctx, op.GetOperationId(), "node-a"), "node-a"); err != nil {
+			t.Fatalf("bounded enqueue terminal page: %v", err)
+		}
+		progress, err = srv.repo.GetDrainProgress(ctx, "node-a")
+	}
+	if err != nil || progress.OperationID != op.GetOperationId() || !progress.EnqueueCompleted || progress.TotalExtents != 2 || progress.RemainingExtents != 2 {
+		t.Fatalf("persisted progress=%+v err=%v", progress, err)
+	}
+	affected, err := srv.repo.ListPlacementTransitions(ctx, "00000071")
+	if err != nil || len(affected) != 1 || affected[0].Reason != "drain" {
+		t.Fatalf("affected transitions=%+v err=%v", affected, err)
+	}
+	unrelated, err := srv.repo.ListPlacementTransitions(ctx, "00000072")
+	if err != nil || len(unrelated) != 0 {
+		t.Fatalf("unrelated transitions=%+v err=%v", unrelated, err)
+	}
+	refreshed := srv.refreshDrainOperation(ctx, op)
+	if refreshed.GetState() != adminv1.OperationState_OPERATION_STATE_RUNNING || refreshed.GetExtentsRemaining() != 2 {
+		t.Fatalf("running drain=%+v", refreshed)
+	}
+	transition := affected[0]
+	transition.State = clustermeta.PlacementTransitionCompleted
+	if err := srv.repo.PutPlacementTransition(ctx, transition); err != nil {
+		t.Fatal(err)
+	}
+	completedProgress, err := srv.repo.GetDrainProgress(ctx, "node-a")
+	if err != nil || completedProgress.RemainingExtents != 0 || completedProgress.RemainingBytes != 0 {
+		t.Fatalf("completed progress=%+v err=%v", completedProgress, err)
+	}
+	refreshed = srv.refreshDrainOperation(ctx, refreshed)
+	if refreshed.GetState() != adminv1.OperationState_OPERATION_STATE_COMPLETED || refreshed.GetPhase() != "evacuated" {
+		t.Fatalf("completed drain=%+v", refreshed)
+	}
+}
+
 func TestRunMaintenanceOnceRequeuesDrainPlanningAfterReplacementRecoveryCooldown(t *testing.T) {
 	ctx := context.Background()
 	srv := newTestMaintenanceServer(t)
@@ -5935,6 +6152,7 @@ func TestSortMaintenanceJobsPrefersSoonerCooldownExpiry(t *testing.T) {
 func TestRequeueRetryableFailedTransitionsMarksTransitionQueuedAndParentPending(t *testing.T) {
 	ctx := context.Background()
 	srv := newTestMaintenanceServer(t)
+	parentID := clustermeta.TransitionMutationOperationID("00a1b2c3", "pl-1")
 	if err := srv.putVolumeSpec(ctx, volumeSpecRecord{
 		VolumeID:        "00a1b2c3",
 		SizeBytes:       8,
@@ -5959,7 +6177,7 @@ func TestRequeueRetryableFailedTransitionsMarksTransitionQueuedAndParentPending(
 		t.Fatalf("PutPlacementTransition: %v", err)
 	}
 	if err := srv.repo.PutMutationOperation(ctx, clustermeta.MutationOperationRecord{
-		OperationID:       "transition-pl-1",
+		OperationID:       parentID,
 		VolumeID:          "00a1b2c3",
 		Kind:              "transition",
 		State:             clustermeta.MutationOperationFailed,
@@ -5973,11 +6191,11 @@ func TestRequeueRetryableFailedTransitionsMarksTransitionQueuedAndParentPending(
 		t.Fatalf("PutMutationOperation(parent): %v", err)
 	}
 	if err := srv.repo.PutMutationOperation(ctx, clustermeta.MutationOperationRecord{
-		OperationID:       "transition-pl-1-pages-00000000000000000001-00000000000000000001",
+		OperationID:       parentID + "-pages-00000000000000000001-00000000000000000001",
 		VolumeID:          "00a1b2c3",
 		Kind:              "transition_batch",
 		State:             clustermeta.MutationOperationFailed,
-		IdempotencyKey:    "transition-pl-1",
+		IdempotencyKey:    parentID,
 		AffectedExtentIDs: []uint64{1},
 		AffectedPageNos:   []uint64{1},
 		ErrorMessage:      "page failed",
@@ -5997,7 +6215,7 @@ func TestRequeueRetryableFailedTransitionsMarksTransitionQueuedAndParentPending(
 	if transition.State != clustermeta.PlacementTransitionQueued {
 		t.Fatalf("transition state=%q want=%q", transition.State, clustermeta.PlacementTransitionQueued)
 	}
-	parent, err := srv.repo.GetMutationOperation(ctx, "00a1b2c3", "transition-pl-1")
+	parent, err := srv.repo.GetMutationOperation(ctx, "00a1b2c3", parentID)
 	if err != nil {
 		t.Fatalf("GetMutationOperation(parent): %v", err)
 	}
@@ -6083,6 +6301,48 @@ func TestRunNodeHealthReconcilerTransitionsNodeToSuspectAndDown(t *testing.T) {
 	}
 	if detail.LastProbeError == "" {
 		t.Fatalf("last_probe_error should be populated")
+	}
+}
+
+func TestRunNodeHealthReconcilerResumesPromotedAffectedNode(t *testing.T) {
+	ctx := context.Background()
+	srv := newTestMaintenanceServer(t)
+	srv.healthSuspectAfter = 100
+	srv.healthDownAfter = 100
+	srv.probeNodeHealth = func(context.Context, clustermeta.NodeMembershipRecord) error {
+		return fmt.Errorf("fixture miss")
+	}
+	if err := srv.repo.PutNodeMembership(ctx, clustermeta.NodeMembershipRecord{
+		NodeID: "node-affected", LifecycleState: clustermeta.NodeLifecycleActive,
+		HealthState: clustermeta.NodeHealthDown,
+	}); err != nil {
+		t.Fatalf("PutNodeMembership: %v", err)
+	}
+	for attempt := 0; attempt < 20; attempt++ {
+		page, err := srv.repo.RunMaintenanceIndexRebuildPage(ctx, "epoch-health-ready", 16, 128)
+		if err != nil {
+			t.Fatalf("RunMaintenanceIndexRebuildPage(%d): %v", attempt, err)
+		}
+		if page.Completed {
+			break
+		}
+		if attempt == 19 {
+			t.Fatal("maintenance index rebuild did not complete")
+		}
+	}
+	if _, err := srv.repo.PromoteMaintenanceIndexRebuild(ctx, "epoch-health-ready"); err != nil {
+		t.Fatalf("PromoteMaintenanceIndexRebuild: %v", err)
+	}
+	if err := srv.runNodeHealthReconcilerOnce(ctx); err != nil {
+		t.Fatalf("runNodeHealthReconcilerOnce: %v", err)
+	}
+	progress, err := srv.repo.GetNodeHealthAffectedProgress(ctx, "node-affected")
+	if err != nil || !progress.Completed || progress.HealthState != clustermeta.NodeHealthDown {
+		t.Fatalf("affected progress=%+v err=%v", progress, err)
+	}
+	status := srv.nodeHealthStatusSnapshot()
+	if status.TransitionCount != 0 || status.VolumeReconcileCount != 1 {
+		t.Fatalf("health status=%+v", status)
 	}
 }
 
@@ -6438,7 +6698,7 @@ func TestSelectPlacementNodesSkipsNodeWithoutPositiveAllocationWeight(t *testing
 
 func TestMaterializingSBSClientPreservesPhysicalChunkCapability(t *testing.T) {
 	next := &physicalChunkForwardingFakeSBSClient{}
-	wrapped := newMaterializingSBSClient(next, "http://127.0.0.1:1", volumeSpecRecord{VolumeID: "00000065"})
+	wrapped := newMaterializingSBSClient(next, volumeSpecRecord{VolumeID: "00000065"})
 	physical, ok := wrapped.(service.PhysicalChunkSBSClient)
 	if !ok {
 		t.Fatalf("materializing client dropped PhysicalChunkSBSClient capability")
@@ -6460,27 +6720,7 @@ func TestMaterializingSBSClientPreservesPhysicalChunkCapability(t *testing.T) {
 
 func TestMaterializingSBSClientMaterializesECShardReadOnNotFound(t *testing.T) {
 	next := &physicalChunkForwardingFakeSBSClient{ecShardReadData: []byte("ec-shard")}
-	materializeCalls := 0
-	oldDefaultClient := http.DefaultClient
-	http.DefaultClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		materializeCalls++
-		if r.Method != http.MethodPost {
-			t.Fatalf("materialize method=%s want POST", r.Method)
-		}
-		if r.URL.Path != "/debug/materialize-volume" {
-			t.Fatalf("materialize path=%s", r.URL.Path)
-		}
-		if got := r.URL.Query().Get("volume_id"); got != "00000065" {
-			t.Fatalf("materialize volume_id=%q want 00000065", got)
-		}
-		next.markECVolumeMaterialized()
-		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: http.NoBody}, nil
-	})}
-	defer func() {
-		http.DefaultClient = oldDefaultClient
-	}()
-
-	wrapped := newMaterializingSBSClient(next, "http://materializer.test", volumeSpecRecord{
+	wrapped := newMaterializingSBSClient(next, volumeSpecRecord{
 		VolumeID:        "00000065",
 		SizeBytes:       1 << 20,
 		BlockSize:       4096,
@@ -6502,6 +6742,7 @@ func TestMaterializingSBSClientMaterializesECShardReadOnNotFound(t *testing.T) {
 		StoreID:          "node-a/default",
 		LengthBytes:      8,
 		Context: service.SBSRequestContext{
+			RequestID:    "req-ec-read",
 			GatewayID:    "gw-a",
 			HostID:       "host-a",
 			SessionID:    "sess-a",
@@ -6515,8 +6756,15 @@ func TestMaterializingSBSClientMaterializesECShardReadOnNotFound(t *testing.T) {
 	if string(resp.Data) != "ec-shard" {
 		t.Fatalf("ReadECShard data=%q want ec-shard", resp.Data)
 	}
-	if materializeCalls != 1 {
-		t.Fatalf("materialize calls=%d want 1", materializeCalls)
+	if next.materializeCalls != 1 {
+		t.Fatalf("materialize calls=%d want 1", next.materializeCalls)
+	}
+	if got := service.CanonicalVolumeID(uint64(next.materializedSpec.ID)); got != "00000065" {
+		t.Fatalf("materialized volume_id=%q want 00000065", got)
+	}
+	if next.materializedSpec.SizeBytes != 1<<20 || next.materializedSpec.BlockSize != 4096 ||
+		next.materializedSpec.ChunkSizeBytes != 65536 || next.materializedSpec.ExtentPageBytes != 4<<20 {
+		t.Fatalf("unexpected materialized spec: %+v", next.materializedSpec)
 	}
 	if next.ecShardReadAttempts != 2 {
 		t.Fatalf("ReadECShard attempts=%d want 2", next.ecShardReadAttempts)
@@ -6531,6 +6779,17 @@ type physicalChunkForwardingFakeSBSClient struct {
 	ecVolumeMaterialized bool
 	ecShardReadAttempts  int
 	ecShardReadData      []byte
+	materializeCalls     int
+	materializedSpec     service.VolumeSpec
+}
+
+func (c *physicalChunkForwardingFakeSBSClient) MaterializeVolume(_ context.Context, req *service.MaterializeVolumeRequest) (*service.MaterializeVolumeResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.materializeCalls++
+	c.materializedSpec = req.Spec
+	c.ecVolumeMaterialized = true
+	return &service.MaterializeVolumeResponse{Status: "ok", Spec: req.Spec}, nil
 }
 
 func (c *physicalChunkForwardingFakeSBSClient) OpenVolume(context.Context, *service.OpenVolumeRequest) (*service.OpenVolumeResponse, error) {

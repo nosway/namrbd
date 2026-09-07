@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	csipb "github.com/container-storage-interface/spec/lib/go/csi"
@@ -63,6 +64,14 @@ func (f *fakeBackend) GetVolume(_ context.Context, req *adminv1.GetVolumeRequest
 		return nil, status.Errorf(codes.NotFound, "volume not found")
 	}
 	return &adminv1.GetVolumeResponse{Volume: volume}, nil
+}
+
+func (f *fakeBackend) ListVolumes(context.Context, *adminv1.ListVolumesRequest) (*adminv1.ListVolumesResponse, error) {
+	out := &adminv1.ListVolumesResponse{}
+	for _, volume := range f.volumes {
+		out.Volumes = append(out.Volumes, volume)
+	}
+	return out, nil
 }
 
 func (f *fakeBackend) CreateSnapshot(_ context.Context, req *adminv1.CreateSnapshotRequest) (*adminv1.CreateSnapshotResponse, error) {
@@ -163,8 +172,10 @@ func TestIdentityAndControllerCapabilities(t *testing.T) {
 	}
 	for _, want := range []csipb.ControllerServiceCapability_RPC_Type{
 		csipb.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
+		csipb.ControllerServiceCapability_RPC_LIST_VOLUMES,
 		csipb.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
 		csipb.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
+		csipb.ControllerServiceCapability_RPC_GET_SNAPSHOT,
 		csipb.ControllerServiceCapability_RPC_EXPAND_VOLUME,
 	} {
 		if !got[want] {
@@ -184,9 +195,9 @@ func TestCreateVolumeMapsParametersAndIdempotentName(t *testing.T) {
 		CapacityRange:      &csipb.CapacityRange{RequiredBytes: 16 << 20},
 		VolumeCapabilities: []*csipb.VolumeCapability{blockRWO()},
 		Parameters: map[string]string{
-			"redundancy_backend":    "ec",
-			"ec_profile":            "ec-6-3",
-			"topology_mode":         "strict",
+			"redundancy_backend":    "replicated",
+			"replication_factor":    "3",
+			"topology_mode":         "prefer",
 			"block_size":            "4K",
 			"allocation_chunk_size": "128K",
 			"allocation_page_size":  "4M",
@@ -200,7 +211,7 @@ func TestCreateVolumeMapsParametersAndIdempotentName(t *testing.T) {
 		t.Fatalf("volume_id=%q want %q", resp.GetVolume().GetVolumeId(), wantVolumeID)
 	}
 	req := backend.createVolumeReq
-	if req.GetVolumeId() != wantVolumeID || req.GetSizeBytes() != 16<<20 || req.GetRedundancyBackend() != "ec" || req.GetEcProfileId() != "ec-6-3" || req.GetTopologyMode() != "strict" {
+	if req.GetVolumeId() != wantVolumeID || req.GetSizeBytes() != 16<<20 || req.GetRedundancyBackend() != "replicated" || req.GetReplicationFactor() != 3 || req.GetTopologyMode() != "prefer" {
 		t.Fatalf("backend CreateVolume req=%+v", req)
 	}
 	if req.GetBlockSize() != 4096 || req.GetAllocationChunkSizeBytes() != 128<<10 || req.GetAllocationPageSizeBytes() != 4<<20 {
@@ -230,29 +241,9 @@ func TestCreateVolumeNormalizesReplicatedSpreadAlias(t *testing.T) {
 	}
 }
 
-func TestCreateVolumeDefaultsECTopologyToStrict(t *testing.T) {
-	backend := newFakeBackend()
-	srv := newTestServer(t, backend)
-	_, err := srv.CreateVolume(context.Background(), &csipb.CreateVolumeRequest{
-		Name:               "ec-pvc",
-		CapacityRange:      &csipb.CapacityRange{RequiredBytes: 8 << 20},
-		VolumeCapabilities: []*csipb.VolumeCapability{blockRWO()},
-		Parameters: map[string]string{
-			"redundancy_backend": "ec",
-			"ec_profile":         "ec-6-3",
-		},
-	})
-	if err != nil {
-		t.Fatalf("CreateVolume: %v", err)
-	}
-	req := backend.createVolumeReq
-	if req.GetRedundancyBackend() != "ec" || req.GetReplicationFactor() != 1 || req.GetTopologyMode() != "strict" {
-		t.Fatalf("backend CreateVolume req=%+v", req)
-	}
-}
-
 func TestCreateVolumeFromSnapshotUsesRestoreWrapper(t *testing.T) {
 	backend := newFakeBackend()
+	backend.snapshots["snap-123"] = &adminv1.SnapshotSummary{SnapshotId: "snap-123", SourceVolumeId: "source", SourceSizeBytes: 16 << 20}
 	srv := newTestServer(t, backend)
 	source := &csipb.VolumeContentSource{
 		Type: &csipb.VolumeContentSource_Snapshot{
@@ -278,6 +269,78 @@ func TestCreateVolumeFromSnapshotUsesRestoreWrapper(t *testing.T) {
 	}
 	if req.GetIdempotencyKey() != "csi-restore:restore-pvc:snap-123" {
 		t.Fatalf("restore idempotency=%q", req.GetIdempotencyKey())
+	}
+}
+
+func TestCreateVolumeFromSnapshotRejectsSmallerAndAcceptsEqual(t *testing.T) {
+	backend := newFakeBackend()
+	backend.snapshots["snap-source"] = &adminv1.SnapshotSummary{SnapshotId: "snap-source", SourceVolumeId: "source", SourceSizeBytes: 8 << 20}
+	srv := newTestServer(t, backend)
+	request := func(name string, size int64) *csipb.CreateVolumeRequest {
+		return &csipb.CreateVolumeRequest{
+			Name:               name,
+			CapacityRange:      &csipb.CapacityRange{RequiredBytes: size},
+			VolumeCapabilities: []*csipb.VolumeCapability{blockRWO()},
+			VolumeContentSource: &csipb.VolumeContentSource{Type: &csipb.VolumeContentSource_Snapshot{
+				Snapshot: &csipb.VolumeContentSource_SnapshotSource{SnapshotId: "snap-source"},
+			}},
+		}
+	}
+	if _, err := srv.CreateVolume(context.Background(), request("too-small", 4<<20)); status.Code(err) != codes.OutOfRange {
+		t.Fatalf("smaller restore err=%v want OutOfRange", err)
+	}
+	if backend.createVolumeFromSnapshotReq != nil {
+		t.Fatalf("smaller restore reached backend: %+v", backend.createVolumeFromSnapshotReq)
+	}
+	resp, err := srv.CreateVolume(context.Background(), request("equal", 8<<20))
+	if err != nil {
+		t.Fatalf("equal restore: %v", err)
+	}
+	if resp.GetVolume().GetCapacityBytes() != 8<<20 {
+		t.Fatalf("equal restore response=%+v", resp.GetVolume())
+	}
+}
+
+func TestCreateVolumeRejectsTopologyRequirements(t *testing.T) {
+	srv := newTestServer(t, newFakeBackend())
+	_, err := srv.CreateVolume(context.Background(), &csipb.CreateVolumeRequest{
+		Name:               "topology-pvc",
+		CapacityRange:      &csipb.CapacityRange{RequiredBytes: 8 << 20},
+		VolumeCapabilities: []*csipb.VolumeCapability{blockRWO()},
+		AccessibilityRequirements: &csipb.TopologyRequirement{
+			Requisite: []*csipb.Topology{{Segments: map[string]string{"topology.kubernetes.io/zone": "zone-a"}}},
+		},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("topology requirement err=%v want InvalidArgument", err)
+	}
+}
+
+func TestListVolumesUsesStablePaginationAndAbortedToken(t *testing.T) {
+	backend := newFakeBackend()
+	for _, id := range []string{"vol-c", "vol-a", "vol-b"} {
+		backend.volumes[id] = &adminv1.VolumeSummary{VolumeId: id, SizeBytes: 8 << 20}
+	}
+	srv := newTestServer(t, backend)
+	first, err := srv.ListVolumes(context.Background(), &csipb.ListVolumesRequest{MaxEntries: 2})
+	if err != nil {
+		t.Fatalf("ListVolumes first: %v", err)
+	}
+	if len(first.GetEntries()) != 2 || first.GetEntries()[0].GetVolume().GetVolumeId() != "vol-a" || first.GetEntries()[1].GetVolume().GetVolumeId() != "vol-b" || first.GetNextToken() != "2" {
+		t.Fatalf("ListVolumes first=%+v", first)
+	}
+	second, err := srv.ListVolumes(context.Background(), &csipb.ListVolumesRequest{StartingToken: first.GetNextToken(), MaxEntries: 2})
+	if err != nil {
+		t.Fatalf("ListVolumes second: %v", err)
+	}
+	if len(second.GetEntries()) != 1 || second.GetEntries()[0].GetVolume().GetVolumeId() != "vol-c" || second.GetNextToken() != "" {
+		t.Fatalf("ListVolumes second=%+v", second)
+	}
+	if _, err := srv.ListVolumes(context.Background(), &csipb.ListVolumesRequest{StartingToken: "bad"}); status.Code(err) != codes.Aborted {
+		t.Fatalf("invalid ListVolumes token err=%v want Aborted", err)
+	}
+	if _, err := srv.ListVolumes(context.Background(), &csipb.ListVolumesRequest{MaxEntries: -1}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("negative ListVolumes max_entries err=%v want InvalidArgument", err)
 	}
 }
 
@@ -324,6 +387,86 @@ func TestSnapshotListDeleteAndExpand(t *testing.T) {
 	}
 	if backend.deleteSnapshotReq.GetSnapshotId() != snapResp.GetSnapshot().GetSnapshotId() {
 		t.Fatalf("delete snapshot req=%+v", backend.deleteSnapshotReq)
+	}
+}
+
+func TestControllerExpandVolumeReplayDoesNotReachBackend(t *testing.T) {
+	backend := newFakeBackend()
+	backend.volumes["00a1b2c3"] = &adminv1.VolumeSummary{VolumeId: "00a1b2c3", SizeBytes: 16 << 20}
+	srv := newTestServer(t, backend)
+	resp, err := srv.ControllerExpandVolume(context.Background(), &csipb.ControllerExpandVolumeRequest{
+		VolumeId:      "00a1b2c3",
+		CapacityRange: &csipb.CapacityRange{RequiredBytes: 12 << 20, LimitBytes: 20 << 20},
+	})
+	if err != nil {
+		t.Fatalf("ControllerExpandVolume replay: %v", err)
+	}
+	if resp.GetCapacityBytes() != 16<<20 || backend.expandVolumeReq != nil {
+		t.Fatalf("replay response=%+v backend=%+v", resp, backend.expandVolumeReq)
+	}
+	if _, err := srv.ControllerExpandVolume(context.Background(), &csipb.ControllerExpandVolumeRequest{
+		VolumeId:      "00a1b2c3",
+		CapacityRange: &csipb.CapacityRange{RequiredBytes: 12 << 20, LimitBytes: 14 << 20},
+	}); status.Code(err) != codes.OutOfRange {
+		t.Fatalf("incompatible limit err=%v want OutOfRange", err)
+	}
+}
+
+func TestControllerReplaySurvivesServerRestart(t *testing.T) {
+	backend := newFakeBackend()
+	first := newTestServer(t, backend)
+	createReq := &csipb.CreateVolumeRequest{Name: "restart-pvc", CapacityRange: &csipb.CapacityRange{RequiredBytes: 8 << 20}, VolumeCapabilities: []*csipb.VolumeCapability{blockRWO()}}
+	created, err := first.CreateVolume(context.Background(), createReq)
+	if err != nil {
+		t.Fatalf("first CreateVolume: %v", err)
+	}
+	second := newTestServer(t, backend)
+	replayed, err := second.CreateVolume(context.Background(), createReq)
+	if err != nil {
+		t.Fatalf("replayed CreateVolume: %v", err)
+	}
+	if replayed.GetVolume().GetVolumeId() != created.GetVolume().GetVolumeId() {
+		t.Fatalf("replayed volume=%+v created=%+v", replayed.GetVolume(), created.GetVolume())
+	}
+	snapshotReq := &csipb.CreateSnapshotRequest{Name: "restart-snapshot", SourceVolumeId: created.GetVolume().GetVolumeId()}
+	snapshot, err := first.CreateSnapshot(context.Background(), snapshotReq)
+	if err != nil {
+		t.Fatalf("first CreateSnapshot: %v", err)
+	}
+	replayedSnapshot, err := second.CreateSnapshot(context.Background(), snapshotReq)
+	if err != nil {
+		t.Fatalf("replayed CreateSnapshot: %v", err)
+	}
+	if replayedSnapshot.GetSnapshot().GetSnapshotId() != snapshot.GetSnapshot().GetSnapshotId() {
+		t.Fatalf("replayed snapshot=%+v created=%+v", replayedSnapshot.GetSnapshot(), snapshot.GetSnapshot())
+	}
+	if _, err := second.DeleteSnapshot(context.Background(), &csipb.DeleteSnapshotRequest{SnapshotId: snapshot.GetSnapshot().GetSnapshotId()}); err != nil {
+		t.Fatalf("DeleteSnapshot: %v", err)
+	}
+	if _, err := second.DeleteSnapshot(context.Background(), &csipb.DeleteSnapshotRequest{SnapshotId: snapshot.GetSnapshot().GetSnapshotId()}); err != nil {
+		t.Fatalf("DeleteSnapshot replay: %v", err)
+	}
+	if _, err := second.DeleteVolume(context.Background(), &csipb.DeleteVolumeRequest{VolumeId: created.GetVolume().GetVolumeId()}); err != nil {
+		t.Fatalf("DeleteVolume: %v", err)
+	}
+	if _, err := second.DeleteVolume(context.Background(), &csipb.DeleteVolumeRequest{VolumeId: created.GetVolume().GetVolumeId()}); err != nil {
+		t.Fatalf("DeleteVolume replay: %v", err)
+	}
+}
+
+func TestMapBackendErrorPreservesContextStatus(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		code codes.Code
+	}{
+		{context.Canceled, codes.Canceled},
+		{context.DeadlineExceeded, codes.DeadlineExceeded},
+		{status.Error(codes.Unavailable, "leader transition"), codes.Unavailable},
+		{errors.New("backend failed"), codes.Internal},
+	} {
+		if got := status.Code(mapBackendError(tc.err)); got != tc.code {
+			t.Fatalf("mapBackendError(%v)=%v want %v", tc.err, got, tc.code)
+		}
 	}
 }
 

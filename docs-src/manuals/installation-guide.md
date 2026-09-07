@@ -1,7 +1,7 @@
 Operations Manual
 
 Advanced feature note: Enterprise sections describe development and validation
-directions, not installable or supported public v1.0 capabilities. See
+directions, not installable or supported public v1.1 capabilities. See
 [Feature Status](../feature-status.md).
 
 # NAMRBD Installation Guide
@@ -234,6 +234,53 @@ Confirm:
 sbsctl cluster status --output json
 sbsctl node status --node-id data-01 --output json
 ```
+
+The explicit zone and `node join` sequence above remains useful for a small
+evaluation cluster. Do not expand it into hundreds of independent shell calls.
+For a reviewed large logical fleet, use the manifest path below.
+
+#### 3.4.1 Manifest-Based Large Fleet Installation
+
+`configs/sbs-cluster-160.example.yaml` is the executable exact-topology
+example: `node1..node160`, eight zones of twenty nodes, active service nodes
+`node1`, `node21`, and `node41`, and standby candidates `node61` and `node81`.
+It is a logical-fleet contract, not a claim that 160 independent physical
+servers are supported.
+
+Use this order:
+
+1. Run `sbsctl cluster manifest validate`, `export`, `render`, and `plan` with
+   the reviewed artifact digest. Preserve the canonical manifest, manifest
+   digest, rendered bundle digest, plan ID, and plan JSON.
+2. On every intended host, run `sbsctl host check --local` against that host's
+   `rendered/nodes/<node-id>` bundle. Sign the result with the host's reviewed
+   Ed25519 key. The check reads host facts; it does not format storage, mount a
+   filesystem, change TiKV, or restart a daemon.
+3. Run `sbsctl cluster manifest admit` against a directory containing only the
+   signed reports and a reviewed trust bundle. Admission rejects missing,
+   stale, future-skewed, incorrectly signed, or wrong-manifest reports and
+   writes a new no-mutation join plan.
+4. Create the file-backed parent operation with `cluster manifest rollout
+   start`. Use `issue` to obtain the next instruction for an external transport
+   and `record` to persist its result. Stop on failure; use `retry` for failed
+   nodes and `resume --reason` only after reviewing the cause.
+5. Verify the aggregate cluster status, then inspect individual nodes or
+   volumes with page and point commands. Preserve every operation revision and
+   the first/last error fields with the installation evidence.
+
+Manifest parsing is strict. It rejects unknown or multi-document YAML,
+duplicate IDs, hostnames, addresses and device claims, invalid 8x20 or active
+3/standby 2 placement, secret literals, unapproved artifacts, incomplete
+storage claims, and destructive provisioning. Validation, rendering, planning,
+host checking, admission, and rollout-state transitions perform zero live TiKV
+mutations, storage actions, and daemon actions. The external instruction
+executor is the first component permitted to deploy or restart anything.
+
+Storage formatting and mount creation remain a separately approved host
+provisioning procedure. Never replace the manifest's immutable device-by-id and
+filesystem UUID claims with transient device names. See [Operations](../operations.md)
+and the [generated `sbsctl` reference](../reference/cli/sbsctl.md) for exact
+flags and failure behavior.
 
 ### 3.5 Gateway
 

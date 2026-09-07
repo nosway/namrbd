@@ -13,19 +13,20 @@ import (
 // flagState is a running invocation's settings, used as both the source of a
 // generated config and the expectation the round trip must reproduce.
 type flagState struct {
-	listen, dataListen, gatewayID, adminEP, etcdEP, etcdRoot string
-	certFile, keyFile, serverName                            string
-	tlsEnable                                                bool
-	volumeTTL, leaseTTL, statusRefresh, reconcile            time.Duration
-	inflight, ioSize, chunkCache                             uint
-	inflightBytes                                            uint64
-	gcBatch, wireVersion                                     int
+	listen, dataListen, gatewayID, adminEP, authAdminEP, etcdEP, etcdRoot string
+	certFile, keyFile, serverName                                         string
+	tlsEnable                                                             bool
+	volumeTTL, leaseTTL, statusRefresh, reconcile                         time.Duration
+	inflight, ioSize, chunkCache                                          uint
+	inflightBytes                                                         uint64
+	gcBatch, wireVersion                                                  int
 }
 
 func (f *flagState) binding() gatewayConfigBinding {
 	return gatewayConfigBinding{
 		ListenAddr: &f.listen, DataListenAddr: &f.dataListen, GatewayID: &f.gatewayID,
-		SBSAdminEndpoint: &f.adminEP, EtcdEndpoints: &f.etcdEP, EtcdRoot: &f.etcdRoot,
+		SBSAdminEndpoint: &f.adminEP, SBSAuthenticatedAdminEndpoint: &f.authAdminEP,
+		EtcdEndpoints: &f.etcdEP, EtcdRoot: &f.etcdRoot,
 		TLSEnable: &f.tlsEnable, TLSCertFile: &f.certFile, TLSKeyFile: &f.keyFile,
 		TLSServerName:  &f.serverName,
 		VolumeCacheTTL: &f.volumeTTL, GatewayLeaseTTL: &f.leaseTTL,
@@ -41,7 +42,7 @@ func (f *flagState) binding() gatewayConfigBinding {
 func realistic() flagState {
 	return flagState{
 		listen: "0.0.0.0:7000", dataListen: "0.0.0.0:7001", gatewayID: "gw-42",
-		adminEP: "sbs.internal:9090", etcdEP: "e1:2379,e2:2379", etcdRoot: "/namrbd/prod",
+		adminEP: "sbs.internal:9090", authAdminEP: "sbs-admin.internal:9443", etcdEP: "e1:2379,e2:2379", etcdRoot: "/namrbd/prod",
 		certFile: "/etc/tls/gw.crt", keyFile: "/etc/tls/gw.key", serverName: "gw.internal",
 		tlsEnable: true,
 		volumeTTL: 30 * time.Second, leaseTTL: 15 * time.Second, statusRefresh: 5 * time.Second, reconcile: 5 * time.Second,
@@ -88,6 +89,7 @@ func TestFlagsRoundTripThroughGeneratedConfig(t *testing.T) {
 		{"data_listen", after.dataListen, before.dataListen},
 		{"gateway_id", after.gatewayID, before.gatewayID},
 		{"sbs_admin_endpoint", after.adminEP, before.adminEP},
+		{"sbs_authenticated_admin_endpoint", after.authAdminEP, before.authAdminEP},
 		{"etcd_root", after.etcdRoot, before.etcdRoot},
 		{"tls_enable", after.tlsEnable, before.tlsEnable},
 		{"tls_cert_file", after.certFile, before.certFile},

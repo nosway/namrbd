@@ -12,45 +12,52 @@ const (
 )
 
 type Snapshot struct {
-	SchemaVersion             string        `json:"schema_version"`
-	GeneratedAt               string        `json:"generated_at"`
-	ClusterID                 string        `json:"cluster_id,omitempty"`
-	SBSClusterID              string        `json:"sbs_cluster_id,omitempty"`
-	NodeID                    string        `json:"node_id,omitempty"`
-	LeaderNodeID              string        `json:"leader_node_id,omitempty"`
-	Ready                     bool          `json:"ready"`
-	LocalIsLeader             bool          `json:"local_is_leader"`
-	LeaderState               string        `json:"leader_state,omitempty"`
-	MetadataBackend           string        `json:"metadata_backend,omitempty"`
-	RuntimeMode               string        `json:"runtime_mode,omitempty"`
-	SourceAuthority           string        `json:"source_authority"`
-	CollectionStatus          string        `json:"collection_status"`
-	CollectorFreshnessSeconds float64       `json:"collector_freshness_seconds"`
-	Limitations               []string      `json:"limitations,omitempty"`
-	Warnings                  []string      `json:"warnings,omitempty"`
-	WarningCount              int           `json:"warning_count"`
-	FirstError                string        `json:"first_error,omitempty"`
-	LastError                 string        `json:"last_error,omitempty"`
-	RBACChecked               bool          `json:"rbac_checked"`
-	TenantScopeChecked        bool          `json:"tenant_scope_checked"`
-	RedactionApplied          bool          `json:"redaction_applied"`
-	ReadOnlyModeEnforced      bool          `json:"read_only_mode_enforced"`
-	UnsupportedClaimVisible   bool          `json:"unsupported_claim_visible"`
-	SupportClaimed            bool          `json:"support_claimed"`
-	PublicGUIClaimed          bool          `json:"public_gui_claimed"`
-	PublicBenchmarkClaimed    bool          `json:"public_benchmark_claimed"`
-	Nodes                     []Node        `json:"nodes,omitempty"`
-	Stores                    []Store       `json:"stores,omitempty"`
-	Volumes                   []Volume      `json:"volumes,omitempty"`
-	Capacity                  Capacity      `json:"capacity"`
-	Maintenance               Maintenance   `json:"maintenance"`
-	Reclaim                   Reclaim       `json:"reclaim"`
-	Membership                Membership    `json:"membership"`
-	Operations                Operations    `json:"operations"`
-	Query                     QuerySurface  `json:"query"`
-	MCP                       MCPSurface    `json:"mcp"`
-	GUI                       GUISurface    `json:"gui"`
-	Workflow                  WorkflowState `json:"workflow"`
+	SchemaVersion             string           `json:"schema_version"`
+	GeneratedAt               string           `json:"generated_at"`
+	ClusterID                 string           `json:"cluster_id,omitempty"`
+	SBSClusterID              string           `json:"sbs_cluster_id,omitempty"`
+	NodeID                    string           `json:"node_id,omitempty"`
+	LeaderNodeID              string           `json:"leader_node_id,omitempty"`
+	Ready                     bool             `json:"ready"`
+	LocalIsLeader             bool             `json:"local_is_leader"`
+	LeaderState               string           `json:"leader_state,omitempty"`
+	MetadataBackend           string           `json:"metadata_backend,omitempty"`
+	RuntimeMode               string           `json:"runtime_mode,omitempty"`
+	SourceAuthority           string           `json:"source_authority"`
+	CollectionStatus          string           `json:"collection_status"`
+	CollectorFreshnessSeconds float64          `json:"collector_freshness_seconds"`
+	Limitations               []string         `json:"limitations,omitempty"`
+	Warnings                  []string         `json:"warnings,omitempty"`
+	WarningCount              int              `json:"warning_count"`
+	FirstError                string           `json:"first_error,omitempty"`
+	LastError                 string           `json:"last_error,omitempty"`
+	RBACChecked               bool             `json:"rbac_checked"`
+	TenantScopeChecked        bool             `json:"tenant_scope_checked"`
+	RedactionApplied          bool             `json:"redaction_applied"`
+	ReadOnlyModeEnforced      bool             `json:"read_only_mode_enforced"`
+	UnsupportedClaimVisible   bool             `json:"unsupported_claim_visible"`
+	SupportClaimed            bool             `json:"support_claimed"`
+	PublicGUIClaimed          bool             `json:"public_gui_claimed"`
+	PublicBenchmarkClaimed    bool             `json:"public_benchmark_claimed"`
+	Nodes                     []Node           `json:"nodes,omitempty"`
+	Stores                    []Store          `json:"stores,omitempty"`
+	Volumes                   []Volume         `json:"volumes,omitempty"`
+	Capacity                  Capacity         `json:"capacity"`
+	Maintenance               Maintenance      `json:"maintenance"`
+	Reclaim                   Reclaim          `json:"reclaim"`
+	Membership                Membership       `json:"membership"`
+	Operations                Operations       `json:"operations"`
+	Fleet                     FleetSummary     `json:"fleet"`
+	Projection                Projection       `json:"projection"`
+	RequestClass              RequestClass     `json:"request_class"`
+	Detail                    DetailScope      `json:"detail"`
+	FleetHealth               []FleetHealth    `json:"fleet_health,omitempty"`
+	FleetControl              FleetControl     `json:"fleet_control"`
+	MetadataPressure          MetadataPressure `json:"metadata_pressure"`
+	Query                     QuerySurface     `json:"query"`
+	MCP                       MCPSurface       `json:"mcp"`
+	GUI                       GUISurface       `json:"gui"`
+	Workflow                  WorkflowState    `json:"workflow"`
 }
 
 type BuildInput struct {
@@ -78,6 +85,13 @@ type BuildInput struct {
 	Reclaim                   Reclaim
 	Membership                Membership
 	Operations                Operations
+	Fleet                     FleetSummary
+	Projection                Projection
+	RequestClass              RequestClass
+	Detail                    DetailScope
+	FleetHealth               []FleetHealth
+	FleetControl              FleetControl
+	MetadataPressure          MetadataPressure
 	Query                     QuerySurface
 	MCP                       MCPSurface
 	GUI                       GUISurface
@@ -140,16 +154,23 @@ type Volume struct {
 }
 
 type Capacity struct {
-	Source            string `json:"source,omitempty"`
-	LogicalBytes      uint64 `json:"logical_bytes,omitempty"`
-	PhysicalUsedBytes uint64 `json:"physical_used_bytes,omitempty"`
-	PhysicalFreeBytes uint64 `json:"physical_free_bytes,omitempty"`
-	TotalBytes        uint64 `json:"total_bytes,omitempty"`
-	ReclaimableBytes  uint64 `json:"reclaimable_bytes,omitempty"`
-	ProtectedBytes    uint64 `json:"protected_bytes,omitempty"`
-	UnknownBytes      uint64 `json:"unknown_bytes,omitempty"`
-	StoreCount        int    `json:"store_count,omitempty"`
-	NodeCount         int    `json:"node_count,omitempty"`
+	Source                string `json:"source,omitempty"`
+	LogicalBytes          uint64 `json:"logical_bytes,omitempty"`
+	PhysicalUsedBytes     uint64 `json:"physical_used_bytes,omitempty"`
+	PhysicalFreeBytes     uint64 `json:"physical_free_bytes,omitempty"`
+	TotalBytes            uint64 `json:"total_bytes,omitempty"`
+	ReclaimableBytes      uint64 `json:"reclaimable_bytes,omitempty"`
+	ProtectedBytes        uint64 `json:"protected_bytes,omitempty"`
+	UnknownBytes          uint64 `json:"unknown_bytes,omitempty"`
+	StoreCount            int    `json:"store_count,omitempty"`
+	NodeCount             int    `json:"node_count,omitempty"`
+	UsableBytes           uint64 `json:"usable_bytes,omitempty"`
+	ReservedBytes         uint64 `json:"reserved_bytes,omitempty"`
+	MissingNodeCount      uint64 `json:"missing_node_count,omitempty"`
+	StaleNodeCount        uint64 `json:"stale_node_count,omitempty"`
+	ObservationAgeSeconds uint64 `json:"observation_age_seconds,omitempty"`
+	SourceRevision        uint64 `json:"source_revision,omitempty"`
+	Freshness             string `json:"freshness,omitempty"`
 }
 
 type Maintenance struct {
@@ -177,6 +198,12 @@ type Maintenance struct {
 	MaxConsecutiveProbeFailures            uint64 `json:"max_consecutive_probe_failures,omitempty"`
 	NodesInRecoveryCooldown                uint64 `json:"nodes_in_recovery_cooldown,omitempty"`
 	MaxRecoveryCooldownRemainingSeconds    uint64 `json:"max_recovery_cooldown_remaining_seconds,omitempty"`
+	RepairOldestAgeSeconds                 uint64 `json:"repair_oldest_age_seconds,omitempty"`
+	RebalanceOldestAgeSeconds              uint64 `json:"rebalance_oldest_age_seconds,omitempty"`
+	DrainOldestAgeSeconds                  uint64 `json:"drain_oldest_age_seconds,omitempty"`
+	RepairClaimLatencyMillis               uint64 `json:"repair_claim_latency_millis,omitempty"`
+	RebalanceClaimLatencyMillis            uint64 `json:"rebalance_claim_latency_millis,omitempty"`
+	DrainClaimLatencyMillis                uint64 `json:"drain_claim_latency_millis,omitempty"`
 }
 
 type Reclaim struct {
@@ -223,6 +250,104 @@ type Operations struct {
 	Failed    int `json:"failed"`
 	Completed int `json:"completed"`
 	Canceled  int `json:"canceled"`
+}
+
+// FleetSummary is the bounded cluster-wide count view used by normal polling.
+// Identifiers belong in point/page detail APIs, never in this aggregate.
+type FleetSummary struct {
+	KnownNodes      int                `json:"known_nodes"`
+	ActiveNodes     int                `json:"active_nodes"`
+	DrainingNodes   int                `json:"draining_nodes"`
+	RemovedNodes    int                `json:"removed_nodes"`
+	HealthyNodes    int                `json:"healthy_nodes"`
+	SuspectNodes    int                `json:"suspect_nodes"`
+	DownNodes       int                `json:"down_nodes"`
+	VolumeCount     int                `json:"volume_count"`
+	HealthyVolumes  int                `json:"healthy_volumes"`
+	DegradedVolumes int                `json:"degraded_volumes"`
+	BlockedVolumes  int                `json:"blocked_volumes"`
+	Zones           []FleetZoneSummary `json:"zones,omitempty"`
+}
+
+type FleetZoneSummary struct {
+	Zone          string `json:"zone"`
+	ActiveNodes   uint64 `json:"active_nodes"`
+	DrainingNodes uint64 `json:"draining_nodes"`
+	SuspectNodes  uint64 `json:"suspect_nodes"`
+	DownNodes     uint64 `json:"down_nodes"`
+}
+
+// Projection describes the aggregate authority and its freshness. A stale or
+// partial projection must remain visible rather than being replaced by a
+// legacy cluster-wide completion.
+type Projection struct {
+	Health                 string `json:"health"`
+	Reason                 string `json:"reason"`
+	Partial                bool   `json:"partial"`
+	Stale                  bool   `json:"stale"`
+	RebuildRequired        bool   `json:"rebuild_required"`
+	SourceRevision         uint64 `json:"source_revision"`
+	BaselineSourceRevision uint64 `json:"baseline_source_revision"`
+	RevisionLag            uint64 `json:"revision_lag"`
+	RebuildEpoch           string `json:"rebuild_epoch,omitempty"`
+	UpdatedAtUnix          int64  `json:"updated_at_unix"`
+	FreshnessAgeMillis     uint64 `json:"freshness_age_millis"`
+	MismatchCount          uint64 `json:"mismatch_count"`
+}
+
+// RequestClass makes the per-refresh metadata cost part of the response
+// contract and therefore executable in the fleet observability fixture.
+type RequestClass struct {
+	PointGetCount         int `json:"point_get_count"`
+	BatchGetCount         int `json:"batch_get_count"`
+	BatchGetKeyCount      int `json:"batch_get_key_count"`
+	RangePageCount        int `json:"range_page_count"`
+	BackendFullScanCount  int `json:"backend_full_scan_count"`
+	FullCompletionCount   int `json:"full_completion_count"`
+	NestedCompletionCount int `json:"nested_completion_count"`
+}
+
+type DetailScope struct {
+	DefaultPoll          bool `json:"default_poll"`
+	NodeDetailIncluded   bool `json:"node_detail_included"`
+	StoreDetailIncluded  bool `json:"store_detail_included"`
+	VolumeDetailIncluded bool `json:"volume_detail_included"`
+}
+
+type FleetHealth struct {
+	Code           string `json:"code"`
+	Severity       string `json:"severity"`
+	Count          uint64 `json:"count"`
+	SourceRevision uint64 `json:"source_revision"`
+	Freshness      string `json:"freshness"`
+}
+
+type FleetControl struct {
+	ManifestRevision      string `json:"manifest_revision,omitempty"`
+	ManifestDigest        string `json:"manifest_digest,omitempty"`
+	BinaryDigest          string `json:"binary_digest,omitempty"`
+	ConfigDigest          string `json:"config_digest,omitempty"`
+	StoreDigest           string `json:"store_digest,omitempty"`
+	ApplyOperationID      string `json:"apply_operation_id,omitempty"`
+	ApplyState            string `json:"apply_state,omitempty"`
+	SourceRevision        uint64 `json:"source_revision,omitempty"`
+	ObservationAgeSeconds uint64 `json:"observation_age_seconds,omitempty"`
+}
+
+type MetadataPressure struct {
+	PointGetCount            int64   `json:"point_get_count"`
+	BatchGetCount            int64   `json:"batch_get_count"`
+	BatchGetKeyCount         int64   `json:"batch_get_key_count"`
+	BatchGetChunkCount       int64   `json:"batch_get_chunk_count"`
+	RangePageCount           int64   `json:"range_page_count"`
+	BackendFullScanCount     int64   `json:"backend_full_scan_count"`
+	FullCompletionCount      int64   `json:"full_completion_count"`
+	NestedCompletionCount    int64   `json:"nested_completion_count"`
+	TxnRetryCount            int64   `json:"txn_retry_count"`
+	PointGetDurationSeconds  float64 `json:"point_get_duration_seconds"`
+	BatchGetDurationSeconds  float64 `json:"batch_get_duration_seconds"`
+	RangePageDurationSeconds float64 `json:"range_page_duration_seconds"`
+	HotRegionCandidateCount  int64   `json:"hot_region_candidate_count"`
 }
 
 type QuerySurface struct {
@@ -346,6 +471,13 @@ func NewSnapshot(in BuildInput) Snapshot {
 		Reclaim:                   in.Reclaim,
 		Membership:                in.Membership,
 		Operations:                in.Operations,
+		Fleet:                     in.Fleet,
+		Projection:                in.Projection,
+		RequestClass:              in.RequestClass,
+		Detail:                    in.Detail,
+		FleetHealth:               append([]FleetHealth(nil), in.FleetHealth...),
+		FleetControl:              in.FleetControl,
+		MetadataPressure:          in.MetadataPressure,
 		Query:                     in.Query,
 		MCP:                       in.MCP,
 		GUI:                       in.GUI,

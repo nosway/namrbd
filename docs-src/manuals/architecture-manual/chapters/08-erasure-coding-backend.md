@@ -2,7 +2,7 @@ Chapter 9
 
 Advanced feature note: Erasure coding is under Enterprise development and
 validation. This chapter is an architecture design reference, not a public
-v1.0 availability, performance, or support claim. See
+v1.1 availability, performance, or support claim. See
 [Feature Status](../../../feature-status.md).
 
 # Erasure Coding Backend

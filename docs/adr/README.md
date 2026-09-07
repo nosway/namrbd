@@ -32,4 +32,3 @@ manuals remain under `docs-src/`.
 | [0001](0001-metadata-authority-separation.md) | Accepted | Separate gateway/control, cluster, and node-local metadata authority |
 | [0002](0002-pebble-for-local-sbs-storage.md) | Accepted | Use Pebble for local SBS metadata and payload objects |
 | [0003](0003-userspace-gateway-first.md) | Accepted | Qualify the userspace gateway before the kernel datapath |
-

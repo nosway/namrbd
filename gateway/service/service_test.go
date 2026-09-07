@@ -450,6 +450,52 @@ func TestWriteRejectsSealedProtectedTargetAndPreservesOrdinarySourceWrite(t *tes
 				SourceVolumeID:  "00000065",
 			},
 		}),
+		NormalizeVolumeSpec(VolumeSpec{
+			ID:        HexVolumeID(103),
+			Name:      "dr-standby",
+			Prefix:    "dr-standby-00000067",
+			SizeBytes: 4096 * 8,
+			BlockSize: 4096,
+			ProtectedState: &VolumeProtectedState{
+				State:           VolumeProtectedStateSealed,
+				ReasonCode:      ProtectedWriteReasonDRStandbyReadOnly,
+				SealedObjectID:  "standby-dr-ac221",
+				SealOperationID: "manifest-dr-ac221",
+				LifecycleState:  "dr_standby_imported_read_only",
+				SourceVolumeID:  "00000065",
+			},
+		}),
+		NormalizeVolumeSpec(VolumeSpec{
+			ID:        HexVolumeID(104),
+			Name:      "dr-old-primary",
+			Prefix:    "dr-old-primary-00000068",
+			SizeBytes: 4096 * 8,
+			BlockSize: 4096,
+			ProtectedState: &VolumeProtectedState{
+				State:           VolumeProtectedStateSealed,
+				ReasonCode:      ProtectedWriteReasonDROldPrimaryFenced,
+				SealedObjectID:  "link-dr-ac222",
+				SealOperationID: "sha256:source-fencing-receipt",
+				LifecycleState:  "dr_old_primary_fenced",
+				SourceVolumeID:  "00000068",
+			},
+		}),
+		NormalizeVolumeSpec(VolumeSpec{
+			ID:        HexVolumeID(105),
+			Name:      "dr-old-primary-reseed",
+			Prefix:    "dr-old-primary-reseed-00000069",
+			SizeBytes: 4096 * 8,
+			BlockSize: 4096,
+			ProtectedState: &VolumeProtectedState{
+				State:            VolumeProtectedStateSealed,
+				ReasonCode:       ProtectedWriteReasonDROldPrimaryReseedRequired,
+				SealedObjectID:   "reverse-link-dr-ac223c",
+				SealOperationID:  "sha256:original-source-fencing-receipt",
+				PolicySnapshotID: "link-dr-ac222",
+				LifecycleState:   "dr_old_primary_reseed_required",
+				SourceVolumeID:   "00000068",
+			},
+		}),
 	})
 	data := &trackingDataRepository{}
 	svc := NewWithRepositoryOptions(meta, data, "gw-a")
@@ -483,6 +529,39 @@ func TestWriteRejectsSealedProtectedTargetAndPreservesOrdinarySourceWrite(t *tes
 	}
 	if data.writes != 1 {
 		t.Fatalf("sealed write reached data path, writes=%d", data.writes)
+	}
+	err = svc.Write(ctx, 103, 0, uint64(len(payload)), payload)
+	if !errors.Is(err, ErrProtectedWriteRejected) {
+		t.Fatalf("DR standby write err=%v want ErrProtectedWriteRejected", err)
+	}
+	rejection, ok = ProtectedWriteRejectionFromError(err)
+	if !ok || rejection.ReasonCode != ProtectedWriteReasonDRStandbyReadOnly || rejection.SealedObjectID != "standby-dr-ac221" || rejection.SealOperationID != "manifest-dr-ac221" {
+		t.Fatalf("unexpected DR standby rejection details: %+v ok=%v", rejection, ok)
+	}
+	if data.writes != 1 {
+		t.Fatalf("DR standby write reached data path, writes=%d", data.writes)
+	}
+	err = svc.Write(ctx, 104, 0, uint64(len(payload)), payload)
+	if !errors.Is(err, ErrProtectedWriteRejected) {
+		t.Fatalf("DR old-primary write err=%v want ErrProtectedWriteRejected", err)
+	}
+	rejection, ok = ProtectedWriteRejectionFromError(err)
+	if !ok || rejection.ReasonCode != ProtectedWriteReasonDROldPrimaryFenced || rejection.SealedObjectID != "link-dr-ac222" || rejection.SealOperationID != "sha256:source-fencing-receipt" {
+		t.Fatalf("unexpected DR old-primary rejection details: %+v ok=%v", rejection, ok)
+	}
+	if data.writes != 1 {
+		t.Fatalf("DR old-primary write reached data path, writes=%d", data.writes)
+	}
+	err = svc.Write(ctx, 105, 0, uint64(len(payload)), payload)
+	if !errors.Is(err, ErrProtectedWriteRejected) {
+		t.Fatalf("DR old-primary reseed write err=%v want ErrProtectedWriteRejected", err)
+	}
+	rejection, ok = ProtectedWriteRejectionFromError(err)
+	if !ok || rejection.ReasonCode != ProtectedWriteReasonDROldPrimaryReseedRequired || rejection.SealedObjectID != "reverse-link-dr-ac223c" || rejection.SealOperationID != "sha256:original-source-fencing-receipt" {
+		t.Fatalf("unexpected DR old-primary reseed rejection details: %+v ok=%v", rejection, ok)
+	}
+	if data.writes != 1 {
+		t.Fatalf("DR old-primary reseed write reached data path, writes=%d", data.writes)
 	}
 }
 

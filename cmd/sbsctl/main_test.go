@@ -17,25 +17,23 @@ func (f storeStatusRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, 
 	return f(req)
 }
 
-func TestDefaultAdminEndpointPrefersSBSPrefix(t *testing.T) {
-	t.Setenv("SBS_ADMIN_ENDPOINTS", "sbs-admin-a:8443,sbs-admin-b:8443")
-	t.Setenv("NAMRBD_SBS_ADMIN_ENDPOINTS", "legacy-admin:8443")
+func TestDefaultAdminEndpointUsesFirstCanonicalEndpoint(t *testing.T) {
+	t.Setenv("NAMRBD_SBS_SERVICE_ENDPOINTS", "sbs-admin-a:8443,sbs-admin-b:8443")
 
 	if got := defaultAdminEndpoint(); got != "sbs-admin-a:8443" {
 		t.Fatalf("defaultAdminEndpoint=%q want=%q", got, "sbs-admin-a:8443")
 	}
 }
 
-func TestDefaultAdminEndpointPrefersCanonicalEnvironment(t *testing.T) {
+func TestDefaultAdminEndpointUsesCanonicalEnvironment(t *testing.T) {
 	t.Setenv("NAMRBD_SBS_SERVICE_ENDPOINTS", "canonical-admin:9443")
-	t.Setenv("SBS_ADMIN_ENDPOINTS", "legacy-admin:9443")
 	if got := defaultAdminEndpoint(); got != "canonical-admin:9443" {
 		t.Fatalf("defaultAdminEndpoint=%q", got)
 	}
 }
 
-func TestDefaultDataEndpointSupportsAliases(t *testing.T) {
-	t.Setenv("SBS_DATA_ENDPOINTS", "node-a:9460,node-b:9460")
+func TestDefaultDataEndpointUsesFirstCanonicalEndpoint(t *testing.T) {
+	t.Setenv("NAMRBD_SBS_DATA_ENDPOINTS", "node-a:9460,node-b:9460")
 
 	if got := defaultDataEndpoint(); got != "node-a:9460" {
 		t.Fatalf("defaultDataEndpoint=%q want=%q", got, "node-a:9460")
@@ -44,14 +42,13 @@ func TestDefaultDataEndpointSupportsAliases(t *testing.T) {
 
 func TestDefaultDataEndpointPrefersCanonicalEnvironment(t *testing.T) {
 	t.Setenv("NAMRBD_SBS_DATA_ENDPOINTS", "canonical-data:9444")
-	t.Setenv("SBS_DATA_ENDPOINTS", "legacy-data:9444")
 	if got := defaultDataEndpoint(); got != "canonical-data:9444" {
 		t.Fatalf("defaultDataEndpoint=%q", got)
 	}
 }
 
-func TestDefaultTimeoutSupportsSBSAlias(t *testing.T) {
-	t.Setenv("SBS_TIMEOUT", "7s")
+func TestDefaultTimeoutUsesCanonicalEnvironment(t *testing.T) {
+	t.Setenv("NAMRBD_SBSCTL_TIMEOUT", "7s")
 
 	if got := defaultTimeout(); got != 7*time.Second {
 		t.Fatalf("defaultTimeout=%v want=%v", got, 7*time.Second)
@@ -266,5 +263,40 @@ func TestParseStoreTuningSpecRejectsInvalidInput(t *testing.T) {
 		if _, err := parseStoreTuningSpec(raw); err == nil {
 			t.Fatalf("expected parseStoreTuningSpec(%q) to fail", raw)
 		}
+	}
+}
+
+func TestClusterStatusJSONIncludesTypedSummaryHealth(t *testing.T) {
+	response := &adminv1.GetClusterStatusResponse{
+		ClusterSummaryHealth:                 adminv1.ClusterSummaryHealth_CLUSTER_SUMMARY_HEALTH_REBUILD_REQUIRED,
+		ClusterSummaryReason:                 "freshness_expired",
+		ClusterSummaryStale:                  true,
+		ClusterSummaryRebuildRequired:        true,
+		ClusterSummarySourceRevision:         301,
+		ClusterSummaryBaselineSourceRevision: 300,
+		ClusterSummaryFreshnessAgeMillis:     901000,
+		ClusterSummaryFreshnessUpdatedUnix:   1000,
+		KnownNodes:                           160,
+		HealthyNodes:                         157,
+		SuspectNodes:                         2,
+		DownNodes:                            1,
+	}
+	output := clusterStatusJSON(response)
+	summary, ok := output["cluster_summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("cluster_summary=%T", output["cluster_summary"])
+	}
+	if summary["health_name"] != "CLUSTER_SUMMARY_HEALTH_REBUILD_REQUIRED" || summary["reason"] != "freshness_expired" || summary["stale"] != true || summary["rebuild_required"] != true || summary["source_revision"] != uint64(301) || summary["baseline_source_revision"] != uint64(300) {
+		t.Fatalf("cluster summary JSON=%+v", summary)
+	}
+	if output["known_nodes"] != uint32(160) || output["node_detail_included"] != false {
+		t.Fatalf("cluster aggregate JSON=%+v", output)
+	}
+	if _, ok := output["nodes"]; ok {
+		t.Fatalf("cluster aggregate unexpectedly includes node details: %+v", output)
+	}
+	health, ok := output["node_health_summary"].(map[string]any)
+	if !ok || health["healthy_nodes"] != uint32(157) || health["suspect_nodes"] != uint32(2) || health["down_nodes"] != uint32(1) {
+		t.Fatalf("cluster node health JSON=%+v", output["node_health_summary"])
 	}
 }

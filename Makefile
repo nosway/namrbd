@@ -102,6 +102,8 @@ help:
 	@printf '  make operations-dashboard-browser-qa\n'
 	@printf '  make mcp-client-provider-integration\n'
 	@printf '  make community-release-evidence\n'
+	@printf '  make release-version-check RELEASE_TAG=vX.Y.Z\n'
+	@printf '  make release-version-check-fixture\n'
 	@printf '  make clean\n'
 
 .PHONY: build-community
@@ -112,19 +114,19 @@ $(COMMUNITY_BIN_DIR):
 
 $(COMMUNITY_BIN_DIR)/%: $(COMMUNITY_BIN_DIR)
 	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
-	GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) build $(GO_BUILD_FLAGS_COMMUNITY) -o "$@" "$(CMD_DIR)/$(@F)"
+	GOFLAGS= GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) build $(GO_BUILD_FLAGS_COMMUNITY) -o "$@" "$(CMD_DIR)/$(@F)"
 
 .PHONY: test-community
 test-community:
 	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
-	GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) test $(GOFLAGS_COMMUNITY) $(COMMUNITY_TEST_PACKAGES)
+	GOFLAGS= GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) test $(GOFLAGS_COMMUNITY) $(COMMUNITY_TEST_PACKAGES)
 
 .PHONY: module-metadata-check
 module-metadata-check:
 	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
-	GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) mod tidy -diff
+	GOFLAGS= GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) mod tidy -diff
 	cd third_party/gotgt && \
-		GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) mod tidy -diff
+		GOFLAGS= GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) mod tidy -diff
 
 .PHONY: format-community-check
 format-community-check:
@@ -136,12 +138,12 @@ format-community-check:
 .PHONY: vet-community
 vet-community:
 	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
-	GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) vet $(GOFLAGS_COMMUNITY) $(COMMUNITY_TEST_PACKAGES)
+	GOFLAGS= GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) vet $(GOFLAGS_COMMUNITY) $(COMMUNITY_TEST_PACKAGES)
 
 .PHONY: govulncheck-community
 govulncheck-community:
 	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
-	GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GOVULNCHECK) $(GOVULNCHECK_COMMUNITY_FLAGS) $(COMMUNITY_TEST_PACKAGES)
+	GOFLAGS= GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GOVULNCHECK) $(GOVULNCHECK_COMMUNITY_FLAGS) $(COMMUNITY_TEST_PACKAGES)
 
 .PHONY: build-namrbd-csi-driver
 build-namrbd-csi-driver: $(COMMUNITY_BIN_DIR)/namrbd-csi-driver
@@ -155,7 +157,7 @@ kernel-module:
 
 .PHONY: web-operations-dashboard-test
 web-operations-dashboard-test:
-	$(GO) test $(GOFLAGS_COMMUNITY) ./web/operations-dashboard -run TestOperationsDashboardHandler -count=1
+	GOFLAGS= $(GO) test $(GOFLAGS_COMMUNITY) ./web/operations-dashboard -run TestOperationsDashboardHandler -count=1
 
 .PHONY: operations-dashboard-browser-qa
 operations-dashboard-browser-qa: $(CACHE_DIR)
@@ -164,7 +166,7 @@ operations-dashboard-browser-qa: $(CACHE_DIR)
 .PHONY: mcp-client-provider-integration
 mcp-client-provider-integration: $(CACHE_DIR)
 	@mkdir -p "$(CACHE_DIR)/mcp-client-provider-integration" "$(GOCACHE)" "$(GOMODCACHE)"
-	@GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) build $(GOFLAGS_COMMUNITY) -o "$(CACHE_DIR)/mcp-client-provider-integration/namrbd-mcp" ./cmd/namrbd-mcp
+	@GOFLAGS= GOCACHE="$(GOCACHE)" GOMODCACHE="$(GOMODCACHE)" $(GO) build $(GOFLAGS_COMMUNITY) -o "$(CACHE_DIR)/mcp-client-provider-integration/namrbd-mcp" ./cmd/namrbd-mcp
 	@python3 tools/mcp-client-provider-integration.py --provider "$(CACHE_DIR)/mcp-client-provider-integration/namrbd-mcp" --evidence "$(CACHE_DIR)/mcp-client-provider-integration/evidence.json"
 
 .PHONY: container-build-community-images
@@ -173,6 +175,14 @@ container-build-community-images: container-build-namrbd-gateway container-build
 .PHONY: community-release-evidence
 community-release-evidence: $(CACHE_DIR)
 	@bash tools/generate-community-release-evidence.sh
+
+.PHONY: release-version-check
+release-version-check:
+	@RELEASE_TAG="$(RELEASE_TAG)" bash tools/check-release-version.sh
+
+.PHONY: release-version-check-fixture
+release-version-check-fixture:
+	@bash tools/check-release-version-fixture.sh
 
 .PHONY: container-build-namrbd-gateway
 container-build-namrbd-gateway:

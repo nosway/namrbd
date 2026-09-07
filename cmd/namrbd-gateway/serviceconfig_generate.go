@@ -39,15 +39,16 @@ func buildConfigFromFlags(b gatewayConfigBinding, cliSet map[string]string) (*se
 	}
 
 	g := &serviceconfig.GatewayConfig{
-		GatewayID:            deref(b.GatewayID),
-		Listen:               deref(b.ListenAddr),
-		DataListen:           deref(b.DataListenAddr),
-		AdvertiseControlAddr: deref(b.AdvertiseControlAddr),
-		AdvertiseDataAddr:    deref(b.AdvertiseDataAddr),
-		DataDisable:          derefBool(b.DataDisable),
-		SBSAdminEndpoint:     deref(b.SBSAdminEndpoint),
-		MetadataBackend:      deref(b.MetadataBackend),
-		DataBackendMode:      deref(b.DataBackendMode),
+		GatewayID:                     deref(b.GatewayID),
+		Listen:                        deref(b.ListenAddr),
+		DataListen:                    deref(b.DataListenAddr),
+		AdvertiseControlAddr:          deref(b.AdvertiseControlAddr),
+		AdvertiseDataAddr:             deref(b.AdvertiseDataAddr),
+		DataDisable:                   derefBool(b.DataDisable),
+		SBSAdminEndpoint:              deref(b.SBSAdminEndpoint),
+		SBSAuthenticatedAdminEndpoint: deref(b.SBSAuthenticatedAdminEndpoint),
+		MetadataBackend:               deref(b.MetadataBackend),
+		DataBackendMode:               deref(b.DataBackendMode),
 	}
 
 	if derefBool(b.TLSEnable) || deref(b.TLSCertFile) != "" {

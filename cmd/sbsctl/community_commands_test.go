@@ -62,6 +62,16 @@ func TestCommunitySecurityCommandRequiresEnterpriseBuild(t *testing.T) {
 	}
 }
 
+func TestCommunityRBACCommandRequiresEnterpriseBuild(t *testing.T) {
+	exitCode, output := runSBSCTLForTest(t, "rbac")
+	if exitCode != 1 {
+		t.Fatalf("sbsctl rbac exit=%d want=1 output=%s", exitCode, output)
+	}
+	if !strings.Contains(output, "enterprise_capability_required: rbac requires an enterprise build") {
+		t.Fatalf("sbsctl rbac did not report enterprise requirement: %s", output)
+	}
+}
+
 func TestCommunityMobilityCommandRequiresEnterpriseBuild(t *testing.T) {
 	exitCode, output := runSBSCTLForTest(t, "mobility")
 	if exitCode != 1 {
@@ -82,6 +92,46 @@ func TestCommunityDedupeCommandRequiresEnterpriseBuild(t *testing.T) {
 	}
 }
 
+func TestCommunityGovernanceCommandRequiresEnterpriseBuild(t *testing.T) {
+	exitCode, output := runSBSCTLForTest(t, "governance")
+	if exitCode != 1 {
+		t.Fatalf("sbsctl governance exit=%d want=1 output=%s", exitCode, output)
+	}
+	if !strings.Contains(output, "enterprise_capability_required: governance requires an enterprise build") {
+		t.Fatalf("sbsctl governance did not report enterprise requirement: %s", output)
+	}
+}
+
+func TestCommunityCompressionCommandRequiresEnterpriseBuild(t *testing.T) {
+	exitCode, output := runSBSCTLForTest(t, "compression")
+	if exitCode != 1 {
+		t.Fatalf("sbsctl compression exit=%d want=1 output=%s", exitCode, output)
+	}
+	if !strings.Contains(output, "enterprise_capability_required: compression requires an enterprise build") {
+		t.Fatalf("sbsctl compression did not report enterprise requirement: %s", output)
+	}
+}
+
+func TestCommunityTieringCommandRequiresEnterpriseBuild(t *testing.T) {
+	exitCode, output := runSBSCTLForTest(t, "tiering")
+	if exitCode != 1 {
+		t.Fatalf("sbsctl tiering exit=%d want=1 output=%s", exitCode, output)
+	}
+	if !strings.Contains(output, "enterprise_capability_required: tiering requires an enterprise build") {
+		t.Fatalf("sbsctl tiering did not report enterprise requirement: %s", output)
+	}
+}
+
+func TestCommunityNVMeCommandRequiresEnterpriseBuild(t *testing.T) {
+	exitCode, output := runSBSCTLForTest(t, "nvme")
+	if exitCode != 1 {
+		t.Fatalf("sbsctl nvme exit=%d want=1 output=%s", exitCode, output)
+	}
+	if !strings.Contains(output, "enterprise_capability_required: nvme requires an enterprise build") {
+		t.Fatalf("sbsctl nvme did not report enterprise requirement: %s", output)
+	}
+}
+
 func TestCommunityTopLevelHelpDoesNotLeakEnterpriseOnlySurface(t *testing.T) {
 	exitCode, output := runSBSCTLForTest(t)
 	if exitCode != 2 {
@@ -97,6 +147,7 @@ func TestCommunityTopLevelHelpDoesNotLeakEnterpriseOnlySurface(t *testing.T) {
 		"demote",
 		"performance",
 		"security",
+		"rbac",
 		"kms",
 		"crypto-erase",
 		"performance-tier",
@@ -107,6 +158,13 @@ func TestCommunityTopLevelHelpDoesNotLeakEnterpriseOnlySurface(t *testing.T) {
 		"mobility",
 		"repack",
 		"dedupe",
+		"governance",
+		"worm",
+		"legal-hold",
+		"compression",
+		"tiering",
+		"nvme reservation",
+		"nvme export",
 	} {
 		if strings.Contains(lower, forbidden) {
 			t.Fatalf("community help leaked enterprise-only surface %q: %s", forbidden, output)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -33,6 +34,56 @@ func TestTopLevelSnapshotDispatchesToSnapshotUsage(t *testing.T) {
 	}
 	if strings.Contains(output, "commands:") {
 		t.Fatalf("snapshot command fell through to top-level usage: %s", output)
+	}
+}
+
+func TestOperationsUsageIncludesBoundedIdentityFind(t *testing.T) {
+	exitCode, output := runSBSCTLForTest(t, "operations")
+	if exitCode != 2 {
+		t.Fatalf("sbsctl operations exit=%d want=2 output=%s", exitCode, output)
+	}
+	if !strings.Contains(output, "usage: sbsctl operations find|list|show ...") {
+		t.Fatalf("operations usage missing bounded find: %s", output)
+	}
+}
+
+func TestClusterUsageIncludesManifest(t *testing.T) {
+	exitCode, output := runSBSCTLForTest(t, "cluster")
+	if exitCode != 2 {
+		t.Fatalf("sbsctl cluster exit=%d want=2 output=%s", exitCode, output)
+	}
+	if !strings.Contains(output, "cluster init|status|manifest") {
+		t.Fatalf("cluster usage missing manifest group: %s", output)
+	}
+}
+
+func TestClusterManifestUsageListsSubcommands(t *testing.T) {
+	exitCode, output := runSBSCTLForTest(t, "cluster", "manifest")
+	if exitCode != 2 {
+		t.Fatalf("sbsctl cluster manifest exit=%d want=2 output=%s", exitCode, output)
+	}
+	if !strings.Contains(output, "cluster manifest validate|render|plan|export|admit|rollout|standby") {
+		t.Fatalf("cluster manifest usage missing subcommands: %s", output)
+	}
+}
+
+func TestHostUsageIncludesCheck(t *testing.T) {
+	exitCode, output := runSBSCTLForTest(t, "host")
+	if exitCode != 2 {
+		t.Fatalf("sbsctl host exit=%d want=2 output=%s", exitCode, output)
+	}
+	if !strings.Contains(output, "host check|maintenance") {
+		t.Fatalf("host usage missing check/maintenance commands: %s", output)
+	}
+}
+
+func TestOperationFindJSONPreservesAuthoritativeEmptyResult(t *testing.T) {
+	raw, err := json.Marshal(operationFindJSONResponse{})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if string(raw) != `{"found":false}` {
+		t.Fatalf("operation find JSON=%s want explicit found=false", raw)
 	}
 }
 

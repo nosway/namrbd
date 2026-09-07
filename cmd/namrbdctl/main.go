@@ -295,10 +295,16 @@ func runAttach(client netlinkclient.Client, args []string) {
 		}); err != nil {
 			fatalf("attach-manifest failed: %v", err)
 		}
+		appliedPathPlanRevision, err := applyAttachManifestPathPlan(client, uint32(*deviceID), manifest)
+		if err != nil {
+			fatalf("apply attach path plan failed: %v", err)
+		}
 		summary, err := summarizeGatewayAttachManifest(manifest)
 		if err != nil {
 			fatalf("summarize attach manifest failed: %v", err)
 		}
+		summary["runtime_applied_path_plan_revision"] = appliedPathPlanRevision
+		summary["path_plan_revision_state"] = "converged"
 		if clusterMetrics, metricsErr := cli.clusterMetrics(); metricsErr == nil {
 			if topClass := anyString(clusterMetrics["top_priority_class"]); topClass != "" {
 				summary["cluster_top_priority_class"] = topClass
@@ -2394,6 +2400,15 @@ func mergeDiscoveryIntoManifest(manifestJSON string, discovery map[string]any, o
 		return "", err
 	}
 	discovery = selectDiscoveryPaths(discovery, opts)
+	if volume, ok := discovery["volume"].(map[string]any); ok {
+		discoveryRevision := anyUint64(volume["path_plan_revision"])
+		if discoveryRevision > anyUint64(manifest["path_plan_revision"]) {
+			manifest["path_plan_revision"] = discoveryRevision
+		}
+		if pathPlan, ok := volume["path_plan"]; ok {
+			manifest["path_plan"] = pathPlan
+		}
+	}
 
 	if gateways, ok := discovery["gateways"].([]any); ok {
 		controlEndpoints := make([]any, 0)
@@ -3089,6 +3104,24 @@ func pathPlanToNetlinkRequest(deviceID uint32, plan map[string]any) (netlinktlv.
 		req.DegradedMask = mask
 	}
 	return req, nil
+}
+
+func applyAttachManifestPathPlan(client netlinkclient.Client, deviceID uint32, raw string) (uint64, error) {
+	var manifest map[string]any
+	if err := json.Unmarshal([]byte(raw), &manifest); err != nil {
+		return 0, fmt.Errorf("decode attach manifest: %w", err)
+	}
+	req, err := pathPlanToNetlinkRequest(deviceID, manifest)
+	if err != nil {
+		return 0, err
+	}
+	if req.PathPlanRevision == 0 {
+		return 0, fmt.Errorf("attach manifest missing versioned path_plan_revision")
+	}
+	if err := client.UpdatePathPlan(req); err != nil {
+		return 0, err
+	}
+	return req.PathPlanRevision, nil
 }
 
 func adjustRuntimePathPlanRevision(req netlinktlv.UpdatePathPlanRequest, status netlinktlv.DeviceStatus) netlinktlv.UpdatePathPlanRequest {

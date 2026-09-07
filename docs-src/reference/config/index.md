@@ -47,9 +47,10 @@ an explicit override; only a flag actually present in the command line wins.
 Fields absent from a page's override table are file-authoritative unless that
 page records a daemon-specific adoption exception.
 
-Canonical environment names win over deprecated aliases. The aliases warn in
-v1.0.x and are rejected from v1.1.0. A `large_scale` startup fails when a
-canonical name and its legacy alias are both present with different values.
+The current v1.1 release rejects deprecated aliases and names the canonical
+replacement in the startup error. For v1.0.x binaries only, canonical
+environment names win over deprecated aliases in the `dev` profile, while a
+`large_scale` startup rejects conflicting canonical and legacy values.
 
 Several daemons also read environment variables while constructing their
 built-in flag values. The daemon pages distinguish these direct inputs from

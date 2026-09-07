@@ -29,7 +29,7 @@ Status: engineering and research guidance; no public benchmark claim
 <div class="summary" markdown="1">
 
 This chapter defines how NAMRBD performance work should be measured and
-reported. The v1.0 public release makes no general IOPS, bandwidth, latency, or
+reported. The v1.1 public release makes no general IOPS, bandwidth, latency, or
 CPU-efficiency claim. A result is meaningful only for the exact build,
 topology, durability mode, workload, and failure state that produced it.
 

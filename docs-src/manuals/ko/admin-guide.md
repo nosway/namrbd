@@ -1,7 +1,7 @@
 Operations Manual
 
 Advanced feature 안내: Enterprise 섹션은 개발·검증 중인 설계 참고이며 공개
-v1.0 관리 또는 지원 범위가 아닙니다. [기능 상태](../../feature-status.md)를
+v1.1 관리 또는 지원 범위가 아닙니다. [기능 상태](../../feature-status.md)를
 확인하십시오.
 
 # NAMRBD 관리자 가이드
@@ -55,6 +55,28 @@ Keep environment boundaries explicit:
 Gateway, iSCSI, SBS membership 변경은 plan, preflight, apply, synchronize, verify, rollback, audit 순서의 operator envelope로 다룹니다. Gateway membership/liveness는 gateway/control-plane state가 권한이고, SBS node join/topology/store tuning/drain/remove/force-remove는 `sbs-service` AdminService가 권한입니다. `sbs-data`는 node-local health/capacity evidence를 제공하지만 cluster membership authority는 아닙니다.
 
 먼저 read-only status를 확인하십시오. Membership 또는 capacity view를 해석하기 전에 `source_authority`, `collector_freshness_seconds`, `warning_count`, `first_error`, `last_error`, `rbac_checked`, `redaction_applied`, `unsupported_claim_visible` 필드를 함께 봅니다. Membership mutation workflow는 기존 CLI/API, RBAC rule, audit record, rollback behavior, human approval gate가 준비된 경우에만 사용합니다.
+
+검토된 대규모 fleet에서는 strict cluster manifest를 변경 package의 desired-state
+authority로 사용합니다. `cluster manifest validate|export|render|plan`을 실행하고 node별
+signed `host check` 보고서를 수집한 뒤 `cluster manifest admit`을 통과해야 rollout
+operation을 만들 수 있습니다. 이 단계들은 pure 또는 observation-only이므로 live TiKV
+mutation, storage action, daemon action이 모두 0입니다. Current state의 예상하지 못한
+node는 `blocked`이며, 삭제는 plan의 암묵적 side effect가 아니라 별도 검토 작업입니다.
+
+Rollout operation은 immutable file-backed 기록입니다. `rollout issue`는 외부
+transport가 실행할 instruction을 내보내고 `rollout record`는 관측된 결과를
+저장합니다. State machine 자체는 instruction을 실행하지 않습니다. Node 하나가
+실패하면 wave가 pause되고 뒤 wave는 시작하지 않습니다. First/last error,
+idempotency key, wave checkpoint, node별 결과와 모든 operation revision을 보존하고,
+실패한 작업만 retry한 뒤 operator reason과 함께 resume합니다.
+
+Standby activation은 `cluster manifest standby plan|issue|verify|status`를 사용하며,
+실패한 active instance가 stop/isolate됐음을 증명한 뒤 후보 하나만 승인합니다. Host
+maintenance는 `host maintenance plan|enter|exit|status`를 사용하고 quorum/leader,
+replica·capacity safety, affected-set drain, 현재 operation과 work-ready queue를 함께
+확인합니다. Unsafe override에는 정확한 check ID, caller, incident/change ID, reason,
+expiry가 필요합니다. 자동 rollback은 없으므로 operation에 기록된 recovery 절차를
+따릅니다.
 
 ## 3. Observability
 
@@ -213,7 +235,10 @@ iSCSI watchpoints:
 
 ``` bash
 curl -fsS http://service-01.example.com:9081/api/v1/sbs/cluster
-curl -fsS http://service-01.example.com:9081/api/v1/sbs/nodes
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/nodes?page_size=128'
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/node?id=node1'
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/volumes?page_size=128&health=degraded'
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/volume?id=00a1b2c3'
 curl -fsS http://service-01.example.com:9081/api/v1/sbs/capacity
 curl -fsS http://service-01.example.com:9081/api/v1/sbs/reclaim
 curl -fsS http://service-01.example.com:9081/api/v1/membership/status
@@ -225,7 +250,23 @@ curl -fsS http://service-01.example.com:9081/api/v1/gui/summary
 curl -fsS http://service-01.example.com:9081/api/v1/workflow/hardening
 ```
 
-이 URL들은 view이며 mutation authority가 아닙니다. Capacity는 logical bytes, physical used/free bytes, reclaimable bytes, protected bytes, unknown bytes를 분리합니다. Reclaim view는 protected-reference check와 `sbs-data` before/after free-byte evidence가 있기 전까지 completion을 claim하지 않습니다. MCP와 GUI descriptor는 read-only이며, mutating tool/control은 별도 review 전까지 비활성입니다.
+이 URL들은 view이며 mutation authority가 아닙니다. `/api/v1/sbs/cluster`는 정상
+polling용 bounded aggregate이며 node/store/volume 상세를 포함하지 않습니다. 복수형
+node/volume route는 revision-pinned page 하나만 반환하고
+`automatic_page_completion:false`를 표시합니다. `next_page_token`은 명시적으로
+사용합니다. Invalid token/filter mismatch는 400, projection/catalog revision 변경은
+409이며, 단수형 route는 point lookup입니다. Stale/partial/rebuild-required projection을
+client-side all-page scan으로 대체하지 마십시오.
+
+`request_class`는 point, BatchGet, range-page 작업을 보여주고 `metadata_pressure`는
+backend-full/full-completion/nested-completion, retry, duration, hot-region candidate까지
+구분합니다. `fleet_health`의 stable code는 `SBS_APPLY_PAUSED`,
+`SBS_HOST_CHECK_FAILED`, `SBS_CONFIG_DRIFT`, `SBS_STRAY_NODE`,
+`SBS_STORAGE_CLAIM_MISMATCH`, `SBS_FLEET_CHECK_STALE`입니다. Capacity는 logical
+bytes, physical used/free bytes, reclaimable bytes, protected bytes, unknown bytes를
+분리합니다. Reclaim view는 protected-reference check와 `sbs-data` before/after
+free-byte evidence가 있기 전까지 completion을 claim하지 않습니다. MCP와 GUI
+descriptor는 read-only이며, mutating tool/control은 별도 review 전까지 비활성입니다.
 
 Read-only operations console은 동일한 `sbs-service` administration endpoint의 `/console/`에서 제공됩니다. Console은 동일한 operations view를 사용하고, `/api/v1/sbs/cluster`를 primary snapshot으로 삼아 status, topology, capacity, maintenance backlog, warning, membership source authority, reclaim evidence를 보여줍니다. 이 console은 새로운 source of truth가 아니며, stale/partial/failed collection state를 숨기지 않아야 합니다. 시각화 asset은 외부 CDN 없이 packaging된 형태로 동작해야 합니다.
 
@@ -509,6 +550,13 @@ Generated public/community export artifact validation remains a separate release
 ## 8. Closure And Validation
 
 Closure는 검토 대상 source revision, binary, image, service restart, kernel module state에 대해 배포된 제품 경로가 fresh evidence를 가진다는 뜻입니다. Private validation path, 과거 hostname, cached artifact를 public support claim처럼 재사용하지 않습니다.
+
+현재 소프트웨어 검증은 exact logical 160-node manifest, high-cardinality metadata
+fixture, 9-node maintenance I/O, 18 physical host에 분산된 160개 `sbs-data`
+process live run을 포함합니다. 이는 160대의 독립 물리 서버, production
+capacity/throughput 또는 physical-160 support boundary를 qualification한 것이
+아닙니다. 별도의 physical-scale qualification에서 hardware inventory, acceptance
+threshold, evidence, cleanup을 정의해야 합니다.
 
 기본 iSCSI target access는 Linux open-iscsi를 필수 compatibility baseline으로 둡니다. Validation package에는 fixture startup, SBS-backed Linux initiator discovery/login, guarded LUN selection, write/readback, flush 또는 UNMAP observation, logout, cleanup, Community edition-boundary status, unsupported initiator exclusion이 포함되어야 합니다.
 

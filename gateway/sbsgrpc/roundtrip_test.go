@@ -106,6 +106,59 @@ func TestGRPCRoundTripWithInMemorySBSClient(t *testing.T) {
 	}
 }
 
+func TestMaterializeVolumeGRPCRoundTrip(t *testing.T) {
+	impl := &recordingMaterializeSBSClient{SBSClient: service.NewInMemorySBSClient(nil)}
+	lis := bufconn.Listen(1024 * 1024)
+	grpcServer := grpc.NewServer()
+	sbsv1.RegisterVolumeServiceServer(grpcServer, NewServer(impl))
+	go func() { _ = grpcServer.Serve(lis) }()
+	defer grpcServer.Stop()
+
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	defer conn.Close()
+
+	req := &service.MaterializeVolumeRequest{
+		Spec: service.VolumeSpec{
+			ID:              service.HexVolumeID(0x00a1b2c3),
+			Name:            "sbs-00a1b2c3",
+			Prefix:          "sbs-00a1b2c3",
+			SizeBytes:       1 << 20,
+			BlockSize:       4096,
+			ChunkSizeBytes:  65536,
+			ExtentPageBytes: 4 << 20,
+		},
+		Context: service.SBSRequestContext{RequestID: "materialize-1", GatewayID: "gw-a"},
+	}
+	resp, err := NewClient(sbsv1.NewVolumeServiceClient(conn)).MaterializeVolume(context.Background(), req)
+	if err != nil {
+		t.Fatalf("MaterializeVolume: %v", err)
+	}
+	if impl.request == nil || impl.request.Context != req.Context || impl.request.Spec.Prefix != req.Spec.Prefix {
+		t.Fatalf("request did not round trip: got=%+v want=%+v", impl.request, req)
+	}
+	if resp.Status != "ok" || resp.Spec.ID != req.Spec.ID || resp.Spec.SizeBytes != req.Spec.SizeBytes ||
+		resp.Spec.BlockSize != req.Spec.BlockSize || resp.Spec.ChunkSizeBytes != req.Spec.ChunkSizeBytes ||
+		resp.Spec.ExtentPageBytes != req.Spec.ExtentPageBytes {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+type recordingMaterializeSBSClient struct {
+	service.SBSClient
+	request *service.MaterializeVolumeRequest
+}
+
+func (c *recordingMaterializeSBSClient) MaterializeVolume(_ context.Context, req *service.MaterializeVolumeRequest) (*service.MaterializeVolumeResponse, error) {
+	copyReq := *req
+	c.request = &copyReq
+	return &service.MaterializeVolumeResponse{Status: "ok", Spec: req.Spec}, nil
+}
+
 func TestISCSIWriterFenceGRPCRoundTrip(t *testing.T) {
 	impl := &recordingFenceSBSClient{SBSClient: service.NewInMemorySBSClient(nil)}
 	lis := bufconn.Listen(1024 * 1024)
@@ -136,6 +189,58 @@ func TestISCSIWriterFenceGRPCRoundTrip(t *testing.T) {
 type recordingFenceSBSClient struct {
 	service.SBSClient
 	fence service.ISCSIWriterFence
+}
+
+func TestCompressionPolicyGRPCRoundTrip(t *testing.T) {
+	impl := &recordingCompressionSBSClient{SBSClient: service.NewInMemorySBSClient(nil)}
+	lis := bufconn.Listen(1024 * 1024)
+	grpcServer := grpc.NewServer()
+	sbsv1.RegisterVolumeServiceServer(grpcServer, NewServer(impl))
+	go func() { _ = grpcServer.Serve(lis) }()
+	defer grpcServer.Stop()
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	defer conn.Close()
+	policy := service.CompressionPolicy{
+		VolumeID: "00000065", PolicyID: "zstd-a", PolicyRevision: 4,
+		Codec: "ZSTD", MinimumInputBytes: 4096, ChecksumEnabled: true, Enabled: true,
+	}
+	client := NewClient(sbsv1.NewVolumeServiceClient(conn))
+	apply, err := client.ApplyCompressionPolicy(context.Background(), &service.ApplyCompressionPolicyRequest{Policy: policy})
+	if err != nil {
+		t.Fatalf("ApplyCompressionPolicy: %v", err)
+	}
+	if impl.policy != policy || !apply.Applied || apply.Runtime.PolicyRevision != 4 {
+		t.Fatalf("compression apply roundtrip policy=%+v resp=%+v", impl.policy, apply)
+	}
+	get, err := client.GetCompressionRuntimeStatus(context.Background(), &service.GetCompressionRuntimeStatusRequest{VolumeID: policy.VolumeID})
+	if err != nil || get.Runtime.CompressedBytes != 1234 {
+		t.Fatalf("compression status roundtrip resp=%+v err=%v", get, err)
+	}
+}
+
+type recordingCompressionSBSClient struct {
+	service.SBSClient
+	policy service.CompressionPolicy
+}
+
+func (c *recordingCompressionSBSClient) ApplyCompressionPolicy(_ context.Context, req *service.ApplyCompressionPolicyRequest) (*service.ApplyCompressionPolicyResponse, error) {
+	c.policy = req.Policy
+	return &service.ApplyCompressionPolicyResponse{
+		Status: "ok", Applied: true,
+		Runtime: service.CompressionRuntimeStatus{VolumeID: req.Policy.VolumeID, PolicyID: req.Policy.PolicyID, PolicyRevision: req.Policy.PolicyRevision, Applied: true},
+	}, nil
+}
+
+func (c *recordingCompressionSBSClient) GetCompressionRuntimeStatus(_ context.Context, req *service.GetCompressionRuntimeStatusRequest) (*service.GetCompressionRuntimeStatusResponse, error) {
+	return &service.GetCompressionRuntimeStatusResponse{Runtime: service.CompressionRuntimeStatus{
+		VolumeID: req.VolumeID, PolicyID: c.policy.PolicyID, PolicyRevision: c.policy.PolicyRevision,
+		Applied: true, CompressedBytes: 1234,
+	}}, nil
 }
 
 func (c *recordingFenceSBSClient) ApplyISCSIWriterFence(_ context.Context, req *service.ApplyISCSIWriterFenceRequest) (*service.ApplyISCSIWriterFenceResponse, error) {

@@ -22,7 +22,7 @@ Flags:
   --cluster-id string
       NAMRBD cluster id (default namrbd-dev)
   --config string
-      service config file path (AA-IMPL-001G); store layout stays in --store-config (default )
+      service config file path; store layout stays in --store-config (default )
   --node-id string
       sbs-data node id (default sbs-data-1)
   --path string

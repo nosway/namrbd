@@ -82,6 +82,9 @@ func TestGatewayAndCSIEndpointCatalogUsesSharedServiceNames(t *testing.T) {
 		!GatewayControlListen.Matches("NAMRBD_GATEWAY_LISTEN") {
 		t.Fatalf("gateway control listener spec=%+v", GatewayControlListen)
 	}
+	if GatewaySBSAuthenticatedAdminEndpoint.Canonical != "NAMRBD_SBS_AUTHENTICATED_ADMIN_ENDPOINT" || len(GatewaySBSAuthenticatedAdminEndpoint.Legacy) != 0 {
+		t.Fatalf("gateway authenticated admin endpoint spec=%+v", GatewaySBSAuthenticatedAdminEndpoint)
+	}
 	if CSISBSServiceEndpoints.Canonical != "NAMRBD_SBS_SERVICE_ENDPOINTS" ||
 		!CSISBSServiceEndpoints.Matches("NAMRBD_ADMIN_ENDPOINTS") {
 		t.Fatalf("CSI service endpoint list spec=%+v", CSISBSServiceEndpoints)

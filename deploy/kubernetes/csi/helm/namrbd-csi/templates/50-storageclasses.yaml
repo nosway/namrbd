@@ -1,3 +1,6 @@
+{{- if and .Values.storageClasses.ec63.create (ne .Values.edition "enterprise") }}
+{{- fail "storageClasses.ec63 requires edition=enterprise" }}
+{{- end }}
 {{- if .Values.storageClasses.replicated.create }}
 apiVersion: storage.k8s.io/v1
 kind: StorageClass

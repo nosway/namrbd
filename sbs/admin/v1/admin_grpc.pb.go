@@ -19,181 +19,243 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AdminService_ClusterInit_FullMethodName                    = "/sbs.admin.v1.AdminService/ClusterInit"
-	AdminService_GetClusterStatus_FullMethodName               = "/sbs.admin.v1.AdminService/GetClusterStatus"
-	AdminService_GetLeader_FullMethodName                      = "/sbs.admin.v1.AdminService/GetLeader"
-	AdminService_ListNodes_FullMethodName                      = "/sbs.admin.v1.AdminService/ListNodes"
-	AdminService_GetMembershipProjectionStatus_FullMethodName  = "/sbs.admin.v1.AdminService/GetMembershipProjectionStatus"
-	AdminService_RebuildMembershipProjection_FullMethodName    = "/sbs.admin.v1.AdminService/RebuildMembershipProjection"
-	AdminService_GetNode_FullMethodName                        = "/sbs.admin.v1.AdminService/GetNode"
-	AdminService_JoinNode_FullMethodName                       = "/sbs.admin.v1.AdminService/JoinNode"
-	AdminService_UpdateNodeTopology_FullMethodName             = "/sbs.admin.v1.AdminService/UpdateNodeTopology"
-	AdminService_UpdateNodeRegistration_FullMethodName         = "/sbs.admin.v1.AdminService/UpdateNodeRegistration"
-	AdminService_LeaveNode_FullMethodName                      = "/sbs.admin.v1.AdminService/LeaveNode"
-	AdminService_DrainNode_FullMethodName                      = "/sbs.admin.v1.AdminService/DrainNode"
-	AdminService_RemoveNode_FullMethodName                     = "/sbs.admin.v1.AdminService/RemoveNode"
-	AdminService_ForceRemoveNode_FullMethodName                = "/sbs.admin.v1.AdminService/ForceRemoveNode"
-	AdminService_CreateTopologyZone_FullMethodName             = "/sbs.admin.v1.AdminService/CreateTopologyZone"
-	AdminService_ListTopologyZones_FullMethodName              = "/sbs.admin.v1.AdminService/ListTopologyZones"
-	AdminService_GetTopologyZone_FullMethodName                = "/sbs.admin.v1.AdminService/GetTopologyZone"
-	AdminService_UpdateTopologyZone_FullMethodName             = "/sbs.admin.v1.AdminService/UpdateTopologyZone"
-	AdminService_DeleteTopologyZone_FullMethodName             = "/sbs.admin.v1.AdminService/DeleteTopologyZone"
-	AdminService_ListVolumes_FullMethodName                    = "/sbs.admin.v1.AdminService/ListVolumes"
-	AdminService_GetVolume_FullMethodName                      = "/sbs.admin.v1.AdminService/GetVolume"
-	AdminService_GetVolumePlacementView_FullMethodName         = "/sbs.admin.v1.AdminService/GetVolumePlacementView"
-	AdminService_GetVolumeAllocationPageView_FullMethodName    = "/sbs.admin.v1.AdminService/GetVolumeAllocationPageView"
-	AdminService_GetReplicaTargetsView_FullMethodName          = "/sbs.admin.v1.AdminService/GetReplicaTargetsView"
-	AdminService_GetISCSIRegistry_FullMethodName               = "/sbs.admin.v1.AdminService/GetISCSIRegistry"
-	AdminService_ListISCSIPortals_FullMethodName               = "/sbs.admin.v1.AdminService/ListISCSIPortals"
-	AdminService_GetISCSIPortal_FullMethodName                 = "/sbs.admin.v1.AdminService/GetISCSIPortal"
-	AdminService_ListISCSITargets_FullMethodName               = "/sbs.admin.v1.AdminService/ListISCSITargets"
-	AdminService_GetISCSITarget_FullMethodName                 = "/sbs.admin.v1.AdminService/GetISCSITarget"
-	AdminService_ListISCSILUNs_FullMethodName                  = "/sbs.admin.v1.AdminService/ListISCSILUNs"
-	AdminService_GetISCSILUN_FullMethodName                    = "/sbs.admin.v1.AdminService/GetISCSILUN"
-	AdminService_ListISCSIExports_FullMethodName               = "/sbs.admin.v1.AdminService/ListISCSIExports"
-	AdminService_GetISCSIExport_FullMethodName                 = "/sbs.admin.v1.AdminService/GetISCSIExport"
-	AdminService_GetISCSIRegistryChanges_FullMethodName        = "/sbs.admin.v1.AdminService/GetISCSIRegistryChanges"
-	AdminService_ListISCSIInitiatorACLs_FullMethodName         = "/sbs.admin.v1.AdminService/ListISCSIInitiatorACLs"
-	AdminService_GetISCSIInitiatorACL_FullMethodName           = "/sbs.admin.v1.AdminService/GetISCSIInitiatorACL"
-	AdminService_ListISCSISessions_FullMethodName              = "/sbs.admin.v1.AdminService/ListISCSISessions"
-	AdminService_GetISCSISession_FullMethodName                = "/sbs.admin.v1.AdminService/GetISCSISession"
-	AdminService_RecordISCSISession_FullMethodName             = "/sbs.admin.v1.AdminService/RecordISCSISession"
-	AdminService_DisconnectISCSISession_FullMethodName         = "/sbs.admin.v1.AdminService/DisconnectISCSISession"
-	AdminService_GetISCSIFailover_FullMethodName               = "/sbs.admin.v1.AdminService/GetISCSIFailover"
-	AdminService_PromoteISCSIFailover_FullMethodName           = "/sbs.admin.v1.AdminService/PromoteISCSIFailover"
-	AdminService_DemoteISCSIFailover_FullMethodName            = "/sbs.admin.v1.AdminService/DemoteISCSIFailover"
-	AdminService_StandbyISCSIFailover_FullMethodName           = "/sbs.admin.v1.AdminService/StandbyISCSIFailover"
-	AdminService_RevokeStaleISCSIFailover_FullMethodName       = "/sbs.admin.v1.AdminService/RevokeStaleISCSIFailover"
-	AdminService_CreateISCSIPortal_FullMethodName              = "/sbs.admin.v1.AdminService/CreateISCSIPortal"
-	AdminService_DeleteISCSIPortal_FullMethodName              = "/sbs.admin.v1.AdminService/DeleteISCSIPortal"
-	AdminService_SetISCSIPortalEnabled_FullMethodName          = "/sbs.admin.v1.AdminService/SetISCSIPortalEnabled"
-	AdminService_CreateISCSITarget_FullMethodName              = "/sbs.admin.v1.AdminService/CreateISCSITarget"
-	AdminService_DeleteISCSITarget_FullMethodName              = "/sbs.admin.v1.AdminService/DeleteISCSITarget"
-	AdminService_SetISCSITargetEnabled_FullMethodName          = "/sbs.admin.v1.AdminService/SetISCSITargetEnabled"
-	AdminService_ExportISCSILUN_FullMethodName                 = "/sbs.admin.v1.AdminService/ExportISCSILUN"
-	AdminService_UnexportISCSILUN_FullMethodName               = "/sbs.admin.v1.AdminService/UnexportISCSILUN"
-	AdminService_SetISCSILUNMode_FullMethodName                = "/sbs.admin.v1.AdminService/SetISCSILUNMode"
-	AdminService_AllowISCSIInitiator_FullMethodName            = "/sbs.admin.v1.AdminService/AllowISCSIInitiator"
-	AdminService_DenyISCSIInitiator_FullMethodName             = "/sbs.admin.v1.AdminService/DenyISCSIInitiator"
-	AdminService_SetISCSIInitiatorAuth_FullMethodName          = "/sbs.admin.v1.AdminService/SetISCSIInitiatorAuth"
-	AdminService_CreateVolume_FullMethodName                   = "/sbs.admin.v1.AdminService/CreateVolume"
-	AdminService_CreateVolumeFromSnapshot_FullMethodName       = "/sbs.admin.v1.AdminService/CreateVolumeFromSnapshot"
-	AdminService_ExpandVolume_FullMethodName                   = "/sbs.admin.v1.AdminService/ExpandVolume"
-	AdminService_DeleteVolume_FullMethodName                   = "/sbs.admin.v1.AdminService/DeleteVolume"
-	AdminService_PurgeVolume_FullMethodName                    = "/sbs.admin.v1.AdminService/PurgeVolume"
-	AdminService_PlanVolumeRepack_FullMethodName               = "/sbs.admin.v1.AdminService/PlanVolumeRepack"
-	AdminService_StartVolumeRepack_FullMethodName              = "/sbs.admin.v1.AdminService/StartVolumeRepack"
-	AdminService_GetVolumeRepack_FullMethodName                = "/sbs.admin.v1.AdminService/GetVolumeRepack"
-	AdminService_ListVolumeRepacks_FullMethodName              = "/sbs.admin.v1.AdminService/ListVolumeRepacks"
-	AdminService_CancelVolumeRepack_FullMethodName             = "/sbs.admin.v1.AdminService/CancelVolumeRepack"
-	AdminService_PlanDedupe_FullMethodName                     = "/sbs.admin.v1.AdminService/PlanDedupe"
-	AdminService_StartDedupe_FullMethodName                    = "/sbs.admin.v1.AdminService/StartDedupe"
-	AdminService_CreateSecurityProvider_FullMethodName         = "/sbs.admin.v1.AdminService/CreateSecurityProvider"
-	AdminService_GetSecurityProvider_FullMethodName            = "/sbs.admin.v1.AdminService/GetSecurityProvider"
-	AdminService_ListSecurityProviders_FullMethodName          = "/sbs.admin.v1.AdminService/ListSecurityProviders"
-	AdminService_CheckSecurityProvider_FullMethodName          = "/sbs.admin.v1.AdminService/CheckSecurityProvider"
-	AdminService_CreateSecurityPolicy_FullMethodName           = "/sbs.admin.v1.AdminService/CreateSecurityPolicy"
-	AdminService_GetSecurityPolicy_FullMethodName              = "/sbs.admin.v1.AdminService/GetSecurityPolicy"
-	AdminService_ListSecurityPolicies_FullMethodName           = "/sbs.admin.v1.AdminService/ListSecurityPolicies"
-	AdminService_BindSecurityPolicy_FullMethodName             = "/sbs.admin.v1.AdminService/BindSecurityPolicy"
-	AdminService_CreateSecurityDataKey_FullMethodName          = "/sbs.admin.v1.AdminService/CreateSecurityDataKey"
-	AdminService_GetSecurityDataKey_FullMethodName             = "/sbs.admin.v1.AdminService/GetSecurityDataKey"
-	AdminService_ListSecurityDataKeys_FullMethodName           = "/sbs.admin.v1.AdminService/ListSecurityDataKeys"
-	AdminService_DisableSecurityDataKey_FullMethodName         = "/sbs.admin.v1.AdminService/DisableSecurityDataKey"
-	AdminService_EnableSecurityDataKey_FullMethodName          = "/sbs.admin.v1.AdminService/EnableSecurityDataKey"
-	AdminService_PlanSecurityDataKeyDestroy_FullMethodName     = "/sbs.admin.v1.AdminService/PlanSecurityDataKeyDestroy"
-	AdminService_DestroySecurityDataKey_FullMethodName         = "/sbs.admin.v1.AdminService/DestroySecurityDataKey"
-	AdminService_CreateSecurityKeyRotationPlan_FullMethodName  = "/sbs.admin.v1.AdminService/CreateSecurityKeyRotationPlan"
-	AdminService_GetSecurityKeyRotationPlan_FullMethodName     = "/sbs.admin.v1.AdminService/GetSecurityKeyRotationPlan"
-	AdminService_ListSecurityKeyRotationPlans_FullMethodName   = "/sbs.admin.v1.AdminService/ListSecurityKeyRotationPlans"
-	AdminService_RunSecurityKeyRotation_FullMethodName         = "/sbs.admin.v1.AdminService/RunSecurityKeyRotation"
-	AdminService_CreateSecurityCryptoErasePlan_FullMethodName  = "/sbs.admin.v1.AdminService/CreateSecurityCryptoErasePlan"
-	AdminService_GetSecurityCryptoErasePlan_FullMethodName     = "/sbs.admin.v1.AdminService/GetSecurityCryptoErasePlan"
-	AdminService_ListSecurityCryptoErasePlans_FullMethodName   = "/sbs.admin.v1.AdminService/ListSecurityCryptoErasePlans"
-	AdminService_RunSecurityCryptoErase_FullMethodName         = "/sbs.admin.v1.AdminService/RunSecurityCryptoErase"
-	AdminService_IssueKeyAccessLease_FullMethodName            = "/sbs.admin.v1.AdminService/IssueKeyAccessLease"
-	AdminService_CheckSecurityDataKeyAccess_FullMethodName     = "/sbs.admin.v1.AdminService/CheckSecurityDataKeyAccess"
-	AdminService_UnwrapSecurityDataKey_FullMethodName          = "/sbs.admin.v1.AdminService/UnwrapSecurityDataKey"
-	AdminService_GetKeyAccessLease_FullMethodName              = "/sbs.admin.v1.AdminService/GetKeyAccessLease"
-	AdminService_RevokeKeyAccessLease_FullMethodName           = "/sbs.admin.v1.AdminService/RevokeKeyAccessLease"
-	AdminService_ListSecurityAuditEvents_FullMethodName        = "/sbs.admin.v1.AdminService/ListSecurityAuditEvents"
-	AdminService_VerifySecurityAuditLog_FullMethodName         = "/sbs.admin.v1.AdminService/VerifySecurityAuditLog"
-	AdminService_CreateECProfile_FullMethodName                = "/sbs.admin.v1.AdminService/CreateECProfile"
-	AdminService_ListECProfiles_FullMethodName                 = "/sbs.admin.v1.AdminService/ListECProfiles"
-	AdminService_GetECProfile_FullMethodName                   = "/sbs.admin.v1.AdminService/GetECProfile"
-	AdminService_DisableECProfile_FullMethodName               = "/sbs.admin.v1.AdminService/DisableECProfile"
-	AdminService_CreateSnapshot_FullMethodName                 = "/sbs.admin.v1.AdminService/CreateSnapshot"
-	AdminService_GetSnapshot_FullMethodName                    = "/sbs.admin.v1.AdminService/GetSnapshot"
-	AdminService_ListSnapshots_FullMethodName                  = "/sbs.admin.v1.AdminService/ListSnapshots"
-	AdminService_DeleteSnapshot_FullMethodName                 = "/sbs.admin.v1.AdminService/DeleteSnapshot"
-	AdminService_CreateClone_FullMethodName                    = "/sbs.admin.v1.AdminService/CreateClone"
-	AdminService_GetClone_FullMethodName                       = "/sbs.admin.v1.AdminService/GetClone"
-	AdminService_ListClones_FullMethodName                     = "/sbs.admin.v1.AdminService/ListClones"
-	AdminService_MaterializeClone_FullMethodName               = "/sbs.admin.v1.AdminService/MaterializeClone"
-	AdminService_DeleteClone_FullMethodName                    = "/sbs.admin.v1.AdminService/DeleteClone"
-	AdminService_UpdateNodeStoreWeights_FullMethodName         = "/sbs.admin.v1.AdminService/UpdateNodeStoreWeights"
-	AdminService_UpdateNodeStoreTuning_FullMethodName          = "/sbs.admin.v1.AdminService/UpdateNodeStoreTuning"
-	AdminService_GetMaintenanceStatus_FullMethodName           = "/sbs.admin.v1.AdminService/GetMaintenanceStatus"
-	AdminService_SetBackgroundBudget_FullMethodName            = "/sbs.admin.v1.AdminService/SetBackgroundBudget"
-	AdminService_AcquireBudgetLease_FullMethodName             = "/sbs.admin.v1.AdminService/AcquireBudgetLease"
-	AdminService_GetBudgetLease_FullMethodName                 = "/sbs.admin.v1.AdminService/GetBudgetLease"
-	AdminService_ListBudgetLeases_FullMethodName               = "/sbs.admin.v1.AdminService/ListBudgetLeases"
-	AdminService_SetMaintenanceThrottle_FullMethodName         = "/sbs.admin.v1.AdminService/SetMaintenanceThrottle"
-	AdminService_PauseMaintenance_FullMethodName               = "/sbs.admin.v1.AdminService/PauseMaintenance"
-	AdminService_ResumeMaintenance_FullMethodName              = "/sbs.admin.v1.AdminService/ResumeMaintenance"
-	AdminService_ListRepairs_FullMethodName                    = "/sbs.admin.v1.AdminService/ListRepairs"
-	AdminService_ListRebalances_FullMethodName                 = "/sbs.admin.v1.AdminService/ListRebalances"
-	AdminService_StartRestoreWarmup_FullMethodName             = "/sbs.admin.v1.AdminService/StartRestoreWarmup"
-	AdminService_RunRestoreWarmup_FullMethodName               = "/sbs.admin.v1.AdminService/RunRestoreWarmup"
-	AdminService_GetRestoreWarmup_FullMethodName               = "/sbs.admin.v1.AdminService/GetRestoreWarmup"
-	AdminService_ListRestoreWarmups_FullMethodName             = "/sbs.admin.v1.AdminService/ListRestoreWarmups"
-	AdminService_CancelRestoreWarmup_FullMethodName            = "/sbs.admin.v1.AdminService/CancelRestoreWarmup"
-	AdminService_BuildDiffIndex_FullMethodName                 = "/sbs.admin.v1.AdminService/BuildDiffIndex"
-	AdminService_ScanDiffIndex_FullMethodName                  = "/sbs.admin.v1.AdminService/ScanDiffIndex"
-	AdminService_GetDiffIndex_FullMethodName                   = "/sbs.admin.v1.AdminService/GetDiffIndex"
-	AdminService_ListDiffIndexes_FullMethodName                = "/sbs.admin.v1.AdminService/ListDiffIndexes"
-	AdminService_DropDiffIndex_FullMethodName                  = "/sbs.admin.v1.AdminService/DropDiffIndex"
-	AdminService_SetECJournalGuardedMode_FullMethodName        = "/sbs.admin.v1.AdminService/SetECJournalGuardedMode"
-	AdminService_GetECJournalGuardedMode_FullMethodName        = "/sbs.admin.v1.AdminService/GetECJournalGuardedMode"
-	AdminService_CreateBackupTarget_FullMethodName             = "/sbs.admin.v1.AdminService/CreateBackupTarget"
-	AdminService_GetBackupTarget_FullMethodName                = "/sbs.admin.v1.AdminService/GetBackupTarget"
-	AdminService_ListBackupTargets_FullMethodName              = "/sbs.admin.v1.AdminService/ListBackupTargets"
-	AdminService_CreateBackupPolicy_FullMethodName             = "/sbs.admin.v1.AdminService/CreateBackupPolicy"
-	AdminService_GetBackupPolicy_FullMethodName                = "/sbs.admin.v1.AdminService/GetBackupPolicy"
-	AdminService_ListBackupPolicies_FullMethodName             = "/sbs.admin.v1.AdminService/ListBackupPolicies"
-	AdminService_StartBackupRun_FullMethodName                 = "/sbs.admin.v1.AdminService/StartBackupRun"
-	AdminService_GetBackupRun_FullMethodName                   = "/sbs.admin.v1.AdminService/GetBackupRun"
-	AdminService_ListBackupRuns_FullMethodName                 = "/sbs.admin.v1.AdminService/ListBackupRuns"
-	AdminService_MarkBackupArtifactAvailable_FullMethodName    = "/sbs.admin.v1.AdminService/MarkBackupArtifactAvailable"
-	AdminService_GetBackupArtifact_FullMethodName              = "/sbs.admin.v1.AdminService/GetBackupArtifact"
-	AdminService_ListBackupArtifacts_FullMethodName            = "/sbs.admin.v1.AdminService/ListBackupArtifacts"
-	AdminService_CreateBackupRetentionHold_FullMethodName      = "/sbs.admin.v1.AdminService/CreateBackupRetentionHold"
-	AdminService_PlanBackupPurge_FullMethodName                = "/sbs.admin.v1.AdminService/PlanBackupPurge"
-	AdminService_GetBackupStatus_FullMethodName                = "/sbs.admin.v1.AdminService/GetBackupStatus"
-	AdminService_CreateDRReplicationLink_FullMethodName        = "/sbs.admin.v1.AdminService/CreateDRReplicationLink"
-	AdminService_GetDRReplicationLink_FullMethodName           = "/sbs.admin.v1.AdminService/GetDRReplicationLink"
-	AdminService_ListDRReplicationLinks_FullMethodName         = "/sbs.admin.v1.AdminService/ListDRReplicationLinks"
-	AdminService_CreateDRRecoveryPoint_FullMethodName          = "/sbs.admin.v1.AdminService/CreateDRRecoveryPoint"
-	AdminService_GetDRRecoveryPoint_FullMethodName             = "/sbs.admin.v1.AdminService/GetDRRecoveryPoint"
-	AdminService_ListDRRecoveryPoints_FullMethodName           = "/sbs.admin.v1.AdminService/ListDRRecoveryPoints"
-	AdminService_CreateDRShippingManifest_FullMethodName       = "/sbs.admin.v1.AdminService/CreateDRShippingManifest"
-	AdminService_GetDRShippingManifest_FullMethodName          = "/sbs.admin.v1.AdminService/GetDRShippingManifest"
-	AdminService_ListDRShippingManifests_FullMethodName        = "/sbs.admin.v1.AdminService/ListDRShippingManifests"
-	AdminService_AdmitDRShippingWorker_FullMethodName          = "/sbs.admin.v1.AdminService/AdmitDRShippingWorker"
-	AdminService_HeartbeatDRShippingWorker_FullMethodName      = "/sbs.admin.v1.AdminService/HeartbeatDRShippingWorker"
-	AdminService_GetDRShippingWorker_FullMethodName            = "/sbs.admin.v1.AdminService/GetDRShippingWorker"
-	AdminService_ListDRShippingWorkers_FullMethodName          = "/sbs.admin.v1.AdminService/ListDRShippingWorkers"
-	AdminService_ImportDRStandbyVolume_FullMethodName          = "/sbs.admin.v1.AdminService/ImportDRStandbyVolume"
-	AdminService_GetDRStandbyVolume_FullMethodName             = "/sbs.admin.v1.AdminService/GetDRStandbyVolume"
-	AdminService_ListDRStandbyVolumes_FullMethodName           = "/sbs.admin.v1.AdminService/ListDRStandbyVolumes"
-	AdminService_CheckDRStandbyVolumeWrite_FullMethodName      = "/sbs.admin.v1.AdminService/CheckDRStandbyVolumeWrite"
-	AdminService_PromoteDRStandbyVolume_FullMethodName         = "/sbs.admin.v1.AdminService/PromoteDRStandbyVolume"
-	AdminService_DemoteDRStandbyVolume_FullMethodName          = "/sbs.admin.v1.AdminService/DemoteDRStandbyVolume"
-	AdminService_CheckDROldPrimaryWrite_FullMethodName         = "/sbs.admin.v1.AdminService/CheckDROldPrimaryWrite"
-	AdminService_DefineDROldPrimaryRejoinPolicy_FullMethodName = "/sbs.admin.v1.AdminService/DefineDROldPrimaryRejoinPolicy"
-	AdminService_RunDRFailoverDrill_FullMethodName             = "/sbs.admin.v1.AdminService/RunDRFailoverDrill"
-	AdminService_GetDRFailoverDrill_FullMethodName             = "/sbs.admin.v1.AdminService/GetDRFailoverDrill"
-	AdminService_ListDRFailoverDrills_FullMethodName           = "/sbs.admin.v1.AdminService/ListDRFailoverDrills"
+	AdminService_ClusterInit_FullMethodName                     = "/sbs.admin.v1.AdminService/ClusterInit"
+	AdminService_GetClusterStatus_FullMethodName                = "/sbs.admin.v1.AdminService/GetClusterStatus"
+	AdminService_GetLeader_FullMethodName                       = "/sbs.admin.v1.AdminService/GetLeader"
+	AdminService_ListNodes_FullMethodName                       = "/sbs.admin.v1.AdminService/ListNodes"
+	AdminService_GetMembershipProjectionStatus_FullMethodName   = "/sbs.admin.v1.AdminService/GetMembershipProjectionStatus"
+	AdminService_RebuildMembershipProjection_FullMethodName     = "/sbs.admin.v1.AdminService/RebuildMembershipProjection"
+	AdminService_GetNode_FullMethodName                         = "/sbs.admin.v1.AdminService/GetNode"
+	AdminService_JoinNode_FullMethodName                        = "/sbs.admin.v1.AdminService/JoinNode"
+	AdminService_UpdateNodeTopology_FullMethodName              = "/sbs.admin.v1.AdminService/UpdateNodeTopology"
+	AdminService_UpdateNodeRegistration_FullMethodName          = "/sbs.admin.v1.AdminService/UpdateNodeRegistration"
+	AdminService_LeaveNode_FullMethodName                       = "/sbs.admin.v1.AdminService/LeaveNode"
+	AdminService_DrainNode_FullMethodName                       = "/sbs.admin.v1.AdminService/DrainNode"
+	AdminService_RemoveNode_FullMethodName                      = "/sbs.admin.v1.AdminService/RemoveNode"
+	AdminService_ForceRemoveNode_FullMethodName                 = "/sbs.admin.v1.AdminService/ForceRemoveNode"
+	AdminService_CreateTopologyZone_FullMethodName              = "/sbs.admin.v1.AdminService/CreateTopologyZone"
+	AdminService_ListTopologyZones_FullMethodName               = "/sbs.admin.v1.AdminService/ListTopologyZones"
+	AdminService_GetTopologyZone_FullMethodName                 = "/sbs.admin.v1.AdminService/GetTopologyZone"
+	AdminService_UpdateTopologyZone_FullMethodName              = "/sbs.admin.v1.AdminService/UpdateTopologyZone"
+	AdminService_DeleteTopologyZone_FullMethodName              = "/sbs.admin.v1.AdminService/DeleteTopologyZone"
+	AdminService_ListVolumes_FullMethodName                     = "/sbs.admin.v1.AdminService/ListVolumes"
+	AdminService_ListVolumesPage_FullMethodName                 = "/sbs.admin.v1.AdminService/ListVolumesPage"
+	AdminService_GetVolume_FullMethodName                       = "/sbs.admin.v1.AdminService/GetVolume"
+	AdminService_GetVolumePlacementView_FullMethodName          = "/sbs.admin.v1.AdminService/GetVolumePlacementView"
+	AdminService_GetVolumeAllocationPageView_FullMethodName     = "/sbs.admin.v1.AdminService/GetVolumeAllocationPageView"
+	AdminService_GetReplicaTargetsView_FullMethodName           = "/sbs.admin.v1.AdminService/GetReplicaTargetsView"
+	AdminService_GetISCSIRegistry_FullMethodName                = "/sbs.admin.v1.AdminService/GetISCSIRegistry"
+	AdminService_ListISCSIPortals_FullMethodName                = "/sbs.admin.v1.AdminService/ListISCSIPortals"
+	AdminService_GetISCSIPortal_FullMethodName                  = "/sbs.admin.v1.AdminService/GetISCSIPortal"
+	AdminService_ListISCSITargets_FullMethodName                = "/sbs.admin.v1.AdminService/ListISCSITargets"
+	AdminService_GetISCSITarget_FullMethodName                  = "/sbs.admin.v1.AdminService/GetISCSITarget"
+	AdminService_ListISCSILUNs_FullMethodName                   = "/sbs.admin.v1.AdminService/ListISCSILUNs"
+	AdminService_GetISCSILUN_FullMethodName                     = "/sbs.admin.v1.AdminService/GetISCSILUN"
+	AdminService_ListISCSIExports_FullMethodName                = "/sbs.admin.v1.AdminService/ListISCSIExports"
+	AdminService_GetISCSIExport_FullMethodName                  = "/sbs.admin.v1.AdminService/GetISCSIExport"
+	AdminService_GetISCSIRegistryChanges_FullMethodName         = "/sbs.admin.v1.AdminService/GetISCSIRegistryChanges"
+	AdminService_ListISCSIInitiatorACLs_FullMethodName          = "/sbs.admin.v1.AdminService/ListISCSIInitiatorACLs"
+	AdminService_GetISCSIInitiatorACL_FullMethodName            = "/sbs.admin.v1.AdminService/GetISCSIInitiatorACL"
+	AdminService_ListISCSISessions_FullMethodName               = "/sbs.admin.v1.AdminService/ListISCSISessions"
+	AdminService_GetISCSISession_FullMethodName                 = "/sbs.admin.v1.AdminService/GetISCSISession"
+	AdminService_RecordISCSISession_FullMethodName              = "/sbs.admin.v1.AdminService/RecordISCSISession"
+	AdminService_DisconnectISCSISession_FullMethodName          = "/sbs.admin.v1.AdminService/DisconnectISCSISession"
+	AdminService_GetISCSIFailover_FullMethodName                = "/sbs.admin.v1.AdminService/GetISCSIFailover"
+	AdminService_PromoteISCSIFailover_FullMethodName            = "/sbs.admin.v1.AdminService/PromoteISCSIFailover"
+	AdminService_DemoteISCSIFailover_FullMethodName             = "/sbs.admin.v1.AdminService/DemoteISCSIFailover"
+	AdminService_StandbyISCSIFailover_FullMethodName            = "/sbs.admin.v1.AdminService/StandbyISCSIFailover"
+	AdminService_RevokeStaleISCSIFailover_FullMethodName        = "/sbs.admin.v1.AdminService/RevokeStaleISCSIFailover"
+	AdminService_CreateISCSIPortal_FullMethodName               = "/sbs.admin.v1.AdminService/CreateISCSIPortal"
+	AdminService_DeleteISCSIPortal_FullMethodName               = "/sbs.admin.v1.AdminService/DeleteISCSIPortal"
+	AdminService_SetISCSIPortalEnabled_FullMethodName           = "/sbs.admin.v1.AdminService/SetISCSIPortalEnabled"
+	AdminService_CreateISCSITarget_FullMethodName               = "/sbs.admin.v1.AdminService/CreateISCSITarget"
+	AdminService_DeleteISCSITarget_FullMethodName               = "/sbs.admin.v1.AdminService/DeleteISCSITarget"
+	AdminService_SetISCSITargetEnabled_FullMethodName           = "/sbs.admin.v1.AdminService/SetISCSITargetEnabled"
+	AdminService_ExportISCSILUN_FullMethodName                  = "/sbs.admin.v1.AdminService/ExportISCSILUN"
+	AdminService_UnexportISCSILUN_FullMethodName                = "/sbs.admin.v1.AdminService/UnexportISCSILUN"
+	AdminService_SetISCSILUNMode_FullMethodName                 = "/sbs.admin.v1.AdminService/SetISCSILUNMode"
+	AdminService_AllowISCSIInitiator_FullMethodName             = "/sbs.admin.v1.AdminService/AllowISCSIInitiator"
+	AdminService_DenyISCSIInitiator_FullMethodName              = "/sbs.admin.v1.AdminService/DenyISCSIInitiator"
+	AdminService_SetISCSIInitiatorAuth_FullMethodName           = "/sbs.admin.v1.AdminService/SetISCSIInitiatorAuth"
+	AdminService_CreateVolume_FullMethodName                    = "/sbs.admin.v1.AdminService/CreateVolume"
+	AdminService_CreateVolumeFromSnapshot_FullMethodName        = "/sbs.admin.v1.AdminService/CreateVolumeFromSnapshot"
+	AdminService_ExpandVolume_FullMethodName                    = "/sbs.admin.v1.AdminService/ExpandVolume"
+	AdminService_DeleteVolume_FullMethodName                    = "/sbs.admin.v1.AdminService/DeleteVolume"
+	AdminService_PurgeVolume_FullMethodName                     = "/sbs.admin.v1.AdminService/PurgeVolume"
+	AdminService_PlanVolumeRepack_FullMethodName                = "/sbs.admin.v1.AdminService/PlanVolumeRepack"
+	AdminService_StartVolumeRepack_FullMethodName               = "/sbs.admin.v1.AdminService/StartVolumeRepack"
+	AdminService_GetVolumeRepack_FullMethodName                 = "/sbs.admin.v1.AdminService/GetVolumeRepack"
+	AdminService_ListVolumeRepacks_FullMethodName               = "/sbs.admin.v1.AdminService/ListVolumeRepacks"
+	AdminService_CancelVolumeRepack_FullMethodName              = "/sbs.admin.v1.AdminService/CancelVolumeRepack"
+	AdminService_PlanDedupe_FullMethodName                      = "/sbs.admin.v1.AdminService/PlanDedupe"
+	AdminService_StartDedupe_FullMethodName                     = "/sbs.admin.v1.AdminService/StartDedupe"
+	AdminService_CreateSecurityProvider_FullMethodName          = "/sbs.admin.v1.AdminService/CreateSecurityProvider"
+	AdminService_GetSecurityProvider_FullMethodName             = "/sbs.admin.v1.AdminService/GetSecurityProvider"
+	AdminService_ListSecurityProviders_FullMethodName           = "/sbs.admin.v1.AdminService/ListSecurityProviders"
+	AdminService_CheckSecurityProvider_FullMethodName           = "/sbs.admin.v1.AdminService/CheckSecurityProvider"
+	AdminService_CreateSecurityPolicy_FullMethodName            = "/sbs.admin.v1.AdminService/CreateSecurityPolicy"
+	AdminService_GetSecurityPolicy_FullMethodName               = "/sbs.admin.v1.AdminService/GetSecurityPolicy"
+	AdminService_ListSecurityPolicies_FullMethodName            = "/sbs.admin.v1.AdminService/ListSecurityPolicies"
+	AdminService_BindSecurityPolicy_FullMethodName              = "/sbs.admin.v1.AdminService/BindSecurityPolicy"
+	AdminService_CreateSecurityDataKey_FullMethodName           = "/sbs.admin.v1.AdminService/CreateSecurityDataKey"
+	AdminService_GetSecurityDataKey_FullMethodName              = "/sbs.admin.v1.AdminService/GetSecurityDataKey"
+	AdminService_ListSecurityDataKeys_FullMethodName            = "/sbs.admin.v1.AdminService/ListSecurityDataKeys"
+	AdminService_DisableSecurityDataKey_FullMethodName          = "/sbs.admin.v1.AdminService/DisableSecurityDataKey"
+	AdminService_EnableSecurityDataKey_FullMethodName           = "/sbs.admin.v1.AdminService/EnableSecurityDataKey"
+	AdminService_PlanSecurityDataKeyDestroy_FullMethodName      = "/sbs.admin.v1.AdminService/PlanSecurityDataKeyDestroy"
+	AdminService_DestroySecurityDataKey_FullMethodName          = "/sbs.admin.v1.AdminService/DestroySecurityDataKey"
+	AdminService_CreateSecurityKeyRotationPlan_FullMethodName   = "/sbs.admin.v1.AdminService/CreateSecurityKeyRotationPlan"
+	AdminService_GetSecurityKeyRotationPlan_FullMethodName      = "/sbs.admin.v1.AdminService/GetSecurityKeyRotationPlan"
+	AdminService_ListSecurityKeyRotationPlans_FullMethodName    = "/sbs.admin.v1.AdminService/ListSecurityKeyRotationPlans"
+	AdminService_RunSecurityKeyRotation_FullMethodName          = "/sbs.admin.v1.AdminService/RunSecurityKeyRotation"
+	AdminService_CreateSecurityCryptoErasePlan_FullMethodName   = "/sbs.admin.v1.AdminService/CreateSecurityCryptoErasePlan"
+	AdminService_GetSecurityCryptoErasePlan_FullMethodName      = "/sbs.admin.v1.AdminService/GetSecurityCryptoErasePlan"
+	AdminService_ListSecurityCryptoErasePlans_FullMethodName    = "/sbs.admin.v1.AdminService/ListSecurityCryptoErasePlans"
+	AdminService_RunSecurityCryptoErase_FullMethodName          = "/sbs.admin.v1.AdminService/RunSecurityCryptoErase"
+	AdminService_IssueKeyAccessLease_FullMethodName             = "/sbs.admin.v1.AdminService/IssueKeyAccessLease"
+	AdminService_CheckSecurityDataKeyAccess_FullMethodName      = "/sbs.admin.v1.AdminService/CheckSecurityDataKeyAccess"
+	AdminService_UnwrapSecurityDataKey_FullMethodName           = "/sbs.admin.v1.AdminService/UnwrapSecurityDataKey"
+	AdminService_GetKeyAccessLease_FullMethodName               = "/sbs.admin.v1.AdminService/GetKeyAccessLease"
+	AdminService_RevokeKeyAccessLease_FullMethodName            = "/sbs.admin.v1.AdminService/RevokeKeyAccessLease"
+	AdminService_ListSecurityAuditEvents_FullMethodName         = "/sbs.admin.v1.AdminService/ListSecurityAuditEvents"
+	AdminService_VerifySecurityAuditLog_FullMethodName          = "/sbs.admin.v1.AdminService/VerifySecurityAuditLog"
+	AdminService_ListRBACRoles_FullMethodName                   = "/sbs.admin.v1.AdminService/ListRBACRoles"
+	AdminService_ListRBACPermissions_FullMethodName             = "/sbs.admin.v1.AdminService/ListRBACPermissions"
+	AdminService_PutRBACRoleBinding_FullMethodName              = "/sbs.admin.v1.AdminService/PutRBACRoleBinding"
+	AdminService_GetRBACRoleBinding_FullMethodName              = "/sbs.admin.v1.AdminService/GetRBACRoleBinding"
+	AdminService_ListRBACRoleBindings_FullMethodName            = "/sbs.admin.v1.AdminService/ListRBACRoleBindings"
+	AdminService_DeleteRBACRoleBinding_FullMethodName           = "/sbs.admin.v1.AdminService/DeleteRBACRoleBinding"
+	AdminService_ListRBACAuthorizationEvents_FullMethodName     = "/sbs.admin.v1.AdminService/ListRBACAuthorizationEvents"
+	AdminService_VerifyRBACAuthorizationAuditLog_FullMethodName = "/sbs.admin.v1.AdminService/VerifyRBACAuthorizationAuditLog"
+	AdminService_AuthorizeRBACGatewayHTTPRequest_FullMethodName = "/sbs.admin.v1.AdminService/AuthorizeRBACGatewayHTTPRequest"
+	AdminService_CreateECProfile_FullMethodName                 = "/sbs.admin.v1.AdminService/CreateECProfile"
+	AdminService_ListECProfiles_FullMethodName                  = "/sbs.admin.v1.AdminService/ListECProfiles"
+	AdminService_GetECProfile_FullMethodName                    = "/sbs.admin.v1.AdminService/GetECProfile"
+	AdminService_DisableECProfile_FullMethodName                = "/sbs.admin.v1.AdminService/DisableECProfile"
+	AdminService_CreateSnapshot_FullMethodName                  = "/sbs.admin.v1.AdminService/CreateSnapshot"
+	AdminService_GetSnapshot_FullMethodName                     = "/sbs.admin.v1.AdminService/GetSnapshot"
+	AdminService_ListSnapshots_FullMethodName                   = "/sbs.admin.v1.AdminService/ListSnapshots"
+	AdminService_DeleteSnapshot_FullMethodName                  = "/sbs.admin.v1.AdminService/DeleteSnapshot"
+	AdminService_CreateClone_FullMethodName                     = "/sbs.admin.v1.AdminService/CreateClone"
+	AdminService_GetClone_FullMethodName                        = "/sbs.admin.v1.AdminService/GetClone"
+	AdminService_ListClones_FullMethodName                      = "/sbs.admin.v1.AdminService/ListClones"
+	AdminService_MaterializeClone_FullMethodName                = "/sbs.admin.v1.AdminService/MaterializeClone"
+	AdminService_DeleteClone_FullMethodName                     = "/sbs.admin.v1.AdminService/DeleteClone"
+	AdminService_UpdateNodeStoreWeights_FullMethodName          = "/sbs.admin.v1.AdminService/UpdateNodeStoreWeights"
+	AdminService_UpdateNodeStoreTuning_FullMethodName           = "/sbs.admin.v1.AdminService/UpdateNodeStoreTuning"
+	AdminService_GetMaintenanceStatus_FullMethodName            = "/sbs.admin.v1.AdminService/GetMaintenanceStatus"
+	AdminService_SetBackgroundBudget_FullMethodName             = "/sbs.admin.v1.AdminService/SetBackgroundBudget"
+	AdminService_AcquireBudgetLease_FullMethodName              = "/sbs.admin.v1.AdminService/AcquireBudgetLease"
+	AdminService_GetBudgetLease_FullMethodName                  = "/sbs.admin.v1.AdminService/GetBudgetLease"
+	AdminService_ListBudgetLeases_FullMethodName                = "/sbs.admin.v1.AdminService/ListBudgetLeases"
+	AdminService_SetMaintenanceThrottle_FullMethodName          = "/sbs.admin.v1.AdminService/SetMaintenanceThrottle"
+	AdminService_PauseMaintenance_FullMethodName                = "/sbs.admin.v1.AdminService/PauseMaintenance"
+	AdminService_ResumeMaintenance_FullMethodName               = "/sbs.admin.v1.AdminService/ResumeMaintenance"
+	AdminService_ListRepairs_FullMethodName                     = "/sbs.admin.v1.AdminService/ListRepairs"
+	AdminService_ListRepairsPage_FullMethodName                 = "/sbs.admin.v1.AdminService/ListRepairsPage"
+	AdminService_ListRebalances_FullMethodName                  = "/sbs.admin.v1.AdminService/ListRebalances"
+	AdminService_ListRebalancesPage_FullMethodName              = "/sbs.admin.v1.AdminService/ListRebalancesPage"
+	AdminService_StartRestoreWarmup_FullMethodName              = "/sbs.admin.v1.AdminService/StartRestoreWarmup"
+	AdminService_RunRestoreWarmup_FullMethodName                = "/sbs.admin.v1.AdminService/RunRestoreWarmup"
+	AdminService_GetRestoreWarmup_FullMethodName                = "/sbs.admin.v1.AdminService/GetRestoreWarmup"
+	AdminService_ListRestoreWarmups_FullMethodName              = "/sbs.admin.v1.AdminService/ListRestoreWarmups"
+	AdminService_CancelRestoreWarmup_FullMethodName             = "/sbs.admin.v1.AdminService/CancelRestoreWarmup"
+	AdminService_BuildDiffIndex_FullMethodName                  = "/sbs.admin.v1.AdminService/BuildDiffIndex"
+	AdminService_ScanDiffIndex_FullMethodName                   = "/sbs.admin.v1.AdminService/ScanDiffIndex"
+	AdminService_GetDiffIndex_FullMethodName                    = "/sbs.admin.v1.AdminService/GetDiffIndex"
+	AdminService_ListDiffIndexes_FullMethodName                 = "/sbs.admin.v1.AdminService/ListDiffIndexes"
+	AdminService_DropDiffIndex_FullMethodName                   = "/sbs.admin.v1.AdminService/DropDiffIndex"
+	AdminService_SetECJournalGuardedMode_FullMethodName         = "/sbs.admin.v1.AdminService/SetECJournalGuardedMode"
+	AdminService_GetECJournalGuardedMode_FullMethodName         = "/sbs.admin.v1.AdminService/GetECJournalGuardedMode"
+	AdminService_CreateBackupTarget_FullMethodName              = "/sbs.admin.v1.AdminService/CreateBackupTarget"
+	AdminService_GetBackupTarget_FullMethodName                 = "/sbs.admin.v1.AdminService/GetBackupTarget"
+	AdminService_ListBackupTargets_FullMethodName               = "/sbs.admin.v1.AdminService/ListBackupTargets"
+	AdminService_DeleteBackupTarget_FullMethodName              = "/sbs.admin.v1.AdminService/DeleteBackupTarget"
+	AdminService_CreateBackupPolicy_FullMethodName              = "/sbs.admin.v1.AdminService/CreateBackupPolicy"
+	AdminService_GetBackupPolicy_FullMethodName                 = "/sbs.admin.v1.AdminService/GetBackupPolicy"
+	AdminService_ListBackupPolicies_FullMethodName              = "/sbs.admin.v1.AdminService/ListBackupPolicies"
+	AdminService_DeleteBackupPolicy_FullMethodName              = "/sbs.admin.v1.AdminService/DeleteBackupPolicy"
+	AdminService_StartBackupRun_FullMethodName                  = "/sbs.admin.v1.AdminService/StartBackupRun"
+	AdminService_AdvanceBackupRun_FullMethodName                = "/sbs.admin.v1.AdminService/AdvanceBackupRun"
+	AdminService_RunBackupArtifactCopy_FullMethodName           = "/sbs.admin.v1.AdminService/RunBackupArtifactCopy"
+	AdminService_RunBackupRestoreDrill_FullMethodName           = "/sbs.admin.v1.AdminService/RunBackupRestoreDrill"
+	AdminService_TickBackupScheduler_FullMethodName             = "/sbs.admin.v1.AdminService/TickBackupScheduler"
+	AdminService_GetBackupRun_FullMethodName                    = "/sbs.admin.v1.AdminService/GetBackupRun"
+	AdminService_ListBackupRuns_FullMethodName                  = "/sbs.admin.v1.AdminService/ListBackupRuns"
+	AdminService_DeleteBackupRun_FullMethodName                 = "/sbs.admin.v1.AdminService/DeleteBackupRun"
+	AdminService_MarkBackupArtifactAvailable_FullMethodName     = "/sbs.admin.v1.AdminService/MarkBackupArtifactAvailable"
+	AdminService_GetBackupArtifact_FullMethodName               = "/sbs.admin.v1.AdminService/GetBackupArtifact"
+	AdminService_ListBackupArtifacts_FullMethodName             = "/sbs.admin.v1.AdminService/ListBackupArtifacts"
+	AdminService_CreateBackupRetentionHold_FullMethodName       = "/sbs.admin.v1.AdminService/CreateBackupRetentionHold"
+	AdminService_ReleaseBackupRetentionHold_FullMethodName      = "/sbs.admin.v1.AdminService/ReleaseBackupRetentionHold"
+	AdminService_PlanBackupPurge_FullMethodName                 = "/sbs.admin.v1.AdminService/PlanBackupPurge"
+	AdminService_ExecuteBackupPurge_FullMethodName              = "/sbs.admin.v1.AdminService/ExecuteBackupPurge"
+	AdminService_GetBackupStatus_FullMethodName                 = "/sbs.admin.v1.AdminService/GetBackupStatus"
+	AdminService_CreateDRReplicationLink_FullMethodName         = "/sbs.admin.v1.AdminService/CreateDRReplicationLink"
+	AdminService_GetDRReplicationLink_FullMethodName            = "/sbs.admin.v1.AdminService/GetDRReplicationLink"
+	AdminService_ListDRReplicationLinks_FullMethodName          = "/sbs.admin.v1.AdminService/ListDRReplicationLinks"
+	AdminService_FenceDRSourceVolume_FullMethodName             = "/sbs.admin.v1.AdminService/FenceDRSourceVolume"
+	AdminService_ExportDRSourceFenceEnvelope_FullMethodName     = "/sbs.admin.v1.AdminService/ExportDRSourceFenceEnvelope"
+	AdminService_ImportDRSourceFenceEnvelope_FullMethodName     = "/sbs.admin.v1.AdminService/ImportDRSourceFenceEnvelope"
+	AdminService_CreateDRRecoveryPoint_FullMethodName           = "/sbs.admin.v1.AdminService/CreateDRRecoveryPoint"
+	AdminService_GetDRRecoveryPoint_FullMethodName              = "/sbs.admin.v1.AdminService/GetDRRecoveryPoint"
+	AdminService_ListDRRecoveryPoints_FullMethodName            = "/sbs.admin.v1.AdminService/ListDRRecoveryPoints"
+	AdminService_CreateDRShippingManifest_FullMethodName        = "/sbs.admin.v1.AdminService/CreateDRShippingManifest"
+	AdminService_GetDRShippingManifest_FullMethodName           = "/sbs.admin.v1.AdminService/GetDRShippingManifest"
+	AdminService_ListDRShippingManifests_FullMethodName         = "/sbs.admin.v1.AdminService/ListDRShippingManifests"
+	AdminService_AdmitDRShippingWorker_FullMethodName           = "/sbs.admin.v1.AdminService/AdmitDRShippingWorker"
+	AdminService_HeartbeatDRShippingWorker_FullMethodName       = "/sbs.admin.v1.AdminService/HeartbeatDRShippingWorker"
+	AdminService_RunDRShippingWorker_FullMethodName             = "/sbs.admin.v1.AdminService/RunDRShippingWorker"
+	AdminService_GetDRShippingWorker_FullMethodName             = "/sbs.admin.v1.AdminService/GetDRShippingWorker"
+	AdminService_ListDRShippingWorkers_FullMethodName           = "/sbs.admin.v1.AdminService/ListDRShippingWorkers"
+	AdminService_ExportDRTargetEnvelope_FullMethodName          = "/sbs.admin.v1.AdminService/ExportDRTargetEnvelope"
+	AdminService_ImportDRTargetEnvelope_FullMethodName          = "/sbs.admin.v1.AdminService/ImportDRTargetEnvelope"
+	AdminService_ImportDRStandbyVolume_FullMethodName           = "/sbs.admin.v1.AdminService/ImportDRStandbyVolume"
+	AdminService_RunDRStandbyImport_FullMethodName              = "/sbs.admin.v1.AdminService/RunDRStandbyImport"
+	AdminService_GetDRStandbyVolume_FullMethodName              = "/sbs.admin.v1.AdminService/GetDRStandbyVolume"
+	AdminService_ListDRStandbyVolumes_FullMethodName            = "/sbs.admin.v1.AdminService/ListDRStandbyVolumes"
+	AdminService_CheckDRStandbyVolumeWrite_FullMethodName       = "/sbs.admin.v1.AdminService/CheckDRStandbyVolumeWrite"
+	AdminService_PromoteDRStandbyVolume_FullMethodName          = "/sbs.admin.v1.AdminService/PromoteDRStandbyVolume"
+	AdminService_DemoteDRStandbyVolume_FullMethodName           = "/sbs.admin.v1.AdminService/DemoteDRStandbyVolume"
+	AdminService_CheckDROldPrimaryWrite_FullMethodName          = "/sbs.admin.v1.AdminService/CheckDROldPrimaryWrite"
+	AdminService_DefineDROldPrimaryRejoinPolicy_FullMethodName  = "/sbs.admin.v1.AdminService/DefineDROldPrimaryRejoinPolicy"
+	AdminService_PrepareDROldPrimaryReseed_FullMethodName       = "/sbs.admin.v1.AdminService/PrepareDROldPrimaryReseed"
+	AdminService_RunDRFailoverDrill_FullMethodName              = "/sbs.admin.v1.AdminService/RunDRFailoverDrill"
+	AdminService_GetDRFailoverDrill_FullMethodName              = "/sbs.admin.v1.AdminService/GetDRFailoverDrill"
+	AdminService_ListDRFailoverDrills_FullMethodName            = "/sbs.admin.v1.AdminService/ListDRFailoverDrills"
+	AdminService_CreateNVMeExport_FullMethodName                = "/sbs.admin.v1.AdminService/CreateNVMeExport"
+	AdminService_GetNVMeExport_FullMethodName                   = "/sbs.admin.v1.AdminService/GetNVMeExport"
+	AdminService_ListNVMeExports_FullMethodName                 = "/sbs.admin.v1.AdminService/ListNVMeExports"
+	AdminService_SetNVMeExportEnabled_FullMethodName            = "/sbs.admin.v1.AdminService/SetNVMeExportEnabled"
+	AdminService_SetNVMeExportActiveTarget_FullMethodName       = "/sbs.admin.v1.AdminService/SetNVMeExportActiveTarget"
+	AdminService_ReportNVMeExportStatus_FullMethodName          = "/sbs.admin.v1.AdminService/ReportNVMeExportStatus"
+	AdminService_DeleteNVMeExport_FullMethodName                = "/sbs.admin.v1.AdminService/DeleteNVMeExport"
+	AdminService_RegisterPersistentReservation_FullMethodName   = "/sbs.admin.v1.AdminService/RegisterPersistentReservation"
+	AdminService_ReservePersistentReservation_FullMethodName    = "/sbs.admin.v1.AdminService/ReservePersistentReservation"
+	AdminService_ReleasePersistentReservation_FullMethodName    = "/sbs.admin.v1.AdminService/ReleasePersistentReservation"
+	AdminService_PreemptPersistentReservation_FullMethodName    = "/sbs.admin.v1.AdminService/PreemptPersistentReservation"
+	AdminService_ClearPersistentReservation_FullMethodName      = "/sbs.admin.v1.AdminService/ClearPersistentReservation"
+	AdminService_GetPersistentReservation_FullMethodName        = "/sbs.admin.v1.AdminService/GetPersistentReservation"
+	AdminService_CreateTieringTarget_FullMethodName             = "/sbs.admin.v1.AdminService/CreateTieringTarget"
+	AdminService_GetTieringTarget_FullMethodName                = "/sbs.admin.v1.AdminService/GetTieringTarget"
+	AdminService_ListTieringTargets_FullMethodName              = "/sbs.admin.v1.AdminService/ListTieringTargets"
+	AdminService_CheckTieringTarget_FullMethodName              = "/sbs.admin.v1.AdminService/CheckTieringTarget"
+	AdminService_StartSnapshotTiering_FullMethodName            = "/sbs.admin.v1.AdminService/StartSnapshotTiering"
+	AdminService_StartSnapshotHydration_FullMethodName          = "/sbs.admin.v1.AdminService/StartSnapshotHydration"
+	AdminService_GetSnapshotTieringOperation_FullMethodName     = "/sbs.admin.v1.AdminService/GetSnapshotTieringOperation"
+	AdminService_ListSnapshotTieringOperations_FullMethodName   = "/sbs.admin.v1.AdminService/ListSnapshotTieringOperations"
+	AdminService_CancelSnapshotTiering_FullMethodName           = "/sbs.admin.v1.AdminService/CancelSnapshotTiering"
+	AdminService_CreateCompressionPolicy_FullMethodName         = "/sbs.admin.v1.AdminService/CreateCompressionPolicy"
+	AdminService_GetCompressionPolicy_FullMethodName            = "/sbs.admin.v1.AdminService/GetCompressionPolicy"
+	AdminService_ListCompressionPolicies_FullMethodName         = "/sbs.admin.v1.AdminService/ListCompressionPolicies"
+	AdminService_BindCompressionPolicy_FullMethodName           = "/sbs.admin.v1.AdminService/BindCompressionPolicy"
+	AdminService_GetCompressionRolloutStatus_FullMethodName     = "/sbs.admin.v1.AdminService/GetCompressionRolloutStatus"
+	AdminService_RegisterWORMSubject_FullMethodName             = "/sbs.admin.v1.AdminService/RegisterWORMSubject"
+	AdminService_GetWORMSubject_FullMethodName                  = "/sbs.admin.v1.AdminService/GetWORMSubject"
+	AdminService_ListWORMSubjects_FullMethodName                = "/sbs.admin.v1.AdminService/ListWORMSubjects"
+	AdminService_ApplyWORMLock_FullMethodName                   = "/sbs.admin.v1.AdminService/ApplyWORMLock"
+	AdminService_SetWORMLegalHold_FullMethodName                = "/sbs.admin.v1.AdminService/SetWORMLegalHold"
+	AdminService_ListWORMAuditEvents_FullMethodName             = "/sbs.admin.v1.AdminService/ListWORMAuditEvents"
 )
 
 // AdminServiceClient is the client API for AdminService service.
@@ -220,6 +282,7 @@ type AdminServiceClient interface {
 	UpdateTopologyZone(ctx context.Context, in *UpdateTopologyZoneRequest, opts ...grpc.CallOption) (*UpdateTopologyZoneResponse, error)
 	DeleteTopologyZone(ctx context.Context, in *DeleteTopologyZoneRequest, opts ...grpc.CallOption) (*DeleteTopologyZoneResponse, error)
 	ListVolumes(ctx context.Context, in *ListVolumesRequest, opts ...grpc.CallOption) (*ListVolumesResponse, error)
+	ListVolumesPage(ctx context.Context, in *ListVolumesPageRequest, opts ...grpc.CallOption) (*ListVolumesPageResponse, error)
 	GetVolume(ctx context.Context, in *GetVolumeRequest, opts ...grpc.CallOption) (*GetVolumeResponse, error)
 	GetVolumePlacementView(ctx context.Context, in *GetVolumePlacementViewRequest, opts ...grpc.CallOption) (*GetVolumePlacementViewResponse, error)
 	GetVolumeAllocationPageView(ctx context.Context, in *GetVolumeAllocationPageViewRequest, opts ...grpc.CallOption) (*GetVolumeAllocationPageViewResponse, error)
@@ -299,6 +362,15 @@ type AdminServiceClient interface {
 	RevokeKeyAccessLease(ctx context.Context, in *RevokeKeyAccessLeaseRequest, opts ...grpc.CallOption) (*RevokeKeyAccessLeaseResponse, error)
 	ListSecurityAuditEvents(ctx context.Context, in *ListSecurityAuditEventsRequest, opts ...grpc.CallOption) (*ListSecurityAuditEventsResponse, error)
 	VerifySecurityAuditLog(ctx context.Context, in *VerifySecurityAuditLogRequest, opts ...grpc.CallOption) (*VerifySecurityAuditLogResponse, error)
+	ListRBACRoles(ctx context.Context, in *ListRBACRolesRequest, opts ...grpc.CallOption) (*ListRBACRolesResponse, error)
+	ListRBACPermissions(ctx context.Context, in *ListRBACPermissionsRequest, opts ...grpc.CallOption) (*ListRBACPermissionsResponse, error)
+	PutRBACRoleBinding(ctx context.Context, in *PutRBACRoleBindingRequest, opts ...grpc.CallOption) (*PutRBACRoleBindingResponse, error)
+	GetRBACRoleBinding(ctx context.Context, in *GetRBACRoleBindingRequest, opts ...grpc.CallOption) (*GetRBACRoleBindingResponse, error)
+	ListRBACRoleBindings(ctx context.Context, in *ListRBACRoleBindingsRequest, opts ...grpc.CallOption) (*ListRBACRoleBindingsResponse, error)
+	DeleteRBACRoleBinding(ctx context.Context, in *DeleteRBACRoleBindingRequest, opts ...grpc.CallOption) (*DeleteRBACRoleBindingResponse, error)
+	ListRBACAuthorizationEvents(ctx context.Context, in *ListRBACAuthorizationEventsRequest, opts ...grpc.CallOption) (*ListRBACAuthorizationEventsResponse, error)
+	VerifyRBACAuthorizationAuditLog(ctx context.Context, in *VerifyRBACAuthorizationAuditLogRequest, opts ...grpc.CallOption) (*VerifyRBACAuthorizationAuditLogResponse, error)
+	AuthorizeRBACGatewayHTTPRequest(ctx context.Context, in *AuthorizeRBACGatewayHTTPRequestRequest, opts ...grpc.CallOption) (*AuthorizeRBACGatewayHTTPRequestResponse, error)
 	CreateECProfile(ctx context.Context, in *CreateECProfileRequest, opts ...grpc.CallOption) (*CreateECProfileResponse, error)
 	ListECProfiles(ctx context.Context, in *ListECProfilesRequest, opts ...grpc.CallOption) (*ListECProfilesResponse, error)
 	GetECProfile(ctx context.Context, in *GetECProfileRequest, opts ...grpc.CallOption) (*GetECProfileResponse, error)
@@ -323,7 +395,9 @@ type AdminServiceClient interface {
 	PauseMaintenance(ctx context.Context, in *PauseMaintenanceRequest, opts ...grpc.CallOption) (*PauseMaintenanceResponse, error)
 	ResumeMaintenance(ctx context.Context, in *ResumeMaintenanceRequest, opts ...grpc.CallOption) (*ResumeMaintenanceResponse, error)
 	ListRepairs(ctx context.Context, in *ListRepairsRequest, opts ...grpc.CallOption) (*ListRepairsResponse, error)
+	ListRepairsPage(ctx context.Context, in *ListRepairsPageRequest, opts ...grpc.CallOption) (*ListRepairsPageResponse, error)
 	ListRebalances(ctx context.Context, in *ListRebalancesRequest, opts ...grpc.CallOption) (*ListRebalancesResponse, error)
+	ListRebalancesPage(ctx context.Context, in *ListRebalancesPageRequest, opts ...grpc.CallOption) (*ListRebalancesPageResponse, error)
 	StartRestoreWarmup(ctx context.Context, in *StartRestoreWarmupRequest, opts ...grpc.CallOption) (*StartRestoreWarmupResponse, error)
 	RunRestoreWarmup(ctx context.Context, in *RunRestoreWarmupRequest, opts ...grpc.CallOption) (*RunRestoreWarmupResponse, error)
 	GetRestoreWarmup(ctx context.Context, in *GetRestoreWarmupRequest, opts ...grpc.CallOption) (*GetRestoreWarmupResponse, error)
@@ -339,21 +413,33 @@ type AdminServiceClient interface {
 	CreateBackupTarget(ctx context.Context, in *CreateBackupTargetRequest, opts ...grpc.CallOption) (*CreateBackupTargetResponse, error)
 	GetBackupTarget(ctx context.Context, in *GetBackupTargetRequest, opts ...grpc.CallOption) (*GetBackupTargetResponse, error)
 	ListBackupTargets(ctx context.Context, in *ListBackupTargetsRequest, opts ...grpc.CallOption) (*ListBackupTargetsResponse, error)
+	DeleteBackupTarget(ctx context.Context, in *DeleteBackupTargetRequest, opts ...grpc.CallOption) (*DeleteBackupTargetResponse, error)
 	CreateBackupPolicy(ctx context.Context, in *CreateBackupPolicyRequest, opts ...grpc.CallOption) (*CreateBackupPolicyResponse, error)
 	GetBackupPolicy(ctx context.Context, in *GetBackupPolicyRequest, opts ...grpc.CallOption) (*GetBackupPolicyResponse, error)
 	ListBackupPolicies(ctx context.Context, in *ListBackupPoliciesRequest, opts ...grpc.CallOption) (*ListBackupPoliciesResponse, error)
+	DeleteBackupPolicy(ctx context.Context, in *DeleteBackupPolicyRequest, opts ...grpc.CallOption) (*DeleteBackupPolicyResponse, error)
 	StartBackupRun(ctx context.Context, in *StartBackupRunRequest, opts ...grpc.CallOption) (*StartBackupRunResponse, error)
+	AdvanceBackupRun(ctx context.Context, in *AdvanceBackupRunRequest, opts ...grpc.CallOption) (*AdvanceBackupRunResponse, error)
+	RunBackupArtifactCopy(ctx context.Context, in *RunBackupArtifactCopyRequest, opts ...grpc.CallOption) (*RunBackupArtifactCopyResponse, error)
+	RunBackupRestoreDrill(ctx context.Context, in *RunBackupRestoreDrillRequest, opts ...grpc.CallOption) (*RunBackupRestoreDrillResponse, error)
+	TickBackupScheduler(ctx context.Context, in *TickBackupSchedulerRequest, opts ...grpc.CallOption) (*TickBackupSchedulerResponse, error)
 	GetBackupRun(ctx context.Context, in *GetBackupRunRequest, opts ...grpc.CallOption) (*GetBackupRunResponse, error)
 	ListBackupRuns(ctx context.Context, in *ListBackupRunsRequest, opts ...grpc.CallOption) (*ListBackupRunsResponse, error)
+	DeleteBackupRun(ctx context.Context, in *DeleteBackupRunRequest, opts ...grpc.CallOption) (*DeleteBackupRunResponse, error)
 	MarkBackupArtifactAvailable(ctx context.Context, in *MarkBackupArtifactAvailableRequest, opts ...grpc.CallOption) (*MarkBackupArtifactAvailableResponse, error)
 	GetBackupArtifact(ctx context.Context, in *GetBackupArtifactRequest, opts ...grpc.CallOption) (*GetBackupArtifactResponse, error)
 	ListBackupArtifacts(ctx context.Context, in *ListBackupArtifactsRequest, opts ...grpc.CallOption) (*ListBackupArtifactsResponse, error)
 	CreateBackupRetentionHold(ctx context.Context, in *CreateBackupRetentionHoldRequest, opts ...grpc.CallOption) (*CreateBackupRetentionHoldResponse, error)
+	ReleaseBackupRetentionHold(ctx context.Context, in *ReleaseBackupRetentionHoldRequest, opts ...grpc.CallOption) (*ReleaseBackupRetentionHoldResponse, error)
 	PlanBackupPurge(ctx context.Context, in *PlanBackupPurgeRequest, opts ...grpc.CallOption) (*PlanBackupPurgeResponse, error)
+	ExecuteBackupPurge(ctx context.Context, in *ExecuteBackupPurgeRequest, opts ...grpc.CallOption) (*ExecuteBackupPurgeResponse, error)
 	GetBackupStatus(ctx context.Context, in *GetBackupStatusRequest, opts ...grpc.CallOption) (*GetBackupStatusResponse, error)
 	CreateDRReplicationLink(ctx context.Context, in *CreateDRReplicationLinkRequest, opts ...grpc.CallOption) (*CreateDRReplicationLinkResponse, error)
 	GetDRReplicationLink(ctx context.Context, in *GetDRReplicationLinkRequest, opts ...grpc.CallOption) (*GetDRReplicationLinkResponse, error)
 	ListDRReplicationLinks(ctx context.Context, in *ListDRReplicationLinksRequest, opts ...grpc.CallOption) (*ListDRReplicationLinksResponse, error)
+	FenceDRSourceVolume(ctx context.Context, in *FenceDRSourceVolumeRequest, opts ...grpc.CallOption) (*FenceDRSourceVolumeResponse, error)
+	ExportDRSourceFenceEnvelope(ctx context.Context, in *ExportDRSourceFenceEnvelopeRequest, opts ...grpc.CallOption) (*ExportDRSourceFenceEnvelopeResponse, error)
+	ImportDRSourceFenceEnvelope(ctx context.Context, in *ImportDRSourceFenceEnvelopeRequest, opts ...grpc.CallOption) (*ImportDRSourceFenceEnvelopeResponse, error)
 	CreateDRRecoveryPoint(ctx context.Context, in *CreateDRRecoveryPointRequest, opts ...grpc.CallOption) (*CreateDRRecoveryPointResponse, error)
 	GetDRRecoveryPoint(ctx context.Context, in *GetDRRecoveryPointRequest, opts ...grpc.CallOption) (*GetDRRecoveryPointResponse, error)
 	ListDRRecoveryPoints(ctx context.Context, in *ListDRRecoveryPointsRequest, opts ...grpc.CallOption) (*ListDRRecoveryPointsResponse, error)
@@ -362,9 +448,13 @@ type AdminServiceClient interface {
 	ListDRShippingManifests(ctx context.Context, in *ListDRShippingManifestsRequest, opts ...grpc.CallOption) (*ListDRShippingManifestsResponse, error)
 	AdmitDRShippingWorker(ctx context.Context, in *AdmitDRShippingWorkerRequest, opts ...grpc.CallOption) (*AdmitDRShippingWorkerResponse, error)
 	HeartbeatDRShippingWorker(ctx context.Context, in *HeartbeatDRShippingWorkerRequest, opts ...grpc.CallOption) (*HeartbeatDRShippingWorkerResponse, error)
+	RunDRShippingWorker(ctx context.Context, in *RunDRShippingWorkerRequest, opts ...grpc.CallOption) (*RunDRShippingWorkerResponse, error)
 	GetDRShippingWorker(ctx context.Context, in *GetDRShippingWorkerRequest, opts ...grpc.CallOption) (*GetDRShippingWorkerResponse, error)
 	ListDRShippingWorkers(ctx context.Context, in *ListDRShippingWorkersRequest, opts ...grpc.CallOption) (*ListDRShippingWorkersResponse, error)
+	ExportDRTargetEnvelope(ctx context.Context, in *ExportDRTargetEnvelopeRequest, opts ...grpc.CallOption) (*ExportDRTargetEnvelopeResponse, error)
+	ImportDRTargetEnvelope(ctx context.Context, in *ImportDRTargetEnvelopeRequest, opts ...grpc.CallOption) (*ImportDRTargetEnvelopeResponse, error)
 	ImportDRStandbyVolume(ctx context.Context, in *ImportDRStandbyVolumeRequest, opts ...grpc.CallOption) (*ImportDRStandbyVolumeResponse, error)
+	RunDRStandbyImport(ctx context.Context, in *RunDRStandbyImportRequest, opts ...grpc.CallOption) (*RunDRStandbyImportResponse, error)
 	GetDRStandbyVolume(ctx context.Context, in *GetDRStandbyVolumeRequest, opts ...grpc.CallOption) (*GetDRStandbyVolumeResponse, error)
 	ListDRStandbyVolumes(ctx context.Context, in *ListDRStandbyVolumesRequest, opts ...grpc.CallOption) (*ListDRStandbyVolumesResponse, error)
 	CheckDRStandbyVolumeWrite(ctx context.Context, in *CheckDRStandbyVolumeWriteRequest, opts ...grpc.CallOption) (*CheckDRStandbyVolumeWriteResponse, error)
@@ -372,9 +462,46 @@ type AdminServiceClient interface {
 	DemoteDRStandbyVolume(ctx context.Context, in *DemoteDRStandbyVolumeRequest, opts ...grpc.CallOption) (*DemoteDRStandbyVolumeResponse, error)
 	CheckDROldPrimaryWrite(ctx context.Context, in *CheckDROldPrimaryWriteRequest, opts ...grpc.CallOption) (*CheckDROldPrimaryWriteResponse, error)
 	DefineDROldPrimaryRejoinPolicy(ctx context.Context, in *DefineDROldPrimaryRejoinPolicyRequest, opts ...grpc.CallOption) (*DefineDROldPrimaryRejoinPolicyResponse, error)
+	PrepareDROldPrimaryReseed(ctx context.Context, in *PrepareDROldPrimaryReseedRequest, opts ...grpc.CallOption) (*PrepareDROldPrimaryReseedResponse, error)
 	RunDRFailoverDrill(ctx context.Context, in *RunDRFailoverDrillRequest, opts ...grpc.CallOption) (*RunDRFailoverDrillResponse, error)
 	GetDRFailoverDrill(ctx context.Context, in *GetDRFailoverDrillRequest, opts ...grpc.CallOption) (*GetDRFailoverDrillResponse, error)
 	ListDRFailoverDrills(ctx context.Context, in *ListDRFailoverDrillsRequest, opts ...grpc.CallOption) (*ListDRFailoverDrillsResponse, error)
+	// Enterprise product-integration lifecycle APIs. Community servers retain
+	// the generated Unimplemented behavior and Community CLI builds do not
+	// register these command surfaces.
+	CreateNVMeExport(ctx context.Context, in *CreateNVMeExportRequest, opts ...grpc.CallOption) (*CreateNVMeExportResponse, error)
+	GetNVMeExport(ctx context.Context, in *GetNVMeExportRequest, opts ...grpc.CallOption) (*GetNVMeExportResponse, error)
+	ListNVMeExports(ctx context.Context, in *ListNVMeExportsRequest, opts ...grpc.CallOption) (*ListNVMeExportsResponse, error)
+	SetNVMeExportEnabled(ctx context.Context, in *SetNVMeExportEnabledRequest, opts ...grpc.CallOption) (*SetNVMeExportEnabledResponse, error)
+	SetNVMeExportActiveTarget(ctx context.Context, in *SetNVMeExportActiveTargetRequest, opts ...grpc.CallOption) (*SetNVMeExportActiveTargetResponse, error)
+	ReportNVMeExportStatus(ctx context.Context, in *ReportNVMeExportStatusRequest, opts ...grpc.CallOption) (*ReportNVMeExportStatusResponse, error)
+	DeleteNVMeExport(ctx context.Context, in *DeleteNVMeExportRequest, opts ...grpc.CallOption) (*DeleteNVMeExportResponse, error)
+	RegisterPersistentReservation(ctx context.Context, in *RegisterPersistentReservationRequest, opts ...grpc.CallOption) (*RegisterPersistentReservationResponse, error)
+	ReservePersistentReservation(ctx context.Context, in *ReservePersistentReservationRequest, opts ...grpc.CallOption) (*ReservePersistentReservationResponse, error)
+	ReleasePersistentReservation(ctx context.Context, in *ReleasePersistentReservationRequest, opts ...grpc.CallOption) (*ReleasePersistentReservationResponse, error)
+	PreemptPersistentReservation(ctx context.Context, in *PreemptPersistentReservationRequest, opts ...grpc.CallOption) (*PreemptPersistentReservationResponse, error)
+	ClearPersistentReservation(ctx context.Context, in *ClearPersistentReservationRequest, opts ...grpc.CallOption) (*ClearPersistentReservationResponse, error)
+	GetPersistentReservation(ctx context.Context, in *GetPersistentReservationRequest, opts ...grpc.CallOption) (*GetPersistentReservationResponse, error)
+	CreateTieringTarget(ctx context.Context, in *CreateTieringTargetRequest, opts ...grpc.CallOption) (*CreateTieringTargetResponse, error)
+	GetTieringTarget(ctx context.Context, in *GetTieringTargetRequest, opts ...grpc.CallOption) (*GetTieringTargetResponse, error)
+	ListTieringTargets(ctx context.Context, in *ListTieringTargetsRequest, opts ...grpc.CallOption) (*ListTieringTargetsResponse, error)
+	CheckTieringTarget(ctx context.Context, in *CheckTieringTargetRequest, opts ...grpc.CallOption) (*CheckTieringTargetResponse, error)
+	StartSnapshotTiering(ctx context.Context, in *StartSnapshotTieringRequest, opts ...grpc.CallOption) (*StartSnapshotTieringResponse, error)
+	StartSnapshotHydration(ctx context.Context, in *StartSnapshotHydrationRequest, opts ...grpc.CallOption) (*StartSnapshotHydrationResponse, error)
+	GetSnapshotTieringOperation(ctx context.Context, in *GetSnapshotTieringOperationRequest, opts ...grpc.CallOption) (*GetSnapshotTieringOperationResponse, error)
+	ListSnapshotTieringOperations(ctx context.Context, in *ListSnapshotTieringOperationsRequest, opts ...grpc.CallOption) (*ListSnapshotTieringOperationsResponse, error)
+	CancelSnapshotTiering(ctx context.Context, in *CancelSnapshotTieringRequest, opts ...grpc.CallOption) (*CancelSnapshotTieringResponse, error)
+	CreateCompressionPolicy(ctx context.Context, in *CreateCompressionPolicyRequest, opts ...grpc.CallOption) (*CreateCompressionPolicyResponse, error)
+	GetCompressionPolicy(ctx context.Context, in *GetCompressionPolicyRequest, opts ...grpc.CallOption) (*GetCompressionPolicyResponse, error)
+	ListCompressionPolicies(ctx context.Context, in *ListCompressionPoliciesRequest, opts ...grpc.CallOption) (*ListCompressionPoliciesResponse, error)
+	BindCompressionPolicy(ctx context.Context, in *BindCompressionPolicyRequest, opts ...grpc.CallOption) (*BindCompressionPolicyResponse, error)
+	GetCompressionRolloutStatus(ctx context.Context, in *GetCompressionRolloutStatusRequest, opts ...grpc.CallOption) (*GetCompressionRolloutStatusResponse, error)
+	RegisterWORMSubject(ctx context.Context, in *RegisterWORMSubjectRequest, opts ...grpc.CallOption) (*RegisterWORMSubjectResponse, error)
+	GetWORMSubject(ctx context.Context, in *GetWORMSubjectRequest, opts ...grpc.CallOption) (*GetWORMSubjectResponse, error)
+	ListWORMSubjects(ctx context.Context, in *ListWORMSubjectsRequest, opts ...grpc.CallOption) (*ListWORMSubjectsResponse, error)
+	ApplyWORMLock(ctx context.Context, in *ApplyWORMLockRequest, opts ...grpc.CallOption) (*ApplyWORMLockResponse, error)
+	SetWORMLegalHold(ctx context.Context, in *SetWORMLegalHoldRequest, opts ...grpc.CallOption) (*SetWORMLegalHoldResponse, error)
+	ListWORMAuditEvents(ctx context.Context, in *ListWORMAuditEventsRequest, opts ...grpc.CallOption) (*ListWORMAuditEventsResponse, error)
 }
 
 type adminServiceClient struct {
@@ -579,6 +706,16 @@ func (c *adminServiceClient) ListVolumes(ctx context.Context, in *ListVolumesReq
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListVolumesResponse)
 	err := c.cc.Invoke(ctx, AdminService_ListVolumes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ListVolumesPage(ctx context.Context, in *ListVolumesPageRequest, opts ...grpc.CallOption) (*ListVolumesPageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListVolumesPageResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListVolumesPage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1375,6 +1512,96 @@ func (c *adminServiceClient) VerifySecurityAuditLog(ctx context.Context, in *Ver
 	return out, nil
 }
 
+func (c *adminServiceClient) ListRBACRoles(ctx context.Context, in *ListRBACRolesRequest, opts ...grpc.CallOption) (*ListRBACRolesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRBACRolesResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListRBACRoles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ListRBACPermissions(ctx context.Context, in *ListRBACPermissionsRequest, opts ...grpc.CallOption) (*ListRBACPermissionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRBACPermissionsResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListRBACPermissions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) PutRBACRoleBinding(ctx context.Context, in *PutRBACRoleBindingRequest, opts ...grpc.CallOption) (*PutRBACRoleBindingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutRBACRoleBindingResponse)
+	err := c.cc.Invoke(ctx, AdminService_PutRBACRoleBinding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetRBACRoleBinding(ctx context.Context, in *GetRBACRoleBindingRequest, opts ...grpc.CallOption) (*GetRBACRoleBindingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRBACRoleBindingResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetRBACRoleBinding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ListRBACRoleBindings(ctx context.Context, in *ListRBACRoleBindingsRequest, opts ...grpc.CallOption) (*ListRBACRoleBindingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRBACRoleBindingsResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListRBACRoleBindings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) DeleteRBACRoleBinding(ctx context.Context, in *DeleteRBACRoleBindingRequest, opts ...grpc.CallOption) (*DeleteRBACRoleBindingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteRBACRoleBindingResponse)
+	err := c.cc.Invoke(ctx, AdminService_DeleteRBACRoleBinding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ListRBACAuthorizationEvents(ctx context.Context, in *ListRBACAuthorizationEventsRequest, opts ...grpc.CallOption) (*ListRBACAuthorizationEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRBACAuthorizationEventsResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListRBACAuthorizationEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) VerifyRBACAuthorizationAuditLog(ctx context.Context, in *VerifyRBACAuthorizationAuditLogRequest, opts ...grpc.CallOption) (*VerifyRBACAuthorizationAuditLogResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyRBACAuthorizationAuditLogResponse)
+	err := c.cc.Invoke(ctx, AdminService_VerifyRBACAuthorizationAuditLog_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) AuthorizeRBACGatewayHTTPRequest(ctx context.Context, in *AuthorizeRBACGatewayHTTPRequestRequest, opts ...grpc.CallOption) (*AuthorizeRBACGatewayHTTPRequestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AuthorizeRBACGatewayHTTPRequestResponse)
+	err := c.cc.Invoke(ctx, AdminService_AuthorizeRBACGatewayHTTPRequest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) CreateECProfile(ctx context.Context, in *CreateECProfileRequest, opts ...grpc.CallOption) (*CreateECProfileResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateECProfileResponse)
@@ -1615,10 +1842,30 @@ func (c *adminServiceClient) ListRepairs(ctx context.Context, in *ListRepairsReq
 	return out, nil
 }
 
+func (c *adminServiceClient) ListRepairsPage(ctx context.Context, in *ListRepairsPageRequest, opts ...grpc.CallOption) (*ListRepairsPageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRepairsPageResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListRepairsPage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) ListRebalances(ctx context.Context, in *ListRebalancesRequest, opts ...grpc.CallOption) (*ListRebalancesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListRebalancesResponse)
 	err := c.cc.Invoke(ctx, AdminService_ListRebalances_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ListRebalancesPage(ctx context.Context, in *ListRebalancesPageRequest, opts ...grpc.CallOption) (*ListRebalancesPageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRebalancesPageResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListRebalancesPage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1775,6 +2022,16 @@ func (c *adminServiceClient) ListBackupTargets(ctx context.Context, in *ListBack
 	return out, nil
 }
 
+func (c *adminServiceClient) DeleteBackupTarget(ctx context.Context, in *DeleteBackupTargetRequest, opts ...grpc.CallOption) (*DeleteBackupTargetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteBackupTargetResponse)
+	err := c.cc.Invoke(ctx, AdminService_DeleteBackupTarget_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) CreateBackupPolicy(ctx context.Context, in *CreateBackupPolicyRequest, opts ...grpc.CallOption) (*CreateBackupPolicyResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateBackupPolicyResponse)
@@ -1805,10 +2062,60 @@ func (c *adminServiceClient) ListBackupPolicies(ctx context.Context, in *ListBac
 	return out, nil
 }
 
+func (c *adminServiceClient) DeleteBackupPolicy(ctx context.Context, in *DeleteBackupPolicyRequest, opts ...grpc.CallOption) (*DeleteBackupPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteBackupPolicyResponse)
+	err := c.cc.Invoke(ctx, AdminService_DeleteBackupPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) StartBackupRun(ctx context.Context, in *StartBackupRunRequest, opts ...grpc.CallOption) (*StartBackupRunResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StartBackupRunResponse)
 	err := c.cc.Invoke(ctx, AdminService_StartBackupRun_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) AdvanceBackupRun(ctx context.Context, in *AdvanceBackupRunRequest, opts ...grpc.CallOption) (*AdvanceBackupRunResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdvanceBackupRunResponse)
+	err := c.cc.Invoke(ctx, AdminService_AdvanceBackupRun_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) RunBackupArtifactCopy(ctx context.Context, in *RunBackupArtifactCopyRequest, opts ...grpc.CallOption) (*RunBackupArtifactCopyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RunBackupArtifactCopyResponse)
+	err := c.cc.Invoke(ctx, AdminService_RunBackupArtifactCopy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) RunBackupRestoreDrill(ctx context.Context, in *RunBackupRestoreDrillRequest, opts ...grpc.CallOption) (*RunBackupRestoreDrillResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RunBackupRestoreDrillResponse)
+	err := c.cc.Invoke(ctx, AdminService_RunBackupRestoreDrill_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) TickBackupScheduler(ctx context.Context, in *TickBackupSchedulerRequest, opts ...grpc.CallOption) (*TickBackupSchedulerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TickBackupSchedulerResponse)
+	err := c.cc.Invoke(ctx, AdminService_TickBackupScheduler_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1829,6 +2136,16 @@ func (c *adminServiceClient) ListBackupRuns(ctx context.Context, in *ListBackupR
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListBackupRunsResponse)
 	err := c.cc.Invoke(ctx, AdminService_ListBackupRuns_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) DeleteBackupRun(ctx context.Context, in *DeleteBackupRunRequest, opts ...grpc.CallOption) (*DeleteBackupRunResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteBackupRunResponse)
+	err := c.cc.Invoke(ctx, AdminService_DeleteBackupRun_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1875,10 +2192,30 @@ func (c *adminServiceClient) CreateBackupRetentionHold(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *adminServiceClient) ReleaseBackupRetentionHold(ctx context.Context, in *ReleaseBackupRetentionHoldRequest, opts ...grpc.CallOption) (*ReleaseBackupRetentionHoldResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReleaseBackupRetentionHoldResponse)
+	err := c.cc.Invoke(ctx, AdminService_ReleaseBackupRetentionHold_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) PlanBackupPurge(ctx context.Context, in *PlanBackupPurgeRequest, opts ...grpc.CallOption) (*PlanBackupPurgeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PlanBackupPurgeResponse)
 	err := c.cc.Invoke(ctx, AdminService_PlanBackupPurge_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ExecuteBackupPurge(ctx context.Context, in *ExecuteBackupPurgeRequest, opts ...grpc.CallOption) (*ExecuteBackupPurgeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecuteBackupPurgeResponse)
+	err := c.cc.Invoke(ctx, AdminService_ExecuteBackupPurge_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1919,6 +2256,36 @@ func (c *adminServiceClient) ListDRReplicationLinks(ctx context.Context, in *Lis
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListDRReplicationLinksResponse)
 	err := c.cc.Invoke(ctx, AdminService_ListDRReplicationLinks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) FenceDRSourceVolume(ctx context.Context, in *FenceDRSourceVolumeRequest, opts ...grpc.CallOption) (*FenceDRSourceVolumeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FenceDRSourceVolumeResponse)
+	err := c.cc.Invoke(ctx, AdminService_FenceDRSourceVolume_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ExportDRSourceFenceEnvelope(ctx context.Context, in *ExportDRSourceFenceEnvelopeRequest, opts ...grpc.CallOption) (*ExportDRSourceFenceEnvelopeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExportDRSourceFenceEnvelopeResponse)
+	err := c.cc.Invoke(ctx, AdminService_ExportDRSourceFenceEnvelope_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ImportDRSourceFenceEnvelope(ctx context.Context, in *ImportDRSourceFenceEnvelopeRequest, opts ...grpc.CallOption) (*ImportDRSourceFenceEnvelopeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportDRSourceFenceEnvelopeResponse)
+	err := c.cc.Invoke(ctx, AdminService_ImportDRSourceFenceEnvelope_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2005,6 +2372,16 @@ func (c *adminServiceClient) HeartbeatDRShippingWorker(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *adminServiceClient) RunDRShippingWorker(ctx context.Context, in *RunDRShippingWorkerRequest, opts ...grpc.CallOption) (*RunDRShippingWorkerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RunDRShippingWorkerResponse)
+	err := c.cc.Invoke(ctx, AdminService_RunDRShippingWorker_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) GetDRShippingWorker(ctx context.Context, in *GetDRShippingWorkerRequest, opts ...grpc.CallOption) (*GetDRShippingWorkerResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetDRShippingWorkerResponse)
@@ -2025,10 +2402,40 @@ func (c *adminServiceClient) ListDRShippingWorkers(ctx context.Context, in *List
 	return out, nil
 }
 
+func (c *adminServiceClient) ExportDRTargetEnvelope(ctx context.Context, in *ExportDRTargetEnvelopeRequest, opts ...grpc.CallOption) (*ExportDRTargetEnvelopeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExportDRTargetEnvelopeResponse)
+	err := c.cc.Invoke(ctx, AdminService_ExportDRTargetEnvelope_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ImportDRTargetEnvelope(ctx context.Context, in *ImportDRTargetEnvelopeRequest, opts ...grpc.CallOption) (*ImportDRTargetEnvelopeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportDRTargetEnvelopeResponse)
+	err := c.cc.Invoke(ctx, AdminService_ImportDRTargetEnvelope_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) ImportDRStandbyVolume(ctx context.Context, in *ImportDRStandbyVolumeRequest, opts ...grpc.CallOption) (*ImportDRStandbyVolumeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ImportDRStandbyVolumeResponse)
 	err := c.cc.Invoke(ctx, AdminService_ImportDRStandbyVolume_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) RunDRStandbyImport(ctx context.Context, in *RunDRStandbyImportRequest, opts ...grpc.CallOption) (*RunDRStandbyImportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RunDRStandbyImportResponse)
+	err := c.cc.Invoke(ctx, AdminService_RunDRStandbyImport_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2105,6 +2512,16 @@ func (c *adminServiceClient) DefineDROldPrimaryRejoinPolicy(ctx context.Context,
 	return out, nil
 }
 
+func (c *adminServiceClient) PrepareDROldPrimaryReseed(ctx context.Context, in *PrepareDROldPrimaryReseedRequest, opts ...grpc.CallOption) (*PrepareDROldPrimaryReseedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PrepareDROldPrimaryReseedResponse)
+	err := c.cc.Invoke(ctx, AdminService_PrepareDROldPrimaryReseed_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) RunDRFailoverDrill(ctx context.Context, in *RunDRFailoverDrillRequest, opts ...grpc.CallOption) (*RunDRFailoverDrillResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RunDRFailoverDrillResponse)
@@ -2135,6 +2552,336 @@ func (c *adminServiceClient) ListDRFailoverDrills(ctx context.Context, in *ListD
 	return out, nil
 }
 
+func (c *adminServiceClient) CreateNVMeExport(ctx context.Context, in *CreateNVMeExportRequest, opts ...grpc.CallOption) (*CreateNVMeExportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateNVMeExportResponse)
+	err := c.cc.Invoke(ctx, AdminService_CreateNVMeExport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetNVMeExport(ctx context.Context, in *GetNVMeExportRequest, opts ...grpc.CallOption) (*GetNVMeExportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetNVMeExportResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetNVMeExport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ListNVMeExports(ctx context.Context, in *ListNVMeExportsRequest, opts ...grpc.CallOption) (*ListNVMeExportsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListNVMeExportsResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListNVMeExports_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) SetNVMeExportEnabled(ctx context.Context, in *SetNVMeExportEnabledRequest, opts ...grpc.CallOption) (*SetNVMeExportEnabledResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetNVMeExportEnabledResponse)
+	err := c.cc.Invoke(ctx, AdminService_SetNVMeExportEnabled_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) SetNVMeExportActiveTarget(ctx context.Context, in *SetNVMeExportActiveTargetRequest, opts ...grpc.CallOption) (*SetNVMeExportActiveTargetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetNVMeExportActiveTargetResponse)
+	err := c.cc.Invoke(ctx, AdminService_SetNVMeExportActiveTarget_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ReportNVMeExportStatus(ctx context.Context, in *ReportNVMeExportStatusRequest, opts ...grpc.CallOption) (*ReportNVMeExportStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportNVMeExportStatusResponse)
+	err := c.cc.Invoke(ctx, AdminService_ReportNVMeExportStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) DeleteNVMeExport(ctx context.Context, in *DeleteNVMeExportRequest, opts ...grpc.CallOption) (*DeleteNVMeExportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteNVMeExportResponse)
+	err := c.cc.Invoke(ctx, AdminService_DeleteNVMeExport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) RegisterPersistentReservation(ctx context.Context, in *RegisterPersistentReservationRequest, opts ...grpc.CallOption) (*RegisterPersistentReservationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegisterPersistentReservationResponse)
+	err := c.cc.Invoke(ctx, AdminService_RegisterPersistentReservation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ReservePersistentReservation(ctx context.Context, in *ReservePersistentReservationRequest, opts ...grpc.CallOption) (*ReservePersistentReservationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReservePersistentReservationResponse)
+	err := c.cc.Invoke(ctx, AdminService_ReservePersistentReservation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ReleasePersistentReservation(ctx context.Context, in *ReleasePersistentReservationRequest, opts ...grpc.CallOption) (*ReleasePersistentReservationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReleasePersistentReservationResponse)
+	err := c.cc.Invoke(ctx, AdminService_ReleasePersistentReservation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) PreemptPersistentReservation(ctx context.Context, in *PreemptPersistentReservationRequest, opts ...grpc.CallOption) (*PreemptPersistentReservationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreemptPersistentReservationResponse)
+	err := c.cc.Invoke(ctx, AdminService_PreemptPersistentReservation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ClearPersistentReservation(ctx context.Context, in *ClearPersistentReservationRequest, opts ...grpc.CallOption) (*ClearPersistentReservationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClearPersistentReservationResponse)
+	err := c.cc.Invoke(ctx, AdminService_ClearPersistentReservation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetPersistentReservation(ctx context.Context, in *GetPersistentReservationRequest, opts ...grpc.CallOption) (*GetPersistentReservationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetPersistentReservationResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetPersistentReservation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) CreateTieringTarget(ctx context.Context, in *CreateTieringTargetRequest, opts ...grpc.CallOption) (*CreateTieringTargetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateTieringTargetResponse)
+	err := c.cc.Invoke(ctx, AdminService_CreateTieringTarget_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetTieringTarget(ctx context.Context, in *GetTieringTargetRequest, opts ...grpc.CallOption) (*GetTieringTargetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTieringTargetResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetTieringTarget_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ListTieringTargets(ctx context.Context, in *ListTieringTargetsRequest, opts ...grpc.CallOption) (*ListTieringTargetsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTieringTargetsResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListTieringTargets_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) CheckTieringTarget(ctx context.Context, in *CheckTieringTargetRequest, opts ...grpc.CallOption) (*CheckTieringTargetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckTieringTargetResponse)
+	err := c.cc.Invoke(ctx, AdminService_CheckTieringTarget_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) StartSnapshotTiering(ctx context.Context, in *StartSnapshotTieringRequest, opts ...grpc.CallOption) (*StartSnapshotTieringResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartSnapshotTieringResponse)
+	err := c.cc.Invoke(ctx, AdminService_StartSnapshotTiering_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) StartSnapshotHydration(ctx context.Context, in *StartSnapshotHydrationRequest, opts ...grpc.CallOption) (*StartSnapshotHydrationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartSnapshotHydrationResponse)
+	err := c.cc.Invoke(ctx, AdminService_StartSnapshotHydration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetSnapshotTieringOperation(ctx context.Context, in *GetSnapshotTieringOperationRequest, opts ...grpc.CallOption) (*GetSnapshotTieringOperationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSnapshotTieringOperationResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetSnapshotTieringOperation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ListSnapshotTieringOperations(ctx context.Context, in *ListSnapshotTieringOperationsRequest, opts ...grpc.CallOption) (*ListSnapshotTieringOperationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSnapshotTieringOperationsResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListSnapshotTieringOperations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) CancelSnapshotTiering(ctx context.Context, in *CancelSnapshotTieringRequest, opts ...grpc.CallOption) (*CancelSnapshotTieringResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelSnapshotTieringResponse)
+	err := c.cc.Invoke(ctx, AdminService_CancelSnapshotTiering_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) CreateCompressionPolicy(ctx context.Context, in *CreateCompressionPolicyRequest, opts ...grpc.CallOption) (*CreateCompressionPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateCompressionPolicyResponse)
+	err := c.cc.Invoke(ctx, AdminService_CreateCompressionPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetCompressionPolicy(ctx context.Context, in *GetCompressionPolicyRequest, opts ...grpc.CallOption) (*GetCompressionPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCompressionPolicyResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetCompressionPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ListCompressionPolicies(ctx context.Context, in *ListCompressionPoliciesRequest, opts ...grpc.CallOption) (*ListCompressionPoliciesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCompressionPoliciesResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListCompressionPolicies_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) BindCompressionPolicy(ctx context.Context, in *BindCompressionPolicyRequest, opts ...grpc.CallOption) (*BindCompressionPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BindCompressionPolicyResponse)
+	err := c.cc.Invoke(ctx, AdminService_BindCompressionPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetCompressionRolloutStatus(ctx context.Context, in *GetCompressionRolloutStatusRequest, opts ...grpc.CallOption) (*GetCompressionRolloutStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCompressionRolloutStatusResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetCompressionRolloutStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) RegisterWORMSubject(ctx context.Context, in *RegisterWORMSubjectRequest, opts ...grpc.CallOption) (*RegisterWORMSubjectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegisterWORMSubjectResponse)
+	err := c.cc.Invoke(ctx, AdminService_RegisterWORMSubject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetWORMSubject(ctx context.Context, in *GetWORMSubjectRequest, opts ...grpc.CallOption) (*GetWORMSubjectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetWORMSubjectResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetWORMSubject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ListWORMSubjects(ctx context.Context, in *ListWORMSubjectsRequest, opts ...grpc.CallOption) (*ListWORMSubjectsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWORMSubjectsResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListWORMSubjects_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ApplyWORMLock(ctx context.Context, in *ApplyWORMLockRequest, opts ...grpc.CallOption) (*ApplyWORMLockResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyWORMLockResponse)
+	err := c.cc.Invoke(ctx, AdminService_ApplyWORMLock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) SetWORMLegalHold(ctx context.Context, in *SetWORMLegalHoldRequest, opts ...grpc.CallOption) (*SetWORMLegalHoldResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetWORMLegalHoldResponse)
+	err := c.cc.Invoke(ctx, AdminService_SetWORMLegalHold_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ListWORMAuditEvents(ctx context.Context, in *ListWORMAuditEventsRequest, opts ...grpc.CallOption) (*ListWORMAuditEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWORMAuditEventsResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListWORMAuditEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminServiceServer is the server API for AdminService service.
 // All implementations must embed UnimplementedAdminServiceServer
 // for forward compatibility.
@@ -2159,6 +2906,7 @@ type AdminServiceServer interface {
 	UpdateTopologyZone(context.Context, *UpdateTopologyZoneRequest) (*UpdateTopologyZoneResponse, error)
 	DeleteTopologyZone(context.Context, *DeleteTopologyZoneRequest) (*DeleteTopologyZoneResponse, error)
 	ListVolumes(context.Context, *ListVolumesRequest) (*ListVolumesResponse, error)
+	ListVolumesPage(context.Context, *ListVolumesPageRequest) (*ListVolumesPageResponse, error)
 	GetVolume(context.Context, *GetVolumeRequest) (*GetVolumeResponse, error)
 	GetVolumePlacementView(context.Context, *GetVolumePlacementViewRequest) (*GetVolumePlacementViewResponse, error)
 	GetVolumeAllocationPageView(context.Context, *GetVolumeAllocationPageViewRequest) (*GetVolumeAllocationPageViewResponse, error)
@@ -2238,6 +2986,15 @@ type AdminServiceServer interface {
 	RevokeKeyAccessLease(context.Context, *RevokeKeyAccessLeaseRequest) (*RevokeKeyAccessLeaseResponse, error)
 	ListSecurityAuditEvents(context.Context, *ListSecurityAuditEventsRequest) (*ListSecurityAuditEventsResponse, error)
 	VerifySecurityAuditLog(context.Context, *VerifySecurityAuditLogRequest) (*VerifySecurityAuditLogResponse, error)
+	ListRBACRoles(context.Context, *ListRBACRolesRequest) (*ListRBACRolesResponse, error)
+	ListRBACPermissions(context.Context, *ListRBACPermissionsRequest) (*ListRBACPermissionsResponse, error)
+	PutRBACRoleBinding(context.Context, *PutRBACRoleBindingRequest) (*PutRBACRoleBindingResponse, error)
+	GetRBACRoleBinding(context.Context, *GetRBACRoleBindingRequest) (*GetRBACRoleBindingResponse, error)
+	ListRBACRoleBindings(context.Context, *ListRBACRoleBindingsRequest) (*ListRBACRoleBindingsResponse, error)
+	DeleteRBACRoleBinding(context.Context, *DeleteRBACRoleBindingRequest) (*DeleteRBACRoleBindingResponse, error)
+	ListRBACAuthorizationEvents(context.Context, *ListRBACAuthorizationEventsRequest) (*ListRBACAuthorizationEventsResponse, error)
+	VerifyRBACAuthorizationAuditLog(context.Context, *VerifyRBACAuthorizationAuditLogRequest) (*VerifyRBACAuthorizationAuditLogResponse, error)
+	AuthorizeRBACGatewayHTTPRequest(context.Context, *AuthorizeRBACGatewayHTTPRequestRequest) (*AuthorizeRBACGatewayHTTPRequestResponse, error)
 	CreateECProfile(context.Context, *CreateECProfileRequest) (*CreateECProfileResponse, error)
 	ListECProfiles(context.Context, *ListECProfilesRequest) (*ListECProfilesResponse, error)
 	GetECProfile(context.Context, *GetECProfileRequest) (*GetECProfileResponse, error)
@@ -2262,7 +3019,9 @@ type AdminServiceServer interface {
 	PauseMaintenance(context.Context, *PauseMaintenanceRequest) (*PauseMaintenanceResponse, error)
 	ResumeMaintenance(context.Context, *ResumeMaintenanceRequest) (*ResumeMaintenanceResponse, error)
 	ListRepairs(context.Context, *ListRepairsRequest) (*ListRepairsResponse, error)
+	ListRepairsPage(context.Context, *ListRepairsPageRequest) (*ListRepairsPageResponse, error)
 	ListRebalances(context.Context, *ListRebalancesRequest) (*ListRebalancesResponse, error)
+	ListRebalancesPage(context.Context, *ListRebalancesPageRequest) (*ListRebalancesPageResponse, error)
 	StartRestoreWarmup(context.Context, *StartRestoreWarmupRequest) (*StartRestoreWarmupResponse, error)
 	RunRestoreWarmup(context.Context, *RunRestoreWarmupRequest) (*RunRestoreWarmupResponse, error)
 	GetRestoreWarmup(context.Context, *GetRestoreWarmupRequest) (*GetRestoreWarmupResponse, error)
@@ -2278,21 +3037,33 @@ type AdminServiceServer interface {
 	CreateBackupTarget(context.Context, *CreateBackupTargetRequest) (*CreateBackupTargetResponse, error)
 	GetBackupTarget(context.Context, *GetBackupTargetRequest) (*GetBackupTargetResponse, error)
 	ListBackupTargets(context.Context, *ListBackupTargetsRequest) (*ListBackupTargetsResponse, error)
+	DeleteBackupTarget(context.Context, *DeleteBackupTargetRequest) (*DeleteBackupTargetResponse, error)
 	CreateBackupPolicy(context.Context, *CreateBackupPolicyRequest) (*CreateBackupPolicyResponse, error)
 	GetBackupPolicy(context.Context, *GetBackupPolicyRequest) (*GetBackupPolicyResponse, error)
 	ListBackupPolicies(context.Context, *ListBackupPoliciesRequest) (*ListBackupPoliciesResponse, error)
+	DeleteBackupPolicy(context.Context, *DeleteBackupPolicyRequest) (*DeleteBackupPolicyResponse, error)
 	StartBackupRun(context.Context, *StartBackupRunRequest) (*StartBackupRunResponse, error)
+	AdvanceBackupRun(context.Context, *AdvanceBackupRunRequest) (*AdvanceBackupRunResponse, error)
+	RunBackupArtifactCopy(context.Context, *RunBackupArtifactCopyRequest) (*RunBackupArtifactCopyResponse, error)
+	RunBackupRestoreDrill(context.Context, *RunBackupRestoreDrillRequest) (*RunBackupRestoreDrillResponse, error)
+	TickBackupScheduler(context.Context, *TickBackupSchedulerRequest) (*TickBackupSchedulerResponse, error)
 	GetBackupRun(context.Context, *GetBackupRunRequest) (*GetBackupRunResponse, error)
 	ListBackupRuns(context.Context, *ListBackupRunsRequest) (*ListBackupRunsResponse, error)
+	DeleteBackupRun(context.Context, *DeleteBackupRunRequest) (*DeleteBackupRunResponse, error)
 	MarkBackupArtifactAvailable(context.Context, *MarkBackupArtifactAvailableRequest) (*MarkBackupArtifactAvailableResponse, error)
 	GetBackupArtifact(context.Context, *GetBackupArtifactRequest) (*GetBackupArtifactResponse, error)
 	ListBackupArtifacts(context.Context, *ListBackupArtifactsRequest) (*ListBackupArtifactsResponse, error)
 	CreateBackupRetentionHold(context.Context, *CreateBackupRetentionHoldRequest) (*CreateBackupRetentionHoldResponse, error)
+	ReleaseBackupRetentionHold(context.Context, *ReleaseBackupRetentionHoldRequest) (*ReleaseBackupRetentionHoldResponse, error)
 	PlanBackupPurge(context.Context, *PlanBackupPurgeRequest) (*PlanBackupPurgeResponse, error)
+	ExecuteBackupPurge(context.Context, *ExecuteBackupPurgeRequest) (*ExecuteBackupPurgeResponse, error)
 	GetBackupStatus(context.Context, *GetBackupStatusRequest) (*GetBackupStatusResponse, error)
 	CreateDRReplicationLink(context.Context, *CreateDRReplicationLinkRequest) (*CreateDRReplicationLinkResponse, error)
 	GetDRReplicationLink(context.Context, *GetDRReplicationLinkRequest) (*GetDRReplicationLinkResponse, error)
 	ListDRReplicationLinks(context.Context, *ListDRReplicationLinksRequest) (*ListDRReplicationLinksResponse, error)
+	FenceDRSourceVolume(context.Context, *FenceDRSourceVolumeRequest) (*FenceDRSourceVolumeResponse, error)
+	ExportDRSourceFenceEnvelope(context.Context, *ExportDRSourceFenceEnvelopeRequest) (*ExportDRSourceFenceEnvelopeResponse, error)
+	ImportDRSourceFenceEnvelope(context.Context, *ImportDRSourceFenceEnvelopeRequest) (*ImportDRSourceFenceEnvelopeResponse, error)
 	CreateDRRecoveryPoint(context.Context, *CreateDRRecoveryPointRequest) (*CreateDRRecoveryPointResponse, error)
 	GetDRRecoveryPoint(context.Context, *GetDRRecoveryPointRequest) (*GetDRRecoveryPointResponse, error)
 	ListDRRecoveryPoints(context.Context, *ListDRRecoveryPointsRequest) (*ListDRRecoveryPointsResponse, error)
@@ -2301,9 +3072,13 @@ type AdminServiceServer interface {
 	ListDRShippingManifests(context.Context, *ListDRShippingManifestsRequest) (*ListDRShippingManifestsResponse, error)
 	AdmitDRShippingWorker(context.Context, *AdmitDRShippingWorkerRequest) (*AdmitDRShippingWorkerResponse, error)
 	HeartbeatDRShippingWorker(context.Context, *HeartbeatDRShippingWorkerRequest) (*HeartbeatDRShippingWorkerResponse, error)
+	RunDRShippingWorker(context.Context, *RunDRShippingWorkerRequest) (*RunDRShippingWorkerResponse, error)
 	GetDRShippingWorker(context.Context, *GetDRShippingWorkerRequest) (*GetDRShippingWorkerResponse, error)
 	ListDRShippingWorkers(context.Context, *ListDRShippingWorkersRequest) (*ListDRShippingWorkersResponse, error)
+	ExportDRTargetEnvelope(context.Context, *ExportDRTargetEnvelopeRequest) (*ExportDRTargetEnvelopeResponse, error)
+	ImportDRTargetEnvelope(context.Context, *ImportDRTargetEnvelopeRequest) (*ImportDRTargetEnvelopeResponse, error)
 	ImportDRStandbyVolume(context.Context, *ImportDRStandbyVolumeRequest) (*ImportDRStandbyVolumeResponse, error)
+	RunDRStandbyImport(context.Context, *RunDRStandbyImportRequest) (*RunDRStandbyImportResponse, error)
 	GetDRStandbyVolume(context.Context, *GetDRStandbyVolumeRequest) (*GetDRStandbyVolumeResponse, error)
 	ListDRStandbyVolumes(context.Context, *ListDRStandbyVolumesRequest) (*ListDRStandbyVolumesResponse, error)
 	CheckDRStandbyVolumeWrite(context.Context, *CheckDRStandbyVolumeWriteRequest) (*CheckDRStandbyVolumeWriteResponse, error)
@@ -2311,9 +3086,46 @@ type AdminServiceServer interface {
 	DemoteDRStandbyVolume(context.Context, *DemoteDRStandbyVolumeRequest) (*DemoteDRStandbyVolumeResponse, error)
 	CheckDROldPrimaryWrite(context.Context, *CheckDROldPrimaryWriteRequest) (*CheckDROldPrimaryWriteResponse, error)
 	DefineDROldPrimaryRejoinPolicy(context.Context, *DefineDROldPrimaryRejoinPolicyRequest) (*DefineDROldPrimaryRejoinPolicyResponse, error)
+	PrepareDROldPrimaryReseed(context.Context, *PrepareDROldPrimaryReseedRequest) (*PrepareDROldPrimaryReseedResponse, error)
 	RunDRFailoverDrill(context.Context, *RunDRFailoverDrillRequest) (*RunDRFailoverDrillResponse, error)
 	GetDRFailoverDrill(context.Context, *GetDRFailoverDrillRequest) (*GetDRFailoverDrillResponse, error)
 	ListDRFailoverDrills(context.Context, *ListDRFailoverDrillsRequest) (*ListDRFailoverDrillsResponse, error)
+	// Enterprise product-integration lifecycle APIs. Community servers retain
+	// the generated Unimplemented behavior and Community CLI builds do not
+	// register these command surfaces.
+	CreateNVMeExport(context.Context, *CreateNVMeExportRequest) (*CreateNVMeExportResponse, error)
+	GetNVMeExport(context.Context, *GetNVMeExportRequest) (*GetNVMeExportResponse, error)
+	ListNVMeExports(context.Context, *ListNVMeExportsRequest) (*ListNVMeExportsResponse, error)
+	SetNVMeExportEnabled(context.Context, *SetNVMeExportEnabledRequest) (*SetNVMeExportEnabledResponse, error)
+	SetNVMeExportActiveTarget(context.Context, *SetNVMeExportActiveTargetRequest) (*SetNVMeExportActiveTargetResponse, error)
+	ReportNVMeExportStatus(context.Context, *ReportNVMeExportStatusRequest) (*ReportNVMeExportStatusResponse, error)
+	DeleteNVMeExport(context.Context, *DeleteNVMeExportRequest) (*DeleteNVMeExportResponse, error)
+	RegisterPersistentReservation(context.Context, *RegisterPersistentReservationRequest) (*RegisterPersistentReservationResponse, error)
+	ReservePersistentReservation(context.Context, *ReservePersistentReservationRequest) (*ReservePersistentReservationResponse, error)
+	ReleasePersistentReservation(context.Context, *ReleasePersistentReservationRequest) (*ReleasePersistentReservationResponse, error)
+	PreemptPersistentReservation(context.Context, *PreemptPersistentReservationRequest) (*PreemptPersistentReservationResponse, error)
+	ClearPersistentReservation(context.Context, *ClearPersistentReservationRequest) (*ClearPersistentReservationResponse, error)
+	GetPersistentReservation(context.Context, *GetPersistentReservationRequest) (*GetPersistentReservationResponse, error)
+	CreateTieringTarget(context.Context, *CreateTieringTargetRequest) (*CreateTieringTargetResponse, error)
+	GetTieringTarget(context.Context, *GetTieringTargetRequest) (*GetTieringTargetResponse, error)
+	ListTieringTargets(context.Context, *ListTieringTargetsRequest) (*ListTieringTargetsResponse, error)
+	CheckTieringTarget(context.Context, *CheckTieringTargetRequest) (*CheckTieringTargetResponse, error)
+	StartSnapshotTiering(context.Context, *StartSnapshotTieringRequest) (*StartSnapshotTieringResponse, error)
+	StartSnapshotHydration(context.Context, *StartSnapshotHydrationRequest) (*StartSnapshotHydrationResponse, error)
+	GetSnapshotTieringOperation(context.Context, *GetSnapshotTieringOperationRequest) (*GetSnapshotTieringOperationResponse, error)
+	ListSnapshotTieringOperations(context.Context, *ListSnapshotTieringOperationsRequest) (*ListSnapshotTieringOperationsResponse, error)
+	CancelSnapshotTiering(context.Context, *CancelSnapshotTieringRequest) (*CancelSnapshotTieringResponse, error)
+	CreateCompressionPolicy(context.Context, *CreateCompressionPolicyRequest) (*CreateCompressionPolicyResponse, error)
+	GetCompressionPolicy(context.Context, *GetCompressionPolicyRequest) (*GetCompressionPolicyResponse, error)
+	ListCompressionPolicies(context.Context, *ListCompressionPoliciesRequest) (*ListCompressionPoliciesResponse, error)
+	BindCompressionPolicy(context.Context, *BindCompressionPolicyRequest) (*BindCompressionPolicyResponse, error)
+	GetCompressionRolloutStatus(context.Context, *GetCompressionRolloutStatusRequest) (*GetCompressionRolloutStatusResponse, error)
+	RegisterWORMSubject(context.Context, *RegisterWORMSubjectRequest) (*RegisterWORMSubjectResponse, error)
+	GetWORMSubject(context.Context, *GetWORMSubjectRequest) (*GetWORMSubjectResponse, error)
+	ListWORMSubjects(context.Context, *ListWORMSubjectsRequest) (*ListWORMSubjectsResponse, error)
+	ApplyWORMLock(context.Context, *ApplyWORMLockRequest) (*ApplyWORMLockResponse, error)
+	SetWORMLegalHold(context.Context, *SetWORMLegalHoldRequest) (*SetWORMLegalHoldResponse, error)
+	ListWORMAuditEvents(context.Context, *ListWORMAuditEventsRequest) (*ListWORMAuditEventsResponse, error)
 	mustEmbedUnimplementedAdminServiceServer()
 }
 
@@ -2383,6 +3195,9 @@ func (UnimplementedAdminServiceServer) DeleteTopologyZone(context.Context, *Dele
 }
 func (UnimplementedAdminServiceServer) ListVolumes(context.Context, *ListVolumesRequest) (*ListVolumesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListVolumes not implemented")
+}
+func (UnimplementedAdminServiceServer) ListVolumesPage(context.Context, *ListVolumesPageRequest) (*ListVolumesPageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListVolumesPage not implemented")
 }
 func (UnimplementedAdminServiceServer) GetVolume(context.Context, *GetVolumeRequest) (*GetVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVolume not implemented")
@@ -2621,6 +3436,33 @@ func (UnimplementedAdminServiceServer) ListSecurityAuditEvents(context.Context, 
 func (UnimplementedAdminServiceServer) VerifySecurityAuditLog(context.Context, *VerifySecurityAuditLogRequest) (*VerifySecurityAuditLogResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VerifySecurityAuditLog not implemented")
 }
+func (UnimplementedAdminServiceServer) ListRBACRoles(context.Context, *ListRBACRolesRequest) (*ListRBACRolesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRBACRoles not implemented")
+}
+func (UnimplementedAdminServiceServer) ListRBACPermissions(context.Context, *ListRBACPermissionsRequest) (*ListRBACPermissionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRBACPermissions not implemented")
+}
+func (UnimplementedAdminServiceServer) PutRBACRoleBinding(context.Context, *PutRBACRoleBindingRequest) (*PutRBACRoleBindingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PutRBACRoleBinding not implemented")
+}
+func (UnimplementedAdminServiceServer) GetRBACRoleBinding(context.Context, *GetRBACRoleBindingRequest) (*GetRBACRoleBindingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRBACRoleBinding not implemented")
+}
+func (UnimplementedAdminServiceServer) ListRBACRoleBindings(context.Context, *ListRBACRoleBindingsRequest) (*ListRBACRoleBindingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRBACRoleBindings not implemented")
+}
+func (UnimplementedAdminServiceServer) DeleteRBACRoleBinding(context.Context, *DeleteRBACRoleBindingRequest) (*DeleteRBACRoleBindingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteRBACRoleBinding not implemented")
+}
+func (UnimplementedAdminServiceServer) ListRBACAuthorizationEvents(context.Context, *ListRBACAuthorizationEventsRequest) (*ListRBACAuthorizationEventsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRBACAuthorizationEvents not implemented")
+}
+func (UnimplementedAdminServiceServer) VerifyRBACAuthorizationAuditLog(context.Context, *VerifyRBACAuthorizationAuditLogRequest) (*VerifyRBACAuthorizationAuditLogResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VerifyRBACAuthorizationAuditLog not implemented")
+}
+func (UnimplementedAdminServiceServer) AuthorizeRBACGatewayHTTPRequest(context.Context, *AuthorizeRBACGatewayHTTPRequestRequest) (*AuthorizeRBACGatewayHTTPRequestResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AuthorizeRBACGatewayHTTPRequest not implemented")
+}
 func (UnimplementedAdminServiceServer) CreateECProfile(context.Context, *CreateECProfileRequest) (*CreateECProfileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateECProfile not implemented")
 }
@@ -2693,8 +3535,14 @@ func (UnimplementedAdminServiceServer) ResumeMaintenance(context.Context, *Resum
 func (UnimplementedAdminServiceServer) ListRepairs(context.Context, *ListRepairsRequest) (*ListRepairsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRepairs not implemented")
 }
+func (UnimplementedAdminServiceServer) ListRepairsPage(context.Context, *ListRepairsPageRequest) (*ListRepairsPageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRepairsPage not implemented")
+}
 func (UnimplementedAdminServiceServer) ListRebalances(context.Context, *ListRebalancesRequest) (*ListRebalancesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRebalances not implemented")
+}
+func (UnimplementedAdminServiceServer) ListRebalancesPage(context.Context, *ListRebalancesPageRequest) (*ListRebalancesPageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRebalancesPage not implemented")
 }
 func (UnimplementedAdminServiceServer) StartRestoreWarmup(context.Context, *StartRestoreWarmupRequest) (*StartRestoreWarmupResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartRestoreWarmup not implemented")
@@ -2741,6 +3589,9 @@ func (UnimplementedAdminServiceServer) GetBackupTarget(context.Context, *GetBack
 func (UnimplementedAdminServiceServer) ListBackupTargets(context.Context, *ListBackupTargetsRequest) (*ListBackupTargetsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListBackupTargets not implemented")
 }
+func (UnimplementedAdminServiceServer) DeleteBackupTarget(context.Context, *DeleteBackupTargetRequest) (*DeleteBackupTargetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteBackupTarget not implemented")
+}
 func (UnimplementedAdminServiceServer) CreateBackupPolicy(context.Context, *CreateBackupPolicyRequest) (*CreateBackupPolicyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateBackupPolicy not implemented")
 }
@@ -2750,14 +3601,32 @@ func (UnimplementedAdminServiceServer) GetBackupPolicy(context.Context, *GetBack
 func (UnimplementedAdminServiceServer) ListBackupPolicies(context.Context, *ListBackupPoliciesRequest) (*ListBackupPoliciesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListBackupPolicies not implemented")
 }
+func (UnimplementedAdminServiceServer) DeleteBackupPolicy(context.Context, *DeleteBackupPolicyRequest) (*DeleteBackupPolicyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteBackupPolicy not implemented")
+}
 func (UnimplementedAdminServiceServer) StartBackupRun(context.Context, *StartBackupRunRequest) (*StartBackupRunResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartBackupRun not implemented")
+}
+func (UnimplementedAdminServiceServer) AdvanceBackupRun(context.Context, *AdvanceBackupRunRequest) (*AdvanceBackupRunResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AdvanceBackupRun not implemented")
+}
+func (UnimplementedAdminServiceServer) RunBackupArtifactCopy(context.Context, *RunBackupArtifactCopyRequest) (*RunBackupArtifactCopyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RunBackupArtifactCopy not implemented")
+}
+func (UnimplementedAdminServiceServer) RunBackupRestoreDrill(context.Context, *RunBackupRestoreDrillRequest) (*RunBackupRestoreDrillResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RunBackupRestoreDrill not implemented")
+}
+func (UnimplementedAdminServiceServer) TickBackupScheduler(context.Context, *TickBackupSchedulerRequest) (*TickBackupSchedulerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TickBackupScheduler not implemented")
 }
 func (UnimplementedAdminServiceServer) GetBackupRun(context.Context, *GetBackupRunRequest) (*GetBackupRunResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBackupRun not implemented")
 }
 func (UnimplementedAdminServiceServer) ListBackupRuns(context.Context, *ListBackupRunsRequest) (*ListBackupRunsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListBackupRuns not implemented")
+}
+func (UnimplementedAdminServiceServer) DeleteBackupRun(context.Context, *DeleteBackupRunRequest) (*DeleteBackupRunResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteBackupRun not implemented")
 }
 func (UnimplementedAdminServiceServer) MarkBackupArtifactAvailable(context.Context, *MarkBackupArtifactAvailableRequest) (*MarkBackupArtifactAvailableResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkBackupArtifactAvailable not implemented")
@@ -2771,8 +3640,14 @@ func (UnimplementedAdminServiceServer) ListBackupArtifacts(context.Context, *Lis
 func (UnimplementedAdminServiceServer) CreateBackupRetentionHold(context.Context, *CreateBackupRetentionHoldRequest) (*CreateBackupRetentionHoldResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateBackupRetentionHold not implemented")
 }
+func (UnimplementedAdminServiceServer) ReleaseBackupRetentionHold(context.Context, *ReleaseBackupRetentionHoldRequest) (*ReleaseBackupRetentionHoldResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReleaseBackupRetentionHold not implemented")
+}
 func (UnimplementedAdminServiceServer) PlanBackupPurge(context.Context, *PlanBackupPurgeRequest) (*PlanBackupPurgeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PlanBackupPurge not implemented")
+}
+func (UnimplementedAdminServiceServer) ExecuteBackupPurge(context.Context, *ExecuteBackupPurgeRequest) (*ExecuteBackupPurgeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExecuteBackupPurge not implemented")
 }
 func (UnimplementedAdminServiceServer) GetBackupStatus(context.Context, *GetBackupStatusRequest) (*GetBackupStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBackupStatus not implemented")
@@ -2785,6 +3660,15 @@ func (UnimplementedAdminServiceServer) GetDRReplicationLink(context.Context, *Ge
 }
 func (UnimplementedAdminServiceServer) ListDRReplicationLinks(context.Context, *ListDRReplicationLinksRequest) (*ListDRReplicationLinksResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListDRReplicationLinks not implemented")
+}
+func (UnimplementedAdminServiceServer) FenceDRSourceVolume(context.Context, *FenceDRSourceVolumeRequest) (*FenceDRSourceVolumeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FenceDRSourceVolume not implemented")
+}
+func (UnimplementedAdminServiceServer) ExportDRSourceFenceEnvelope(context.Context, *ExportDRSourceFenceEnvelopeRequest) (*ExportDRSourceFenceEnvelopeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExportDRSourceFenceEnvelope not implemented")
+}
+func (UnimplementedAdminServiceServer) ImportDRSourceFenceEnvelope(context.Context, *ImportDRSourceFenceEnvelopeRequest) (*ImportDRSourceFenceEnvelopeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportDRSourceFenceEnvelope not implemented")
 }
 func (UnimplementedAdminServiceServer) CreateDRRecoveryPoint(context.Context, *CreateDRRecoveryPointRequest) (*CreateDRRecoveryPointResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateDRRecoveryPoint not implemented")
@@ -2810,14 +3694,26 @@ func (UnimplementedAdminServiceServer) AdmitDRShippingWorker(context.Context, *A
 func (UnimplementedAdminServiceServer) HeartbeatDRShippingWorker(context.Context, *HeartbeatDRShippingWorkerRequest) (*HeartbeatDRShippingWorkerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HeartbeatDRShippingWorker not implemented")
 }
+func (UnimplementedAdminServiceServer) RunDRShippingWorker(context.Context, *RunDRShippingWorkerRequest) (*RunDRShippingWorkerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RunDRShippingWorker not implemented")
+}
 func (UnimplementedAdminServiceServer) GetDRShippingWorker(context.Context, *GetDRShippingWorkerRequest) (*GetDRShippingWorkerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetDRShippingWorker not implemented")
 }
 func (UnimplementedAdminServiceServer) ListDRShippingWorkers(context.Context, *ListDRShippingWorkersRequest) (*ListDRShippingWorkersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListDRShippingWorkers not implemented")
 }
+func (UnimplementedAdminServiceServer) ExportDRTargetEnvelope(context.Context, *ExportDRTargetEnvelopeRequest) (*ExportDRTargetEnvelopeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExportDRTargetEnvelope not implemented")
+}
+func (UnimplementedAdminServiceServer) ImportDRTargetEnvelope(context.Context, *ImportDRTargetEnvelopeRequest) (*ImportDRTargetEnvelopeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportDRTargetEnvelope not implemented")
+}
 func (UnimplementedAdminServiceServer) ImportDRStandbyVolume(context.Context, *ImportDRStandbyVolumeRequest) (*ImportDRStandbyVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ImportDRStandbyVolume not implemented")
+}
+func (UnimplementedAdminServiceServer) RunDRStandbyImport(context.Context, *RunDRStandbyImportRequest) (*RunDRStandbyImportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RunDRStandbyImport not implemented")
 }
 func (UnimplementedAdminServiceServer) GetDRStandbyVolume(context.Context, *GetDRStandbyVolumeRequest) (*GetDRStandbyVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetDRStandbyVolume not implemented")
@@ -2840,6 +3736,9 @@ func (UnimplementedAdminServiceServer) CheckDROldPrimaryWrite(context.Context, *
 func (UnimplementedAdminServiceServer) DefineDROldPrimaryRejoinPolicy(context.Context, *DefineDROldPrimaryRejoinPolicyRequest) (*DefineDROldPrimaryRejoinPolicyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DefineDROldPrimaryRejoinPolicy not implemented")
 }
+func (UnimplementedAdminServiceServer) PrepareDROldPrimaryReseed(context.Context, *PrepareDROldPrimaryReseedRequest) (*PrepareDROldPrimaryReseedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareDROldPrimaryReseed not implemented")
+}
 func (UnimplementedAdminServiceServer) RunDRFailoverDrill(context.Context, *RunDRFailoverDrillRequest) (*RunDRFailoverDrillResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RunDRFailoverDrill not implemented")
 }
@@ -2848,6 +3747,105 @@ func (UnimplementedAdminServiceServer) GetDRFailoverDrill(context.Context, *GetD
 }
 func (UnimplementedAdminServiceServer) ListDRFailoverDrills(context.Context, *ListDRFailoverDrillsRequest) (*ListDRFailoverDrillsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListDRFailoverDrills not implemented")
+}
+func (UnimplementedAdminServiceServer) CreateNVMeExport(context.Context, *CreateNVMeExportRequest) (*CreateNVMeExportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateNVMeExport not implemented")
+}
+func (UnimplementedAdminServiceServer) GetNVMeExport(context.Context, *GetNVMeExportRequest) (*GetNVMeExportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNVMeExport not implemented")
+}
+func (UnimplementedAdminServiceServer) ListNVMeExports(context.Context, *ListNVMeExportsRequest) (*ListNVMeExportsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListNVMeExports not implemented")
+}
+func (UnimplementedAdminServiceServer) SetNVMeExportEnabled(context.Context, *SetNVMeExportEnabledRequest) (*SetNVMeExportEnabledResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetNVMeExportEnabled not implemented")
+}
+func (UnimplementedAdminServiceServer) SetNVMeExportActiveTarget(context.Context, *SetNVMeExportActiveTargetRequest) (*SetNVMeExportActiveTargetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetNVMeExportActiveTarget not implemented")
+}
+func (UnimplementedAdminServiceServer) ReportNVMeExportStatus(context.Context, *ReportNVMeExportStatusRequest) (*ReportNVMeExportStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportNVMeExportStatus not implemented")
+}
+func (UnimplementedAdminServiceServer) DeleteNVMeExport(context.Context, *DeleteNVMeExportRequest) (*DeleteNVMeExportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteNVMeExport not implemented")
+}
+func (UnimplementedAdminServiceServer) RegisterPersistentReservation(context.Context, *RegisterPersistentReservationRequest) (*RegisterPersistentReservationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RegisterPersistentReservation not implemented")
+}
+func (UnimplementedAdminServiceServer) ReservePersistentReservation(context.Context, *ReservePersistentReservationRequest) (*ReservePersistentReservationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReservePersistentReservation not implemented")
+}
+func (UnimplementedAdminServiceServer) ReleasePersistentReservation(context.Context, *ReleasePersistentReservationRequest) (*ReleasePersistentReservationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReleasePersistentReservation not implemented")
+}
+func (UnimplementedAdminServiceServer) PreemptPersistentReservation(context.Context, *PreemptPersistentReservationRequest) (*PreemptPersistentReservationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PreemptPersistentReservation not implemented")
+}
+func (UnimplementedAdminServiceServer) ClearPersistentReservation(context.Context, *ClearPersistentReservationRequest) (*ClearPersistentReservationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClearPersistentReservation not implemented")
+}
+func (UnimplementedAdminServiceServer) GetPersistentReservation(context.Context, *GetPersistentReservationRequest) (*GetPersistentReservationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPersistentReservation not implemented")
+}
+func (UnimplementedAdminServiceServer) CreateTieringTarget(context.Context, *CreateTieringTargetRequest) (*CreateTieringTargetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateTieringTarget not implemented")
+}
+func (UnimplementedAdminServiceServer) GetTieringTarget(context.Context, *GetTieringTargetRequest) (*GetTieringTargetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTieringTarget not implemented")
+}
+func (UnimplementedAdminServiceServer) ListTieringTargets(context.Context, *ListTieringTargetsRequest) (*ListTieringTargetsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListTieringTargets not implemented")
+}
+func (UnimplementedAdminServiceServer) CheckTieringTarget(context.Context, *CheckTieringTargetRequest) (*CheckTieringTargetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckTieringTarget not implemented")
+}
+func (UnimplementedAdminServiceServer) StartSnapshotTiering(context.Context, *StartSnapshotTieringRequest) (*StartSnapshotTieringResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartSnapshotTiering not implemented")
+}
+func (UnimplementedAdminServiceServer) StartSnapshotHydration(context.Context, *StartSnapshotHydrationRequest) (*StartSnapshotHydrationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartSnapshotHydration not implemented")
+}
+func (UnimplementedAdminServiceServer) GetSnapshotTieringOperation(context.Context, *GetSnapshotTieringOperationRequest) (*GetSnapshotTieringOperationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSnapshotTieringOperation not implemented")
+}
+func (UnimplementedAdminServiceServer) ListSnapshotTieringOperations(context.Context, *ListSnapshotTieringOperationsRequest) (*ListSnapshotTieringOperationsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSnapshotTieringOperations not implemented")
+}
+func (UnimplementedAdminServiceServer) CancelSnapshotTiering(context.Context, *CancelSnapshotTieringRequest) (*CancelSnapshotTieringResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CancelSnapshotTiering not implemented")
+}
+func (UnimplementedAdminServiceServer) CreateCompressionPolicy(context.Context, *CreateCompressionPolicyRequest) (*CreateCompressionPolicyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateCompressionPolicy not implemented")
+}
+func (UnimplementedAdminServiceServer) GetCompressionPolicy(context.Context, *GetCompressionPolicyRequest) (*GetCompressionPolicyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCompressionPolicy not implemented")
+}
+func (UnimplementedAdminServiceServer) ListCompressionPolicies(context.Context, *ListCompressionPoliciesRequest) (*ListCompressionPoliciesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCompressionPolicies not implemented")
+}
+func (UnimplementedAdminServiceServer) BindCompressionPolicy(context.Context, *BindCompressionPolicyRequest) (*BindCompressionPolicyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BindCompressionPolicy not implemented")
+}
+func (UnimplementedAdminServiceServer) GetCompressionRolloutStatus(context.Context, *GetCompressionRolloutStatusRequest) (*GetCompressionRolloutStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCompressionRolloutStatus not implemented")
+}
+func (UnimplementedAdminServiceServer) RegisterWORMSubject(context.Context, *RegisterWORMSubjectRequest) (*RegisterWORMSubjectResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RegisterWORMSubject not implemented")
+}
+func (UnimplementedAdminServiceServer) GetWORMSubject(context.Context, *GetWORMSubjectRequest) (*GetWORMSubjectResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetWORMSubject not implemented")
+}
+func (UnimplementedAdminServiceServer) ListWORMSubjects(context.Context, *ListWORMSubjectsRequest) (*ListWORMSubjectsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListWORMSubjects not implemented")
+}
+func (UnimplementedAdminServiceServer) ApplyWORMLock(context.Context, *ApplyWORMLockRequest) (*ApplyWORMLockResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ApplyWORMLock not implemented")
+}
+func (UnimplementedAdminServiceServer) SetWORMLegalHold(context.Context, *SetWORMLegalHoldRequest) (*SetWORMLegalHoldResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetWORMLegalHold not implemented")
+}
+func (UnimplementedAdminServiceServer) ListWORMAuditEvents(context.Context, *ListWORMAuditEventsRequest) (*ListWORMAuditEventsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListWORMAuditEvents not implemented")
 }
 func (UnimplementedAdminServiceServer) mustEmbedUnimplementedAdminServiceServer() {}
 func (UnimplementedAdminServiceServer) testEmbeddedByValue()                      {}
@@ -3226,6 +4224,24 @@ func _AdminService_ListVolumes_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).ListVolumes(ctx, req.(*ListVolumesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ListVolumesPage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListVolumesPageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListVolumesPage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListVolumesPage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListVolumesPage(ctx, req.(*ListVolumesPageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4652,6 +5668,168 @@ func _AdminService_VerifySecurityAuditLog_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_ListRBACRoles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRBACRolesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListRBACRoles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListRBACRoles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListRBACRoles(ctx, req.(*ListRBACRolesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ListRBACPermissions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRBACPermissionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListRBACPermissions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListRBACPermissions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListRBACPermissions(ctx, req.(*ListRBACPermissionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_PutRBACRoleBinding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutRBACRoleBindingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).PutRBACRoleBinding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_PutRBACRoleBinding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).PutRBACRoleBinding(ctx, req.(*PutRBACRoleBindingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetRBACRoleBinding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRBACRoleBindingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetRBACRoleBinding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetRBACRoleBinding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetRBACRoleBinding(ctx, req.(*GetRBACRoleBindingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ListRBACRoleBindings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRBACRoleBindingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListRBACRoleBindings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListRBACRoleBindings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListRBACRoleBindings(ctx, req.(*ListRBACRoleBindingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_DeleteRBACRoleBinding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteRBACRoleBindingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).DeleteRBACRoleBinding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_DeleteRBACRoleBinding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).DeleteRBACRoleBinding(ctx, req.(*DeleteRBACRoleBindingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ListRBACAuthorizationEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRBACAuthorizationEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListRBACAuthorizationEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListRBACAuthorizationEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListRBACAuthorizationEvents(ctx, req.(*ListRBACAuthorizationEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_VerifyRBACAuthorizationAuditLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyRBACAuthorizationAuditLogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).VerifyRBACAuthorizationAuditLog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_VerifyRBACAuthorizationAuditLog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).VerifyRBACAuthorizationAuditLog(ctx, req.(*VerifyRBACAuthorizationAuditLogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_AuthorizeRBACGatewayHTTPRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AuthorizeRBACGatewayHTTPRequestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).AuthorizeRBACGatewayHTTPRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_AuthorizeRBACGatewayHTTPRequest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).AuthorizeRBACGatewayHTTPRequest(ctx, req.(*AuthorizeRBACGatewayHTTPRequestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_CreateECProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateECProfileRequest)
 	if err := dec(in); err != nil {
@@ -5084,6 +6262,24 @@ func _AdminService_ListRepairs_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_ListRepairsPage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRepairsPageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListRepairsPage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListRepairsPage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListRepairsPage(ctx, req.(*ListRepairsPageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_ListRebalances_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListRebalancesRequest)
 	if err := dec(in); err != nil {
@@ -5098,6 +6294,24 @@ func _AdminService_ListRebalances_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).ListRebalances(ctx, req.(*ListRebalancesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ListRebalancesPage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRebalancesPageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListRebalancesPage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListRebalancesPage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListRebalancesPage(ctx, req.(*ListRebalancesPageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -5372,6 +6586,24 @@ func _AdminService_ListBackupTargets_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_DeleteBackupTarget_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteBackupTargetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).DeleteBackupTarget(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_DeleteBackupTarget_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).DeleteBackupTarget(ctx, req.(*DeleteBackupTargetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_CreateBackupPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateBackupPolicyRequest)
 	if err := dec(in); err != nil {
@@ -5426,6 +6658,24 @@ func _AdminService_ListBackupPolicies_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_DeleteBackupPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteBackupPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).DeleteBackupPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_DeleteBackupPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).DeleteBackupPolicy(ctx, req.(*DeleteBackupPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_StartBackupRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StartBackupRunRequest)
 	if err := dec(in); err != nil {
@@ -5440,6 +6690,78 @@ func _AdminService_StartBackupRun_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).StartBackupRun(ctx, req.(*StartBackupRunRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_AdvanceBackupRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdvanceBackupRunRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).AdvanceBackupRun(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_AdvanceBackupRun_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).AdvanceBackupRun(ctx, req.(*AdvanceBackupRunRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_RunBackupArtifactCopy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunBackupArtifactCopyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).RunBackupArtifactCopy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_RunBackupArtifactCopy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).RunBackupArtifactCopy(ctx, req.(*RunBackupArtifactCopyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_RunBackupRestoreDrill_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunBackupRestoreDrillRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).RunBackupRestoreDrill(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_RunBackupRestoreDrill_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).RunBackupRestoreDrill(ctx, req.(*RunBackupRestoreDrillRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_TickBackupScheduler_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TickBackupSchedulerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).TickBackupScheduler(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_TickBackupScheduler_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).TickBackupScheduler(ctx, req.(*TickBackupSchedulerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -5476,6 +6798,24 @@ func _AdminService_ListBackupRuns_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).ListBackupRuns(ctx, req.(*ListBackupRunsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_DeleteBackupRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteBackupRunRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).DeleteBackupRun(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_DeleteBackupRun_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).DeleteBackupRun(ctx, req.(*DeleteBackupRunRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -5552,6 +6892,24 @@ func _AdminService_CreateBackupRetentionHold_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_ReleaseBackupRetentionHold_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleaseBackupRetentionHoldRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ReleaseBackupRetentionHold(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ReleaseBackupRetentionHold_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ReleaseBackupRetentionHold(ctx, req.(*ReleaseBackupRetentionHoldRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_PlanBackupPurge_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PlanBackupPurgeRequest)
 	if err := dec(in); err != nil {
@@ -5566,6 +6924,24 @@ func _AdminService_PlanBackupPurge_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).PlanBackupPurge(ctx, req.(*PlanBackupPurgeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ExecuteBackupPurge_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecuteBackupPurgeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ExecuteBackupPurge(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ExecuteBackupPurge_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ExecuteBackupPurge(ctx, req.(*ExecuteBackupPurgeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -5638,6 +7014,60 @@ func _AdminService_ListDRReplicationLinks_Handler(srv interface{}, ctx context.C
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).ListDRReplicationLinks(ctx, req.(*ListDRReplicationLinksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_FenceDRSourceVolume_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FenceDRSourceVolumeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).FenceDRSourceVolume(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_FenceDRSourceVolume_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).FenceDRSourceVolume(ctx, req.(*FenceDRSourceVolumeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ExportDRSourceFenceEnvelope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExportDRSourceFenceEnvelopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ExportDRSourceFenceEnvelope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ExportDRSourceFenceEnvelope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ExportDRSourceFenceEnvelope(ctx, req.(*ExportDRSourceFenceEnvelopeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ImportDRSourceFenceEnvelope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportDRSourceFenceEnvelopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ImportDRSourceFenceEnvelope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ImportDRSourceFenceEnvelope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ImportDRSourceFenceEnvelope(ctx, req.(*ImportDRSourceFenceEnvelopeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -5786,6 +7216,24 @@ func _AdminService_HeartbeatDRShippingWorker_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_RunDRShippingWorker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunDRShippingWorkerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).RunDRShippingWorker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_RunDRShippingWorker_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).RunDRShippingWorker(ctx, req.(*RunDRShippingWorkerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_GetDRShippingWorker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetDRShippingWorkerRequest)
 	if err := dec(in); err != nil {
@@ -5822,6 +7270,42 @@ func _AdminService_ListDRShippingWorkers_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_ExportDRTargetEnvelope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExportDRTargetEnvelopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ExportDRTargetEnvelope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ExportDRTargetEnvelope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ExportDRTargetEnvelope(ctx, req.(*ExportDRTargetEnvelopeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ImportDRTargetEnvelope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportDRTargetEnvelopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ImportDRTargetEnvelope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ImportDRTargetEnvelope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ImportDRTargetEnvelope(ctx, req.(*ImportDRTargetEnvelopeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_ImportDRStandbyVolume_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ImportDRStandbyVolumeRequest)
 	if err := dec(in); err != nil {
@@ -5836,6 +7320,24 @@ func _AdminService_ImportDRStandbyVolume_Handler(srv interface{}, ctx context.Co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).ImportDRStandbyVolume(ctx, req.(*ImportDRStandbyVolumeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_RunDRStandbyImport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunDRStandbyImportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).RunDRStandbyImport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_RunDRStandbyImport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).RunDRStandbyImport(ctx, req.(*RunDRStandbyImportRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -5966,6 +7468,24 @@ func _AdminService_DefineDROldPrimaryRejoinPolicy_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_PrepareDROldPrimaryReseed_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareDROldPrimaryReseedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).PrepareDROldPrimaryReseed(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_PrepareDROldPrimaryReseed_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).PrepareDROldPrimaryReseed(ctx, req.(*PrepareDROldPrimaryReseedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_RunDRFailoverDrill_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RunDRFailoverDrillRequest)
 	if err := dec(in); err != nil {
@@ -6016,6 +7536,600 @@ func _AdminService_ListDRFailoverDrills_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).ListDRFailoverDrills(ctx, req.(*ListDRFailoverDrillsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_CreateNVMeExport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateNVMeExportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).CreateNVMeExport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_CreateNVMeExport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).CreateNVMeExport(ctx, req.(*CreateNVMeExportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetNVMeExport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNVMeExportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetNVMeExport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetNVMeExport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetNVMeExport(ctx, req.(*GetNVMeExportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ListNVMeExports_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListNVMeExportsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListNVMeExports(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListNVMeExports_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListNVMeExports(ctx, req.(*ListNVMeExportsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_SetNVMeExportEnabled_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetNVMeExportEnabledRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).SetNVMeExportEnabled(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_SetNVMeExportEnabled_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).SetNVMeExportEnabled(ctx, req.(*SetNVMeExportEnabledRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_SetNVMeExportActiveTarget_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetNVMeExportActiveTargetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).SetNVMeExportActiveTarget(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_SetNVMeExportActiveTarget_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).SetNVMeExportActiveTarget(ctx, req.(*SetNVMeExportActiveTargetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ReportNVMeExportStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportNVMeExportStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ReportNVMeExportStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ReportNVMeExportStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ReportNVMeExportStatus(ctx, req.(*ReportNVMeExportStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_DeleteNVMeExport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteNVMeExportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).DeleteNVMeExport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_DeleteNVMeExport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).DeleteNVMeExport(ctx, req.(*DeleteNVMeExportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_RegisterPersistentReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterPersistentReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).RegisterPersistentReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_RegisterPersistentReservation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).RegisterPersistentReservation(ctx, req.(*RegisterPersistentReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ReservePersistentReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReservePersistentReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ReservePersistentReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ReservePersistentReservation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ReservePersistentReservation(ctx, req.(*ReservePersistentReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ReleasePersistentReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleasePersistentReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ReleasePersistentReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ReleasePersistentReservation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ReleasePersistentReservation(ctx, req.(*ReleasePersistentReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_PreemptPersistentReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreemptPersistentReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).PreemptPersistentReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_PreemptPersistentReservation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).PreemptPersistentReservation(ctx, req.(*PreemptPersistentReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ClearPersistentReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClearPersistentReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ClearPersistentReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ClearPersistentReservation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ClearPersistentReservation(ctx, req.(*ClearPersistentReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetPersistentReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPersistentReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetPersistentReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetPersistentReservation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetPersistentReservation(ctx, req.(*GetPersistentReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_CreateTieringTarget_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateTieringTargetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).CreateTieringTarget(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_CreateTieringTarget_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).CreateTieringTarget(ctx, req.(*CreateTieringTargetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetTieringTarget_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTieringTargetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetTieringTarget(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetTieringTarget_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetTieringTarget(ctx, req.(*GetTieringTargetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ListTieringTargets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTieringTargetsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListTieringTargets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListTieringTargets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListTieringTargets(ctx, req.(*ListTieringTargetsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_CheckTieringTarget_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckTieringTargetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).CheckTieringTarget(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_CheckTieringTarget_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).CheckTieringTarget(ctx, req.(*CheckTieringTargetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_StartSnapshotTiering_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartSnapshotTieringRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).StartSnapshotTiering(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_StartSnapshotTiering_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).StartSnapshotTiering(ctx, req.(*StartSnapshotTieringRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_StartSnapshotHydration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartSnapshotHydrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).StartSnapshotHydration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_StartSnapshotHydration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).StartSnapshotHydration(ctx, req.(*StartSnapshotHydrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetSnapshotTieringOperation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSnapshotTieringOperationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetSnapshotTieringOperation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetSnapshotTieringOperation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetSnapshotTieringOperation(ctx, req.(*GetSnapshotTieringOperationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ListSnapshotTieringOperations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSnapshotTieringOperationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListSnapshotTieringOperations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListSnapshotTieringOperations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListSnapshotTieringOperations(ctx, req.(*ListSnapshotTieringOperationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_CancelSnapshotTiering_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelSnapshotTieringRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).CancelSnapshotTiering(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_CancelSnapshotTiering_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).CancelSnapshotTiering(ctx, req.(*CancelSnapshotTieringRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_CreateCompressionPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCompressionPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).CreateCompressionPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_CreateCompressionPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).CreateCompressionPolicy(ctx, req.(*CreateCompressionPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetCompressionPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCompressionPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetCompressionPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetCompressionPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetCompressionPolicy(ctx, req.(*GetCompressionPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ListCompressionPolicies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCompressionPoliciesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListCompressionPolicies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListCompressionPolicies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListCompressionPolicies(ctx, req.(*ListCompressionPoliciesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_BindCompressionPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BindCompressionPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).BindCompressionPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_BindCompressionPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).BindCompressionPolicy(ctx, req.(*BindCompressionPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetCompressionRolloutStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCompressionRolloutStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetCompressionRolloutStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetCompressionRolloutStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetCompressionRolloutStatus(ctx, req.(*GetCompressionRolloutStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_RegisterWORMSubject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterWORMSubjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).RegisterWORMSubject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_RegisterWORMSubject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).RegisterWORMSubject(ctx, req.(*RegisterWORMSubjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetWORMSubject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetWORMSubjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetWORMSubject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetWORMSubject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetWORMSubject(ctx, req.(*GetWORMSubjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ListWORMSubjects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWORMSubjectsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListWORMSubjects(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListWORMSubjects_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListWORMSubjects(ctx, req.(*ListWORMSubjectsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ApplyWORMLock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyWORMLockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ApplyWORMLock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ApplyWORMLock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ApplyWORMLock(ctx, req.(*ApplyWORMLockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_SetWORMLegalHold_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetWORMLegalHoldRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).SetWORMLegalHold(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_SetWORMLegalHold_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).SetWORMLegalHold(ctx, req.(*SetWORMLegalHoldRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ListWORMAuditEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWORMAuditEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListWORMAuditEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListWORMAuditEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListWORMAuditEvents(ctx, req.(*ListWORMAuditEventsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -6106,6 +8220,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListVolumes",
 			Handler:    _AdminService_ListVolumes_Handler,
+		},
+		{
+			MethodName: "ListVolumesPage",
+			Handler:    _AdminService_ListVolumesPage_Handler,
 		},
 		{
 			MethodName: "GetVolume",
@@ -6424,6 +8542,42 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_VerifySecurityAuditLog_Handler,
 		},
 		{
+			MethodName: "ListRBACRoles",
+			Handler:    _AdminService_ListRBACRoles_Handler,
+		},
+		{
+			MethodName: "ListRBACPermissions",
+			Handler:    _AdminService_ListRBACPermissions_Handler,
+		},
+		{
+			MethodName: "PutRBACRoleBinding",
+			Handler:    _AdminService_PutRBACRoleBinding_Handler,
+		},
+		{
+			MethodName: "GetRBACRoleBinding",
+			Handler:    _AdminService_GetRBACRoleBinding_Handler,
+		},
+		{
+			MethodName: "ListRBACRoleBindings",
+			Handler:    _AdminService_ListRBACRoleBindings_Handler,
+		},
+		{
+			MethodName: "DeleteRBACRoleBinding",
+			Handler:    _AdminService_DeleteRBACRoleBinding_Handler,
+		},
+		{
+			MethodName: "ListRBACAuthorizationEvents",
+			Handler:    _AdminService_ListRBACAuthorizationEvents_Handler,
+		},
+		{
+			MethodName: "VerifyRBACAuthorizationAuditLog",
+			Handler:    _AdminService_VerifyRBACAuthorizationAuditLog_Handler,
+		},
+		{
+			MethodName: "AuthorizeRBACGatewayHTTPRequest",
+			Handler:    _AdminService_AuthorizeRBACGatewayHTTPRequest_Handler,
+		},
+		{
 			MethodName: "CreateECProfile",
 			Handler:    _AdminService_CreateECProfile_Handler,
 		},
@@ -6520,8 +8674,16 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_ListRepairs_Handler,
 		},
 		{
+			MethodName: "ListRepairsPage",
+			Handler:    _AdminService_ListRepairsPage_Handler,
+		},
+		{
 			MethodName: "ListRebalances",
 			Handler:    _AdminService_ListRebalances_Handler,
+		},
+		{
+			MethodName: "ListRebalancesPage",
+			Handler:    _AdminService_ListRebalancesPage_Handler,
 		},
 		{
 			MethodName: "StartRestoreWarmup",
@@ -6584,6 +8746,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_ListBackupTargets_Handler,
 		},
 		{
+			MethodName: "DeleteBackupTarget",
+			Handler:    _AdminService_DeleteBackupTarget_Handler,
+		},
+		{
 			MethodName: "CreateBackupPolicy",
 			Handler:    _AdminService_CreateBackupPolicy_Handler,
 		},
@@ -6596,8 +8762,28 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_ListBackupPolicies_Handler,
 		},
 		{
+			MethodName: "DeleteBackupPolicy",
+			Handler:    _AdminService_DeleteBackupPolicy_Handler,
+		},
+		{
 			MethodName: "StartBackupRun",
 			Handler:    _AdminService_StartBackupRun_Handler,
+		},
+		{
+			MethodName: "AdvanceBackupRun",
+			Handler:    _AdminService_AdvanceBackupRun_Handler,
+		},
+		{
+			MethodName: "RunBackupArtifactCopy",
+			Handler:    _AdminService_RunBackupArtifactCopy_Handler,
+		},
+		{
+			MethodName: "RunBackupRestoreDrill",
+			Handler:    _AdminService_RunBackupRestoreDrill_Handler,
+		},
+		{
+			MethodName: "TickBackupScheduler",
+			Handler:    _AdminService_TickBackupScheduler_Handler,
 		},
 		{
 			MethodName: "GetBackupRun",
@@ -6606,6 +8792,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListBackupRuns",
 			Handler:    _AdminService_ListBackupRuns_Handler,
+		},
+		{
+			MethodName: "DeleteBackupRun",
+			Handler:    _AdminService_DeleteBackupRun_Handler,
 		},
 		{
 			MethodName: "MarkBackupArtifactAvailable",
@@ -6624,8 +8814,16 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_CreateBackupRetentionHold_Handler,
 		},
 		{
+			MethodName: "ReleaseBackupRetentionHold",
+			Handler:    _AdminService_ReleaseBackupRetentionHold_Handler,
+		},
+		{
 			MethodName: "PlanBackupPurge",
 			Handler:    _AdminService_PlanBackupPurge_Handler,
+		},
+		{
+			MethodName: "ExecuteBackupPurge",
+			Handler:    _AdminService_ExecuteBackupPurge_Handler,
 		},
 		{
 			MethodName: "GetBackupStatus",
@@ -6642,6 +8840,18 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListDRReplicationLinks",
 			Handler:    _AdminService_ListDRReplicationLinks_Handler,
+		},
+		{
+			MethodName: "FenceDRSourceVolume",
+			Handler:    _AdminService_FenceDRSourceVolume_Handler,
+		},
+		{
+			MethodName: "ExportDRSourceFenceEnvelope",
+			Handler:    _AdminService_ExportDRSourceFenceEnvelope_Handler,
+		},
+		{
+			MethodName: "ImportDRSourceFenceEnvelope",
+			Handler:    _AdminService_ImportDRSourceFenceEnvelope_Handler,
 		},
 		{
 			MethodName: "CreateDRRecoveryPoint",
@@ -6676,6 +8886,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_HeartbeatDRShippingWorker_Handler,
 		},
 		{
+			MethodName: "RunDRShippingWorker",
+			Handler:    _AdminService_RunDRShippingWorker_Handler,
+		},
+		{
 			MethodName: "GetDRShippingWorker",
 			Handler:    _AdminService_GetDRShippingWorker_Handler,
 		},
@@ -6684,8 +8898,20 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_ListDRShippingWorkers_Handler,
 		},
 		{
+			MethodName: "ExportDRTargetEnvelope",
+			Handler:    _AdminService_ExportDRTargetEnvelope_Handler,
+		},
+		{
+			MethodName: "ImportDRTargetEnvelope",
+			Handler:    _AdminService_ImportDRTargetEnvelope_Handler,
+		},
+		{
 			MethodName: "ImportDRStandbyVolume",
 			Handler:    _AdminService_ImportDRStandbyVolume_Handler,
+		},
+		{
+			MethodName: "RunDRStandbyImport",
+			Handler:    _AdminService_RunDRStandbyImport_Handler,
 		},
 		{
 			MethodName: "GetDRStandbyVolume",
@@ -6716,6 +8942,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_DefineDROldPrimaryRejoinPolicy_Handler,
 		},
 		{
+			MethodName: "PrepareDROldPrimaryReseed",
+			Handler:    _AdminService_PrepareDROldPrimaryReseed_Handler,
+		},
+		{
 			MethodName: "RunDRFailoverDrill",
 			Handler:    _AdminService_RunDRFailoverDrill_Handler,
 		},
@@ -6726,6 +8956,138 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListDRFailoverDrills",
 			Handler:    _AdminService_ListDRFailoverDrills_Handler,
+		},
+		{
+			MethodName: "CreateNVMeExport",
+			Handler:    _AdminService_CreateNVMeExport_Handler,
+		},
+		{
+			MethodName: "GetNVMeExport",
+			Handler:    _AdminService_GetNVMeExport_Handler,
+		},
+		{
+			MethodName: "ListNVMeExports",
+			Handler:    _AdminService_ListNVMeExports_Handler,
+		},
+		{
+			MethodName: "SetNVMeExportEnabled",
+			Handler:    _AdminService_SetNVMeExportEnabled_Handler,
+		},
+		{
+			MethodName: "SetNVMeExportActiveTarget",
+			Handler:    _AdminService_SetNVMeExportActiveTarget_Handler,
+		},
+		{
+			MethodName: "ReportNVMeExportStatus",
+			Handler:    _AdminService_ReportNVMeExportStatus_Handler,
+		},
+		{
+			MethodName: "DeleteNVMeExport",
+			Handler:    _AdminService_DeleteNVMeExport_Handler,
+		},
+		{
+			MethodName: "RegisterPersistentReservation",
+			Handler:    _AdminService_RegisterPersistentReservation_Handler,
+		},
+		{
+			MethodName: "ReservePersistentReservation",
+			Handler:    _AdminService_ReservePersistentReservation_Handler,
+		},
+		{
+			MethodName: "ReleasePersistentReservation",
+			Handler:    _AdminService_ReleasePersistentReservation_Handler,
+		},
+		{
+			MethodName: "PreemptPersistentReservation",
+			Handler:    _AdminService_PreemptPersistentReservation_Handler,
+		},
+		{
+			MethodName: "ClearPersistentReservation",
+			Handler:    _AdminService_ClearPersistentReservation_Handler,
+		},
+		{
+			MethodName: "GetPersistentReservation",
+			Handler:    _AdminService_GetPersistentReservation_Handler,
+		},
+		{
+			MethodName: "CreateTieringTarget",
+			Handler:    _AdminService_CreateTieringTarget_Handler,
+		},
+		{
+			MethodName: "GetTieringTarget",
+			Handler:    _AdminService_GetTieringTarget_Handler,
+		},
+		{
+			MethodName: "ListTieringTargets",
+			Handler:    _AdminService_ListTieringTargets_Handler,
+		},
+		{
+			MethodName: "CheckTieringTarget",
+			Handler:    _AdminService_CheckTieringTarget_Handler,
+		},
+		{
+			MethodName: "StartSnapshotTiering",
+			Handler:    _AdminService_StartSnapshotTiering_Handler,
+		},
+		{
+			MethodName: "StartSnapshotHydration",
+			Handler:    _AdminService_StartSnapshotHydration_Handler,
+		},
+		{
+			MethodName: "GetSnapshotTieringOperation",
+			Handler:    _AdminService_GetSnapshotTieringOperation_Handler,
+		},
+		{
+			MethodName: "ListSnapshotTieringOperations",
+			Handler:    _AdminService_ListSnapshotTieringOperations_Handler,
+		},
+		{
+			MethodName: "CancelSnapshotTiering",
+			Handler:    _AdminService_CancelSnapshotTiering_Handler,
+		},
+		{
+			MethodName: "CreateCompressionPolicy",
+			Handler:    _AdminService_CreateCompressionPolicy_Handler,
+		},
+		{
+			MethodName: "GetCompressionPolicy",
+			Handler:    _AdminService_GetCompressionPolicy_Handler,
+		},
+		{
+			MethodName: "ListCompressionPolicies",
+			Handler:    _AdminService_ListCompressionPolicies_Handler,
+		},
+		{
+			MethodName: "BindCompressionPolicy",
+			Handler:    _AdminService_BindCompressionPolicy_Handler,
+		},
+		{
+			MethodName: "GetCompressionRolloutStatus",
+			Handler:    _AdminService_GetCompressionRolloutStatus_Handler,
+		},
+		{
+			MethodName: "RegisterWORMSubject",
+			Handler:    _AdminService_RegisterWORMSubject_Handler,
+		},
+		{
+			MethodName: "GetWORMSubject",
+			Handler:    _AdminService_GetWORMSubject_Handler,
+		},
+		{
+			MethodName: "ListWORMSubjects",
+			Handler:    _AdminService_ListWORMSubjects_Handler,
+		},
+		{
+			MethodName: "ApplyWORMLock",
+			Handler:    _AdminService_ApplyWORMLock_Handler,
+		},
+		{
+			MethodName: "SetWORMLegalHold",
+			Handler:    _AdminService_SetWORMLegalHold_Handler,
+		},
+		{
+			MethodName: "ListWORMAuditEvents",
+			Handler:    _AdminService_ListWORMAuditEvents_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

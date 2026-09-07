@@ -19,7 +19,8 @@ inside help are executable defaults after environment lookup;
 usage: sbsctl [--json] <command> [args]
        sbsctl help <command> [subcommand]
 commands:
-  cluster init|status
+  cluster init|status|manifest validate|manifest render|manifest plan|manifest export|manifest admit|manifest rollout|manifest standby
+  host check|maintenance
   node join|update-topology|status|drain|drain status|remove
   topology zone create|list|get|update|delete
   store status|tuning
@@ -29,7 +30,7 @@ commands:
   repair list|show
   rebalance list
   maintenance throttle|pause|resume
-  operations list|show
+  operations find|list|show
   testio open|read|write|flush
   version
 ```
@@ -93,7 +94,28 @@ runtime option. Legacy aliases warn in v1.0.x and are removed in v1.1.0.
 | Command path | Help invocation |
 | --- | --- |
 | `sbsctl cluster init` | `sbsctl help cluster init` |
+| `sbsctl cluster manifest admit` | `sbsctl help cluster manifest admit` |
+| `sbsctl cluster manifest export` | `sbsctl help cluster manifest export` |
+| `sbsctl cluster manifest plan` | `sbsctl help cluster manifest plan` |
+| `sbsctl cluster manifest render` | `sbsctl help cluster manifest render` |
+| `sbsctl cluster manifest rollout issue` | `sbsctl help cluster manifest rollout issue` |
+| `sbsctl cluster manifest rollout pause` | `sbsctl help cluster manifest rollout pause` |
+| `sbsctl cluster manifest rollout record` | `sbsctl help cluster manifest rollout record` |
+| `sbsctl cluster manifest rollout resume` | `sbsctl help cluster manifest rollout resume` |
+| `sbsctl cluster manifest rollout retry` | `sbsctl help cluster manifest rollout retry` |
+| `sbsctl cluster manifest rollout start` | `sbsctl help cluster manifest rollout start` |
+| `sbsctl cluster manifest rollout status` | `sbsctl help cluster manifest rollout status` |
+| `sbsctl cluster manifest standby issue` | `sbsctl help cluster manifest standby issue` |
+| `sbsctl cluster manifest standby plan` | `sbsctl help cluster manifest standby plan` |
+| `sbsctl cluster manifest standby status` | `sbsctl help cluster manifest standby status` |
+| `sbsctl cluster manifest standby verify` | `sbsctl help cluster manifest standby verify` |
+| `sbsctl cluster manifest validate` | `sbsctl help cluster manifest validate` |
 | `sbsctl cluster status` | `sbsctl help cluster status` |
+| `sbsctl host check` | `sbsctl help host check` |
+| `sbsctl host maintenance enter` | `sbsctl help host maintenance enter` |
+| `sbsctl host maintenance exit` | `sbsctl help host maintenance exit` |
+| `sbsctl host maintenance plan` | `sbsctl help host maintenance plan` |
+| `sbsctl host maintenance status` | `sbsctl help host maintenance status` |
 | `sbsctl iscsi initiator allow` | `sbsctl help iscsi initiator allow` |
 | `sbsctl iscsi initiator deny` | `sbsctl help iscsi initiator deny` |
 | `sbsctl iscsi initiator get` | `sbsctl help iscsi initiator get` |
@@ -136,6 +158,7 @@ runtime option. Legacy aliases warn in v1.0.x and are removed in v1.1.0.
 | `sbsctl node status` | `sbsctl help node status` |
 | `sbsctl node update-registration` | `sbsctl help node update-registration` |
 | `sbsctl node update-topology` | `sbsctl help node update-topology` |
+| `sbsctl operations find` | `sbsctl help operations find` |
 | `sbsctl operations list` | `sbsctl help operations list` |
 | `sbsctl operations show` | `sbsctl help operations show` |
 | `sbsctl rebalance list` | `sbsctl help rebalance list` |
@@ -197,6 +220,310 @@ Flags:
       request timeout (default 10s)
 ```
 
+### `sbsctl cluster manifest admit`
+
+```text
+Usage: sbsctl cluster manifest admit [flags]
+
+Flags:
+  --admission-time string
+      coordinator admission time in RFC3339 format (default )
+  --approved-artifact-digest value
+      externally approved sha256 digest; repeatable (default )
+  --file string
+      reviewed cluster manifest YAML path (default )
+  --join-plan-output string
+      new path for the admitted no-mutation join plan (default )
+  --max-future-skew duration
+      maximum future report timestamp skew (default 30s)
+  --max-report-age duration
+      maximum signed report age (default 5m0s)
+  --output string
+      summary output format: table|json (default table)
+  --plan-id string
+      deterministic reviewed manifest plan identity (default )
+  --reports-dir string
+      directory containing only signed host report JSON files (default )
+  --trust-bundle string
+      reviewed node-to-Ed25519 public key trust bundle JSON (default )
+```
+
+### `sbsctl cluster manifest export`
+
+```text
+Usage: sbsctl cluster manifest export [flags]
+
+Flags:
+  --approved-artifact-digest value
+      externally approved sha256 digest; repeatable (default )
+  --file string
+      cluster manifest YAML path (default )
+  --format string
+      export format: yaml|json (default yaml)
+  --output string
+      summary output format: table|json (default table)
+  --output-file string
+      new path for canonical manifest export (default )
+```
+
+### `sbsctl cluster manifest plan`
+
+```text
+Usage: sbsctl cluster manifest plan [flags]
+
+Flags:
+  --approved-artifact-digest value
+      externally approved sha256 digest; repeatable (default )
+  --current-manifest string
+      optional current canonical manifest for pure reapply comparison (default )
+  --current-state string
+      optional observed-state JSON for exact impact comparison (default )
+  --file string
+      desired cluster manifest YAML path (default )
+  --output string
+      output format: table|json (default table)
+  --plan-output string
+      optional new path for the full JSON plan (default )
+```
+
+### `sbsctl cluster manifest render`
+
+```text
+Usage: sbsctl cluster manifest render [flags]
+
+Flags:
+  --approved-artifact-digest value
+      externally approved sha256 digest; repeatable (default )
+  --file string
+      cluster manifest YAML path (default )
+  --output string
+      output format: table|json (default table)
+  --output-dir string
+      empty directory for deterministic node bundles (default )
+```
+
+### `sbsctl cluster manifest rollout issue`
+
+```text
+Usage: sbsctl cluster manifest rollout issue [flags]
+
+Flags:
+  --at string
+      instruction issue time in RFC3339 format (default )
+  --operation string
+      input rollout operation JSON path (default )
+  --operation-output string
+      new path for the next rollout operation revision (default )
+  --output string
+      summary output format: table|json (default table)
+```
+
+### `sbsctl cluster manifest rollout pause`
+
+```text
+Usage: sbsctl cluster manifest rollout pause [flags]
+
+Flags:
+  --at string
+      transition time in RFC3339 format (default )
+  --operation string
+      input rollout operation JSON path (default )
+  --operation-output string
+      new path for the next rollout operation revision (default )
+  --output string
+      summary output format: table|json (default table)
+  --reason string
+      operator reason recorded with the transition (default )
+```
+
+### `sbsctl cluster manifest rollout record`
+
+```text
+Usage: sbsctl cluster manifest rollout record [flags]
+
+Flags:
+  --at string
+      result observation time in RFC3339 format (default )
+  --error string
+      required failure detail (default )
+  --idempotency-key string
+      exact key from the emitted instruction (default )
+  --node-id string
+      node whose issued result is being recorded (default )
+  --operation string
+      input rollout operation JSON path (default )
+  --operation-output string
+      new path for the next rollout operation revision (default )
+  --output string
+      summary output format: table|json (default table)
+  --result string
+      external transport result: success|failure (default )
+```
+
+### `sbsctl cluster manifest rollout resume`
+
+```text
+Usage: sbsctl cluster manifest rollout resume [flags]
+
+Flags:
+  --at string
+      transition time in RFC3339 format (default )
+  --operation string
+      input rollout operation JSON path (default )
+  --operation-output string
+      new path for the next rollout operation revision (default )
+  --output string
+      summary output format: table|json (default table)
+  --reason string
+      operator reason recorded with the transition (default )
+```
+
+### `sbsctl cluster manifest rollout retry`
+
+```text
+Usage: sbsctl cluster manifest rollout retry [flags]
+
+Flags:
+  --at string
+      transition time in RFC3339 format (default )
+  --operation string
+      input rollout operation JSON path (default )
+  --operation-output string
+      new path for the next rollout operation revision (default )
+  --output string
+      summary output format: table|json (default table)
+  --reason string
+      operator reason recorded with the transition (default )
+```
+
+### `sbsctl cluster manifest rollout start`
+
+```text
+Usage: sbsctl cluster manifest rollout start [flags]
+
+Flags:
+  --approved-artifact-digest value
+      externally approved sha256 digest; repeatable (default )
+  --file string
+      reviewed cluster manifest YAML path (default )
+  --join-plan string
+      admitted SBSHostJoinPlan JSON path (default )
+  --operation-output string
+      new path for rollout operation revision 1 (default )
+  --output string
+      summary output format: table|json (default table)
+  --started-at string
+      operation start time in RFC3339 format (default )
+```
+
+### `sbsctl cluster manifest rollout status`
+
+```text
+Usage: sbsctl cluster manifest rollout status [flags]
+
+Flags:
+  --operation string
+      rollout operation JSON path (default )
+  --output string
+      summary output format: table|json (default table)
+```
+
+### `sbsctl cluster manifest standby issue`
+
+```text
+Usage: sbsctl cluster manifest standby issue [flags]
+
+Flags:
+  --at string
+      instruction time in RFC3339 format (default )
+  --operation string
+      input service activation operation JSON path (default )
+  --operation-output string
+      new path for the next operation revision (default )
+  --output string
+      summary output format: table|json (default table)
+```
+
+### `sbsctl cluster manifest standby plan`
+
+```text
+Usage: sbsctl cluster manifest standby plan [flags]
+
+Flags:
+  --approved-artifact-digest value
+      externally approved sha256 digest; repeatable (default )
+  --at string
+      activation plan time in RFC3339 format (default )
+  --caller string
+      operator identity recorded in the activation audit (default )
+  --candidate-node string
+      single standby candidate to activate (default )
+  --failed-active-node string
+      stopped and isolated active service node (default )
+  --file string
+      reviewed cluster manifest YAML path (default )
+  --incident-id string
+      incident/change identity recorded in the activation audit (default )
+  --join-plan string
+      admitted SBSHostJoinPlan JSON path (default )
+  --operation-output string
+      new path for the service activation operation (default )
+  --output string
+      summary output format: table|json (default table)
+  --reason string
+      activation reason recorded in the audit (default )
+  --snapshot string
+      service activation observation snapshot JSON path (default )
+```
+
+### `sbsctl cluster manifest standby status`
+
+```text
+Usage: sbsctl cluster manifest standby status [flags]
+
+Flags:
+  --operation string
+      service activation operation JSON path (default )
+  --output string
+      summary output format: table|json (default table)
+```
+
+### `sbsctl cluster manifest standby verify`
+
+```text
+Usage: sbsctl cluster manifest standby verify [flags]
+
+Flags:
+  --approved-artifact-digest value
+      externally approved sha256 digest; repeatable (default )
+  --at string
+      verification time in RFC3339 format (default )
+  --file string
+      reviewed cluster manifest YAML path (default )
+  --operation string
+      running service activation operation JSON path (default )
+  --operation-output string
+      new path for the verified operation revision (default )
+  --output string
+      summary output format: table|json (default table)
+  --snapshot string
+      post-activation service observation snapshot JSON path (default )
+```
+
+### `sbsctl cluster manifest validate`
+
+```text
+Usage: sbsctl cluster manifest validate [flags]
+
+Flags:
+  --approved-artifact-digest value
+      externally approved sha256 digest; repeatable (default )
+  --file string
+      cluster manifest YAML path (default )
+  --output string
+      output format: table|json (default table)
+```
+
 ### `sbsctl cluster status`
 
 ```text
@@ -219,6 +546,122 @@ Flags:
       print resolved config values and their sources (default false)
   --timeout duration
       request timeout (default 10s)
+```
+
+### `sbsctl host check`
+
+```text
+Usage: sbsctl host check [flags]
+
+Flags:
+  --approved-artifact-digest value
+      externally approved sha256 digest; repeatable (default )
+  --bundle string
+      node-specific rendered bundle directory (default )
+  --facts-file string
+      fixture-only observed host facts JSON instead of --local (default )
+  --local
+      collect read-only facts from this host (default false)
+  --manifest string
+      reviewed cluster manifest YAML path (default )
+  --max-clock-skew duration
+      maximum absolute clock skew (default 2m0s)
+  --minimum-mtu int
+      minimum management and data interface MTU (default 1500)
+  --node-id string
+      exact local node id (default )
+  --output string
+      summary output format: table|json (default table)
+  --plan-id string
+      manifest plan identity (default )
+  --reference-time string
+      coordinator reference time in RFC3339 format (default )
+  --report-output string
+      new path for the full preflight report (default )
+  --signed-report-output string
+      optional new path for an Ed25519 signed report envelope (default )
+  --signing-key-id string
+      host key identity bound by the central trust bundle (default )
+  --signing-private-key string
+      owner-only PKCS#8 Ed25519 private key PEM (default )
+```
+
+### `sbsctl host maintenance enter`
+
+```text
+Usage: sbsctl host maintenance enter [flags]
+
+Flags:
+  --at string
+      entry admission time in RFC3339 format (default )
+  --caller string
+      operator identity (default )
+  --incident-id string
+      incident/change identity (default )
+  --operation-output string
+      new path for the maintenance operation (default )
+  --output string
+      summary output format: table|json (default table)
+  --override-check value
+      exact unsafe check ID to override; repeatable (default )
+  --override-expires-at string
+      override expiry in RFC3339 format, maximum 24h (default )
+  --override-reason string
+      specific unsafe-check override reason (default )
+  --plan string
+      reviewed host maintenance plan JSON path (default )
+  --reason string
+      maintenance entry reason (default )
+```
+
+### `sbsctl host maintenance exit`
+
+```text
+Usage: sbsctl host maintenance exit [flags]
+
+Flags:
+  --at string
+      exit admission time in RFC3339 format (default )
+  --operation string
+      enter-ready maintenance operation JSON path (default )
+  --operation-output string
+      new path for the exit-ready operation revision (default )
+  --output string
+      summary output format: table|json (default table)
+  --preflight string
+      host maintenance exit preflight JSON path (default )
+```
+
+### `sbsctl host maintenance plan`
+
+```text
+Usage: sbsctl host maintenance plan [flags]
+
+Flags:
+  --approved-artifact-digest value
+      externally approved sha256 digest; repeatable (default )
+  --at string
+      plan creation time in RFC3339 format (default )
+  --manifest string
+      reviewed cluster manifest YAML path (default )
+  --output string
+      summary output format: table|json (default table)
+  --plan-output string
+      new path for the maintenance plan (default )
+  --snapshot string
+      host maintenance safety snapshot JSON path (default )
+```
+
+### `sbsctl host maintenance status`
+
+```text
+Usage: sbsctl host maintenance status [flags]
+
+Flags:
+  --operation string
+      host maintenance operation JSON path (default )
+  --output string
+      summary output format: table|json (default table)
 ```
 
 ### `sbsctl iscsi initiator allow`
@@ -1345,6 +1788,8 @@ Flags:
       print resolved config values and their sources (default false)
   --timeout duration
       request timeout (default 10s)
+  --total-movements uint
+      max total concurrent repair, rebalance, and drain movements (default 0)
 ```
 
 ### `sbsctl node drain`
@@ -1365,6 +1810,8 @@ Flags:
       node id (default )
   --reason string
       reason (default drain)
+  --request-id string
+      durable request identity; enables safe response-loss recovery (default )
   --sbs-cluster-id string
       sbs cluster id (default )
   --sbs-service-endpoint string
@@ -1391,6 +1838,8 @@ Flags:
       path to context file (default )
   --node-id string
       node id (default )
+  --operation-id string
+      node drain operation id (default )
   --output string
       output format: table|json (default )
   --sbs-cluster-id string
@@ -1475,6 +1924,10 @@ Flags:
 Usage: sbsctl node list [flags]
 
 Flags:
+  --all
+      explicitly follow node pages within --budget (default false)
+  --budget uint
+      maximum node records to retrieve with --all (default 0)
   --cluster-id string
       cluster id (default )
   --context string
@@ -1485,6 +1938,12 @@ Flags:
       include removed membership tombstones (default false)
   --output string
       output format: table|json (default )
+  --page-size uint
+      maximum nodes in one page (1..512) (default 128)
+  --page-token string
+      opaque token returned by a previous node list page (default )
+  --reason string
+      operator reason required with --all (default )
   --sbs-cluster-id string
       sbs cluster id (default )
   --sbs-service-endpoint string
@@ -1677,6 +2136,36 @@ Flags:
       zone (default )
 ```
 
+### `sbsctl operations find`
+
+```text
+Usage: sbsctl operations find [flags]
+
+Flags:
+  --cluster-id string
+      cluster id (default )
+  --context string
+      context name inside context file (default )
+  --context-file string
+      path to context file (default )
+  --kind string
+      operation kind; currently node.drain (default )
+  --node-id string
+      target node id (default )
+  --output string
+      output format: table|json (default )
+  --request-id string
+      durable request identity (default )
+  --sbs-cluster-id string
+      sbs cluster id (default )
+  --sbs-service-endpoint string
+      cluster-wide sbs-admin gRPC endpoint (default )
+  --show-config-sources
+      print resolved config values and their sources (default false)
+  --timeout duration
+      request timeout (default 10s)
+```
+
 ### `sbsctl operations list`
 
 ```text
@@ -1693,6 +2182,10 @@ Flags:
       optional operation kind filter (default )
   --output string
       output format: table|json (default )
+  --page-size uint
+      maximum operation records scanned in one page (1..512) (default 128)
+  --page-token string
+      opaque token returned by a previous operations list page (default )
   --sbs-cluster-id string
       sbs cluster id (default )
   --sbs-service-endpoint string
@@ -1703,6 +2196,10 @@ Flags:
       optional state filter: queued|running|completed|failed|canceled (default )
   --timeout duration
       request timeout (default 10s)
+  --updated-after string
+      only operations updated after RFC3339 time (default )
+  --updated-before string
+      only operations updated before RFC3339 time (default )
 ```
 
 ### `sbsctl operations show`
@@ -1745,6 +2242,10 @@ Flags:
       path to context file (default )
   --output string
       output format: table|json (default )
+  --page-size uint
+      maximum active rebalance records scanned in one page (1..512) (default 128)
+  --page-token string
+      opaque token returned by a previous rebalance list page (default )
   --sbs-cluster-id string
       sbs cluster id (default )
   --sbs-service-endpoint string
@@ -1769,6 +2270,10 @@ Flags:
       path to context file (default )
   --output string
       output format: table|json (default )
+  --page-size uint
+      maximum active repair records scanned in one page (1..512) (default 128)
+  --page-token string
+      opaque token returned by a previous repair list page (default )
   --sbs-cluster-id string
       sbs cluster id (default )
   --sbs-service-endpoint string
@@ -2417,8 +2922,14 @@ Flags:
       context name inside context file (default )
   --context-file string
       path to context file (default )
+  --health string
+      volume health filter: healthy|degraded|repairing|rebalancing|blocked (default )
   --output string
       output format: table|json (default )
+  --page-size uint
+      maximum catalog records scanned in one page (1..512) (default 128)
+  --page-token string
+      opaque token returned by a previous volume list page (default )
   --sbs-cluster-id string
       sbs cluster id (default )
   --sbs-service-endpoint string
@@ -2427,6 +2938,8 @@ Flags:
       print resolved config values and their sources (default false)
   --timeout duration
       request timeout (default 10s)
+  --topology-mode string
+      topology mode filter (default )
 ```
 
 ### `sbsctl volume placement`

@@ -9,6 +9,7 @@ import (
 	"github.com/nosway/namrbd/internal/depavail"
 	"io"
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,11 +64,12 @@ type Config struct {
 	DataplaneSessionKey string
 	DataplaneTokenTTL   time.Duration
 	// OnDetachSuccess is called after successful detach (e.g. to revoke dataplane v2 sessions).
-	OnDetachSuccess  func(volumeID uint64)
-	ClusterNodeDebug *clustercontrol.Controller
-	MetadataRepo     service.MetadataRepository
-	EtcdPressure     func() EtcdPressureSnapshot
-	AttachAdmission  AttachAdmissionFunc
+	OnDetachSuccess           func(volumeID uint64)
+	ClusterNodeDebug          *clustercontrol.Controller
+	MetadataRepo              service.MetadataRepository
+	EtcdPressure              func() EtcdPressureSnapshot
+	AttachAdmission           AttachAdmissionFunc
+	GatewayAdminAuthorization GatewayAdminAuthorizationFunc
 
 	PerformanceAdmission         PerformanceAdmissionConfig
 	PerformanceBudgetLeaseClient PerformanceBudgetLeaseClient
@@ -1036,8 +1038,12 @@ func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request, volumeID u
 	}
 	phase = "status_lookup"
 	phaseStarted = time.Now()
-	status := s.lookupVolumeStatus(r.Context(), volumeID)
+	status, err := s.reconcileAttachPathPlanStatus(r.Context(), volumeID)
 	statusLookupDuration = time.Since(phaseStarted)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
 	phase = "manifest_build"
 	phaseStarted = time.Now()
 	manifest := s.volumeManifest(r.Context(), v, status, nil)
@@ -1759,6 +1765,33 @@ func (s *Server) lookupVolumeStatus(ctx context.Context, volumeID uint64) *servi
 		return nil
 	}
 	return &status
+}
+
+func (s *Server) reconcileAttachPathPlanStatus(ctx context.Context, volumeID uint64) (*service.VolumeStatusRecord, error) {
+	if s.cfg.MetadataRepo == nil {
+		return nil, nil
+	}
+	status, err := s.cfg.MetadataRepo.GetVolumeStatus(ctx, volumeID)
+	if err != nil {
+		return nil, err
+	}
+	gateways, err := s.cfg.MetadataRepo.ListGateways(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(gateways) == 0 {
+		return &status, nil
+	}
+	next, _, _ := service.ReconcileVolumePathPlanStatus(status, gateways)
+	if next.PathPlanRevision == 0 || len(next.DesiredActiveGatewaySet) == 0 || len(next.ObservedActiveGatewaySet) == 0 {
+		return nil, fmt.Errorf("attach path plan is unavailable for volume %s", service.CanonicalVolumeID(volumeID))
+	}
+	if !reflect.DeepEqual(status, next) {
+		if err := s.cfg.MetadataRepo.PutVolumeStatus(ctx, next); err != nil {
+			return nil, err
+		}
+	}
+	return &next, nil
 }
 
 func (s *Server) expandManifestWithDiscovery(ctx context.Context, volumeID uint64, manifest map[string]any) (map[string]any, error) {

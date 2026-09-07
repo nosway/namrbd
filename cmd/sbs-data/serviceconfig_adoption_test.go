@@ -101,7 +101,7 @@ func TestDurabilityShortcutsRejectedAtScale(t *testing.T) {
 
 func TestNamedDurabilityGateFlags(t *testing.T) {
 	for _, name := range []string{
-		"enable-lab-store-debug", "lab-disable-idempotency-sync",
+		"enable-lab-store-debug", "enable-lab-physical-inspection", "enable-lab-physical-cleanup", "lab-disable-idempotency-sync",
 		"lab-cache-open-volume-spec", "lab-disable-physical-write-idempotency",
 	} {
 		if _, ok := sbsDataLabFlagsRejectedAtScale[name]; !ok {

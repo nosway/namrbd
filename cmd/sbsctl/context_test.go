@@ -102,8 +102,8 @@ func TestContextEnvOverridesFile(t *testing.T) {
 			SBSClusterID: "sbs-from-file",
 		},
 	}
-	t.Setenv("SBS_CLUSTER_ID", "sbs-from-env")
-	if got := defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"); got != "sbs-from-env" {
+	t.Setenv("NAMRBD_SBS_CLUSTER_ID", "sbs-from-env")
+	if got := defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"); got != "sbs-from-env" {
 		t.Fatalf("fieldValue=%q want=sbs-from-env", got)
 	}
 }
@@ -111,7 +111,7 @@ func TestContextEnvOverridesFile(t *testing.T) {
 func TestCanonicalEnvironmentSourceIsReported(t *testing.T) {
 	t.Setenv("NAMRBD_SBSCTL_OUTPUT", "json")
 	defaults := cliDefaults{}
-	setting := defaults.fieldSetting("output", "output", "table", "SBS_OUTPUT", "NAMRBD_OUTPUT")
+	setting := defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT")
 	if setting.Value != "json" || setting.Source != "env:NAMRBD_SBSCTL_OUTPUT" {
 		t.Fatalf("setting=%+v", setting)
 	}
@@ -125,15 +125,15 @@ func TestSourceForFlagPrefersFlagOverEnvAndContext(t *testing.T) {
 			SBSClusterID: "sbs-from-context",
 		},
 	}
-	t.Setenv("SBS_CLUSTER_ID", "sbs-from-env")
+	t.Setenv("NAMRBD_SBS_CLUSTER_ID", "sbs-from-env")
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "")
+	fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "")
 	if err := fs.Parse([]string{"--sbs-cluster-id", "sbs-from-flag"}); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	setting := sourceForFlag(fs, defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "SBS_CLUSTER_ID", "NAMRBD_SBS_CLUSTER_ID"), "sbs-cluster-id")
+	setting := sourceForFlag(fs, defaults.fieldSetting("sbs_cluster_id", "sbs-cluster-id", "", "NAMRBD_SBS_CLUSTER_ID"), "sbs-cluster-id")
 	if setting.Source != "flag:--sbs-cluster-id" {
 		t.Fatalf("source=%q want=%q", setting.Source, "flag:--sbs-cluster-id")
 	}

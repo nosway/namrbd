@@ -6,7 +6,7 @@ This guide provides first-response procedures for NAMRBD operational failures.
 It uses a **Symptom - Cause - Resolution - Verification** structure and keeps
 data-preserving, read-only inspection ahead of mutation.
 
-The replicated userspace gateway path is the current validated v1.0 volume
+The replicated userspace gateway path is the current validated v1.1 volume
 path. Kernel, Kubernetes CSI, and iSCSI paths are available in public source but
 have narrower validation boundaries. Check the
 [Compatibility Matrix](compatibility-matrix.md) and
@@ -406,7 +406,71 @@ iscsiadm -m node -T "$TARGET_IQN" -p "$PORTAL" --login
 - Write, flush, readback, logout, and cleanup succeed with `error_count=0`.
 - Reconnect loops and new SCSI sense errors are absent from both sides' logs.
 
-## 8. FAQ
+## 8. Bounded Cluster View Or Fleet Manifest Failure
+
+### Symptoms
+
+- `/api/v1/sbs/cluster` reports `partial`, `stale`, or
+  `rebuild_required`, or its source and baseline revisions do not agree.
+- A node or volume page token is rejected as invalid or revision-mismatched.
+- `sbs_service_tikv_operations_total{operation="full_scan"}` or legacy
+  expensive-call counters increase during routine polling.
+- Fleet health reports `SBS_HOST_CHECK_FAILED`, `SBS_CONFIG_DRIFT`,
+  `SBS_STRAY_NODE`, `SBS_STORAGE_CLAIM_MISMATCH`,
+  `SBS_FLEET_CHECK_STALE`, or `SBS_APPLY_PAUSED`.
+
+### Diagnosis
+
+Capture the bounded aggregate and related metrics before changing state:
+
+```bash
+curl -fsS http://service-01.example.com:9081/api/v1/sbs/cluster
+curl -fsS http://service-01.example.com:9081/metrics
+sbsctl node list --page-size 128 --output json
+sbsctl volume list --health degraded --page-size 128 --output json
+```
+
+Record projection health/reason, source and baseline revisions, revision lag,
+freshness, request/detail class, full/nested completion counts, TiKV operation
+classes, and first/last error. For manifest failures also preserve the manifest
+digest, plan id, approved artifact digests, signed host reports, trust bundle,
+join plan, rollout revision, and the exact stable health code. Redact private
+keys and secret file contents.
+
+### Resolution
+
+1. Do not replace a degraded aggregate with a raw TiKV scan, loop an unpaged
+   compatibility call, raise the maximum page size, or manually edit summary,
+   outbox, work-ready, or placement-by-node keys.
+2. If a page token no longer matches the catalog revision or filters, discard
+   that enumeration result and deliberately start a new page sequence. Do not
+   combine items from the two source revisions as one snapshot.
+3. Restore `sbs-service` leadership and TiKV health first. A summary rebuild is
+   a cursor-bounded, revision-pinned product workflow; do not emulate it by
+   deleting derived keys or running an ad-hoc full scan.
+4. For drift, stray-node, or storage-claim findings, compare the observed host
+   against the reviewed canonical manifest and node bundle. Correct the desired
+   state or host, then rerun validate, render, plan, signed host check, and
+   central admission. Keep apply paused until every required report is current.
+5. Manifest validate, render, plan, check/admit, and file-backed rollout state
+   transitions do not mutate TiKV, payload storage, or daemons. Actual transport,
+   provisioning, and service control must remain an explicitly reviewed
+   external action.
+
+### Verification
+
+- The aggregate becomes `ready` with `partial=false`, `stale=false`, and
+  `rebuild_required=false`; source/baseline revisions and freshness are
+  plausible for the observed workload.
+- Routine refresh shows no unexpected full or nested completion and no new
+  admitted legacy expensive call.
+- Page tokens advance with one consistent revision and point lookups identify
+  the intended node or volume.
+- Fleet health counts return to the expected state, signed report coverage is
+  exact, and any rollout resume carries an operator reason and a new evidence
+  revision.
+
+## 9. FAQ
 
 ### Should I restart every NAMRBD process after an incident?
 
@@ -453,7 +517,7 @@ include the sanitized evidence bundle. Use the private process in the
 [security policy](https://github.com/nosway/namrbd/blob/main/SECURITY.md) for
 vulnerabilities.
 
-## 9. Related Guides
+## 10. Related Guides
 
 - [Administrator Guide](admin-guide.md)
 - [Compatibility Matrix](compatibility-matrix.md)

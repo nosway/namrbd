@@ -2,6 +2,8 @@ package control
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -143,6 +145,128 @@ func TestControllerSetNodeHealthTriggersRepairScan(t *testing.T) {
 	if transition.State != metadata.PlacementTransitionQueued || transition.TargetReplicaSetID != "rs-1-repair-node-c" {
 		t.Fatalf("transition=%+v", transition)
 	}
+}
+
+func TestControllerReconcileNodeHealthTransitionsForNodePagesAndResumes(t *testing.T) {
+	kv, err := metadata.OpenPebbleKV(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenPebbleKV: %v", err)
+	}
+	defer kv.Close()
+	repo := metadata.NewRepository(kv, "phase-ad-health-affected")
+	ctx := context.Background()
+	for i, nodeID := range []string{"node-a", "node-b", "node-c", "node-d", "node-e", "node-f"} {
+		if err := repo.PutNodeMembership(ctx, metadata.NodeMembershipRecord{
+			NodeID: nodeID, Zone: fmt.Sprintf("zone-%d", i), Host: fmt.Sprintf("host-%d", i),
+			LifecycleState: metadata.NodeLifecycleActive, HealthState: metadata.NodeHealthHealthy,
+		}); err != nil {
+			t.Fatalf("PutNodeMembership(%s): %v", nodeID, err)
+		}
+	}
+	putVolume := func(volumeID string) {
+		t.Helper()
+		if err := repo.PutVolumeState(ctx, metadata.VolumeState{
+			VolumeID: volumeID, Epoch: 1, Revision: 1, PlacementPolicyID: "test",
+			ProtectionPolicy: "rf3", Status: metadata.VolumeStatusHealthy,
+		}); err != nil {
+			t.Fatalf("PutVolumeState(%s): %v", volumeID, err)
+		}
+	}
+	putPlacement := func(volumeID, placementRef, replicaSetID, primary string, extentID uint64, nodes ...string) {
+		t.Helper()
+		if err := repo.PutExtentMapping(ctx, metadata.ExtentMappingRecord{
+			VolumeID: volumeID, ExtentID: extentID, LogicalOffset: (extentID - 1) * 8,
+			LengthBytes: 8, ChunkID: extentID, PlacementRef: placementRef, Revision: 1,
+		}); err != nil {
+			t.Fatalf("PutExtentMapping(%s/%d): %v", volumeID, extentID, err)
+		}
+		replicas := make([]metadata.ReplicaDescriptor, 0, len(nodes))
+		for _, nodeID := range nodes {
+			role := metadata.ReplicaRoleSecondary
+			if nodeID == primary {
+				role = metadata.ReplicaRolePrimary
+			}
+			replicas = append(replicas, metadata.ReplicaDescriptor{NodeID: nodeID, ReplicaID: "rep-" + placementRef + "-" + nodeID, Role: role})
+		}
+		if err := repo.PutReplicaSet(ctx, metadata.ReplicaSetState{
+			ReplicaSetID: replicaSetID, VolumeID: volumeID, PlacementRef: placementRef,
+			Epoch: 1, PrimaryReplicaID: "rep-" + placementRef + "-" + primary,
+			WriteQuorum: 2, ReadQuorum: 1, Replicas: replicas,
+		}); err != nil {
+			t.Fatalf("PutReplicaSet(%s): %v", replicaSetID, err)
+		}
+	}
+	putVolume("00a1b2c3")
+	putPlacement("00a1b2c3", "pl-1", "rs-1", "node-c", 1, "node-a", "node-b", "node-c")
+	putPlacement("00a1b2c3", "pl-2", "rs-2", "node-a", 2, "node-a", "node-b", "node-c")
+	putVolume("00a1b2c4")
+	putPlacement("00a1b2c4", "pl-unrelated", "rs-unrelated", "node-d", 1, "node-d", "node-e", "node-f")
+	promoteMaintenanceIndexForControlTest(t, ctx, repo, "epoch-health-affected")
+
+	controller := NewFromRepository(repo)
+	controller.now = func() time.Time { return time.Unix(300, 0) }
+	node, err := controller.SetNodeHealthOnly(ctx, "node-c", metadata.NodeHealthDown)
+	if err != nil || node.MembershipRevision == 0 {
+		t.Fatalf("SetNodeHealthOnly node=%+v err=%v", node, err)
+	}
+	inputCount := 0
+	failovers := 0
+	enqueued := 0
+	completed := false
+	for attempt := 0; attempt < 5; attempt++ {
+		controller = NewFromRepository(repo)
+		page, err := controller.ReconcileNodeHealthTransitionsForNode(ctx, "node-c", 1)
+		if err != nil {
+			t.Fatalf("affected page %d: %v", attempt, err)
+		}
+		if page.InputCount > 1 || page.ProcessedCount > 1 || page.RangePageCount > 1 || page.BackendFullScanCount != 0 || page.FullCompletionCount != 0 || page.NestedCompletionCount != 0 {
+			t.Fatalf("unbounded affected page=%+v", page)
+		}
+		inputCount += page.InputCount
+		failovers += page.PrimaryFailoverCount
+		enqueued += page.RepairEnqueuedCount
+		if page.Completed {
+			completed = true
+			break
+		}
+	}
+	if !completed || inputCount != 2 || failovers != 1 || enqueued != 2 {
+		t.Fatalf("completed=%t input=%d failovers=%d enqueued=%d", completed, inputCount, failovers, enqueued)
+	}
+	for _, placementRef := range []string{"pl-1", "pl-2"} {
+		transition, err := repo.GetPlacementTransition(ctx, "00a1b2c3", placementRef)
+		if err != nil || transition.State != metadata.PlacementTransitionQueued {
+			t.Fatalf("transition(%s)=%+v err=%v", placementRef, transition, err)
+		}
+	}
+	if _, err := repo.GetPlacementTransition(ctx, "00a1b2c4", "pl-unrelated"); !errors.Is(err, metadata.ErrNotFound) {
+		t.Fatalf("unrelated transition error=%v", err)
+	}
+	unrelated, err := repo.GetVolumeState(ctx, "00a1b2c4")
+	if err != nil || unrelated.Status != metadata.VolumeStatusHealthy || unrelated.Epoch != 1 {
+		t.Fatalf("unrelated volume=%+v err=%v", unrelated, err)
+	}
+	replay, err := NewFromRepository(repo).ReconcileNodeHealthTransitionsForNode(ctx, "node-c", 1)
+	if err != nil || !replay.Completed || replay.InputCount != 0 || replay.RepairEnqueuedCount != 0 || replay.PrimaryFailoverCount != 0 {
+		t.Fatalf("replay=%+v err=%v", replay, err)
+	}
+}
+
+func promoteMaintenanceIndexForControlTest(t *testing.T, ctx context.Context, repo *metadata.Repository, epoch string) {
+	t.Helper()
+	for attempt := 0; attempt < 100; attempt++ {
+		page, err := repo.RunMaintenanceIndexRebuildPage(ctx, epoch, 16, 128)
+		if err != nil {
+			t.Fatalf("RunMaintenanceIndexRebuildPage(%d): %v", attempt, err)
+		}
+		if page.Completed {
+			if _, err := repo.PromoteMaintenanceIndexRebuild(ctx, epoch); err != nil {
+				t.Fatalf("PromoteMaintenanceIndexRebuild: %v", err)
+			}
+			return
+		}
+	}
+	t.Fatal("maintenance index rebuild did not complete")
 }
 
 func TestControllerGetMetrics(t *testing.T) {

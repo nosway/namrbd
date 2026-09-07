@@ -283,6 +283,8 @@ install_csi_chart() {
 		--timeout "$timeout" \
 		--set "image.repository=${image_repository}" \
 		--set "image.tag=${image_tag}" \
+		--set-string "image.digest=" \
+		--set "compatibility.enforceImmutableImages=false" \
 		--set "image.pullPolicy=IfNotPresent" \
 		--set "config.clusterID=${cluster_id}" \
 		--set "config.sbsClusterID=${sbs_cluster_id}" \

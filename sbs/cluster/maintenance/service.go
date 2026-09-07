@@ -132,6 +132,15 @@ func isTransitionPreconditionError(err error) bool {
 	return errors.As(err, &precondition)
 }
 
+const transitionWriterContextConflictMessage = "volume already opened by different writer context"
+
+func isTransitionWriterContextConflict(err error) bool {
+	var sbsErr *service.SBSError
+	return errors.As(err, &sbsErr) &&
+		sbsErr.Code == service.SBSErrorCodeAttachmentMismatch &&
+		strings.TrimSpace(sbsErr.Message) == transitionWriterContextConflictMessage
+}
+
 func isTransitionObsoleteError(err error) bool {
 	var obsolete *transitionObsoleteError
 	return errors.As(err, &obsolete)
@@ -228,6 +237,16 @@ type EvaluatedExtent struct {
 	IncompleteUpdatedAt  int64
 	RecentMutation       bool
 	RecentUpdatedAt      int64
+}
+
+type NodePlacementHealthResult struct {
+	NodeID                    string
+	VolumeID                  string
+	PlacementRef              string
+	ExtentCount               int
+	PrimaryFailoverCommitted  bool
+	RepairEnqueued            bool
+	SkippedExistingTransition bool
 }
 
 func compareEvaluatedExtentPriority(left, right *EvaluatedExtent) int {
@@ -774,6 +793,165 @@ func (s *Service) EvaluateExtentHealth(ctx context.Context, volumeID string, ext
 	return s.evaluateExtentHealthWithContext(ctx, vc, extentID)
 }
 
+// EvaluateExtentHealthSet reuses one volume evaluation snapshot for a bounded
+// affected set. Callers must bound extentIDs before entry; this method never
+// discovers or completes another page on their behalf.
+func (s *Service) EvaluateExtentHealthSet(ctx context.Context, volumeID string, extentIDs []uint64) ([]*EvaluatedExtent, error) {
+	if len(extentIDs) == 0 {
+		return nil, nil
+	}
+	vc, err := s.loadVolumeEvaluationContext(ctx, volumeID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*EvaluatedExtent, 0, len(extentIDs))
+	for _, extentID := range extentIDs {
+		evaluated, err := s.evaluateExtentHealthWithContext(ctx, vc, extentID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, evaluated)
+	}
+	return result, nil
+}
+
+// ReconcileNodePlacementHealth evaluates exactly one placement discovered from
+// a changed node's placement index. It does not enumerate another volume or
+// discover another placement.
+func (s *Service) ReconcileNodePlacementHealth(ctx context.Context, nodeID string, index metadata.PlacementByNodeRecord) (NodePlacementHealthResult, error) {
+	result := NodePlacementHealthResult{
+		NodeID: nodeID, VolumeID: index.VolumeID, PlacementRef: index.PlacementRef,
+	}
+	current, err := s.store.GetReplicaSet(ctx, index.VolumeID, index.ReplicaSetID)
+	if err != nil {
+		return result, err
+	}
+	if current.PlacementRef != index.PlacementRef || current.Epoch != index.ReplicaSetEpoch || !replicaSetContainsNode(current, nodeID) {
+		return result, fmt.Errorf("%w: changed-node placement authority differs", metadata.ErrMaintenanceIndexChanged)
+	}
+	vc, err := s.loadVolumeEvaluationContext(ctx, index.VolumeID)
+	if err != nil {
+		return result, err
+	}
+	currentByPlacement, found := vc.replicaSetByPlacement[index.PlacementRef]
+	if !found || currentByPlacement.ReplicaSetID != current.ReplicaSetID || currentByPlacement.Epoch != current.Epoch {
+		return result, fmt.Errorf("%w: changed-node replica set moved during evaluation", metadata.ErrMaintenanceIndexChanged)
+	}
+	for _, mapping := range vc.mappings {
+		if mapping.PlacementRef == index.PlacementRef {
+			result.ExtentCount++
+		}
+	}
+	if result.ExtentCount == 0 {
+		// Transition targets and retained read-view replica sets are indexed too.
+		// They do not own active extent mappings and are reconciled by their
+		// transition/read-view lifecycle rather than node-health repair.
+		return result, nil
+	}
+	primaryHealthy, healthyReplicas, nextPrimary, err := s.evaluatePrimaryFailover(ctx, current)
+	if err != nil {
+		return result, err
+	}
+	if !primaryHealthy && healthyReplicas >= int(current.WriteQuorum) && nextPrimary != "" {
+		nextVolume, nextReplicaSet, err := s.store.CommitPrimaryFailover(ctx, metadata.CommitPrimaryFailoverRequest{
+			VolumeID: index.VolumeID, ReplicaSetID: current.ReplicaSetID,
+			ExpectedVolumeEpoch: vc.volume.Epoch, ExpectedReplicaSetEpoch: current.Epoch,
+			ExpectedPrimaryReplicaID: current.PrimaryReplicaID, NewPrimaryReplicaID: nextPrimary,
+		})
+		if err != nil {
+			return result, err
+		}
+		current = nextReplicaSet
+		vc.volume = nextVolume
+		vc.replicaSetByPlacement[current.PlacementRef] = current
+		for i := range vc.replicaSets {
+			if vc.replicaSets[i].ReplicaSetID == current.ReplicaSetID {
+				vc.replicaSets[i] = current
+				break
+			}
+		}
+		result.PrimaryFailoverCommitted = true
+	}
+	var candidates []*EvaluatedExtent
+	blocked := false
+	for _, mapping := range vc.mappings {
+		if mapping.PlacementRef != index.PlacementRef {
+			continue
+		}
+		evaluated, err := s.evaluateExtentHealthWithContext(ctx, vc, mapping.ExtentID)
+		if err != nil {
+			return result, err
+		}
+		switch evaluated.State {
+		case ExtentHealthBlocked:
+			blocked = true
+		case ExtentHealthDegradedWritable:
+			candidates = append(candidates, evaluated)
+		}
+	}
+	if blocked {
+		if err := s.raiseAffectedVolumeStatus(ctx, vc.volume, metadata.VolumeStatusBlocked); err != nil {
+			return result, err
+		}
+		return result, nil
+	}
+	if len(candidates) == 0 {
+		return result, nil
+	}
+	if err := s.raiseAffectedVolumeStatus(ctx, vc.volume, metadata.VolumeStatusDegraded); err != nil {
+		return result, err
+	}
+	transition, err := s.store.GetPlacementTransition(ctx, index.VolumeID, index.PlacementRef)
+	if err == nil {
+		if transition.State == metadata.PlacementTransitionQueued || transition.State == metadata.PlacementTransitionRunning || transition.State == metadata.PlacementTransitionPaused || transition.State == metadata.PlacementTransitionFailed || transition.State == metadata.PlacementTransitionCompleted {
+			result.SkippedExistingTransition = true
+			return result, nil
+		}
+		return result, fmt.Errorf("%w: invalid existing placement transition state %q", metadata.ErrMaintenanceIndexInvalid, transition.State)
+	}
+	if !errors.Is(err, metadata.ErrNotFound) {
+		return result, err
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return compareEvaluatedExtentPriority(candidates[i], candidates[j]) < 0
+	})
+	target, ok, err := s.planRepairTargetReplicaSetWithContext(ctx, vc, candidates[0])
+	if err != nil {
+		return result, err
+	}
+	if !ok {
+		return result, nil
+	}
+	if err := s.store.PutReplicaSet(ctx, target); err != nil {
+		return result, err
+	}
+	if _, err := s.enqueueRepairFromEvaluated(ctx, candidates[0], target.ReplicaSetID); err != nil {
+		return result, err
+	}
+	result.RepairEnqueued = true
+	return result, nil
+}
+
+func (s *Service) raiseAffectedVolumeStatus(ctx context.Context, volume metadata.VolumeState, next metadata.VolumeStatus) error {
+	if volume.Status == metadata.VolumeStatusBlocked || volume.Status == next {
+		return nil
+	}
+	if next == metadata.VolumeStatusDegraded && volume.Status != metadata.VolumeStatusHealthy {
+		return nil
+	}
+	volume.Status = next
+	return s.store.PutVolumeState(ctx, volume)
+}
+
+func replicaSetContainsNode(replicaSet metadata.ReplicaSetState, nodeID string) bool {
+	for _, replica := range replicaSet.Replicas {
+		if replica.NodeID == nodeID {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) ReconcileVolumeStatus(ctx context.Context, volumeID string) (metadata.VolumeState, error) {
 	volumeState, err := s.store.GetVolumeState(ctx, volumeID)
 	if err != nil {
@@ -1173,6 +1351,10 @@ func (s *Service) ApplyTransition(ctx context.Context, volumeID, placementRef st
 	if err != nil {
 		return metadata.PlacementTransitionRecord{}, err
 	}
+	retiredTargets, err := retiredReplicaTargets(currentReplicaSet, targetReplicaSet)
+	if err != nil {
+		return metadata.PlacementTransitionRecord{}, err
+	}
 	vc, err := s.loadVolumeEvaluationContext(ctx, volumeID)
 	if err != nil {
 		return metadata.PlacementTransitionRecord{}, err
@@ -1244,6 +1426,8 @@ func (s *Service) ApplyTransition(ctx context.Context, volumeID, placementRef st
 	operation.PlacementRevision = uint64(transition.Attempt)
 	operation.WriterFencingEpoch = 1
 	operation.IdempotencyKey = transition.PlacementRef
+	operation.RetiredReplicaTargetsResolved = true
+	operation.RetiredReplicaTargets = retiredTargets
 	operation.AffectedExtentIDs = unionSortedUint64s(operation.AffectedExtentIDs, affectedExtentIDs)
 	operation.AffectedPageNos = unionSortedUint64s(operation.AffectedPageNos, affectedPageNos)
 	operation.CompletedPageNos = uniqueSortedUint64s(operation.CompletedPageNos)
@@ -1422,7 +1606,45 @@ func (s *Service) ApplyTransition(ctx context.Context, volumeID, placementRef st
 }
 
 func transitionMutationOperationID(transition metadata.PlacementTransitionRecord) string {
-	return fmt.Sprintf("transition-%s", transition.PlacementRef)
+	return metadata.TransitionMutationOperationID(transition.VolumeID, transition.PlacementRef)
+}
+
+func retiredReplicaTargets(current, target metadata.ReplicaSetState) ([]metadata.MutationRetiredReplicaTarget, error) {
+	targetNodeIDs := make(map[string]struct{}, len(target.Replicas))
+	for _, replica := range target.Replicas {
+		if strings.TrimSpace(replica.NodeID) == "" || strings.TrimSpace(replica.ReplicaID) == "" {
+			return nil, fmt.Errorf("transition target replica identity is incomplete")
+		}
+		targetNodeIDs[replica.NodeID] = struct{}{}
+	}
+	retiredByNode := make(map[string]map[string]struct{})
+	for _, replica := range current.Replicas {
+		if strings.TrimSpace(replica.NodeID) == "" || strings.TrimSpace(replica.ReplicaID) == "" {
+			return nil, fmt.Errorf("transition source replica identity is incomplete")
+		}
+		if _, retained := targetNodeIDs[replica.NodeID]; retained {
+			continue
+		}
+		if retiredByNode[replica.NodeID] == nil {
+			retiredByNode[replica.NodeID] = make(map[string]struct{})
+		}
+		retiredByNode[replica.NodeID][replica.ReplicaID] = struct{}{}
+	}
+	nodeIDs := make([]string, 0, len(retiredByNode))
+	for nodeID := range retiredByNode {
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+	sort.Strings(nodeIDs)
+	out := make([]metadata.MutationRetiredReplicaTarget, 0, len(nodeIDs))
+	for _, nodeID := range nodeIDs {
+		replicaIDs := make([]string, 0, len(retiredByNode[nodeID]))
+		for replicaID := range retiredByNode[nodeID] {
+			replicaIDs = append(replicaIDs, replicaID)
+		}
+		sort.Strings(replicaIDs)
+		out = append(out, metadata.MutationRetiredReplicaTarget{NodeID: nodeID, SourceReplicaIDs: replicaIDs})
+	}
+	return out, nil
 }
 
 func transitionPageBatchMutationOperationID(transition metadata.PlacementTransitionRecord, pageNo uint64) string {

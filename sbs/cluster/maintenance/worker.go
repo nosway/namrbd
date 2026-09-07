@@ -11,12 +11,14 @@ import (
 )
 
 type WorkerConfig struct {
-	VolumeID       string
-	ReplicaClients map[string]service.SBSClient
-	GatewayID      string
-	HostID         string
-	RetryBackoff   time.Duration
-	PollInterval   time.Duration
+	VolumeID          string
+	ReplicaClients    map[string]service.SBSClient
+	GatewayID         string
+	HostID            string
+	WorkLeaseOwner    string
+	WorkLeaseDuration time.Duration
+	RetryBackoff      time.Duration
+	PollInterval      time.Duration
 }
 
 type Worker struct {
@@ -32,6 +34,9 @@ func NewWorker(svc *Service, cfg WorkerConfig) *Worker {
 	}
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 1 * time.Second
+	}
+	if cfg.WorkLeaseDuration <= 0 {
+		cfg.WorkLeaseDuration = 2 * time.Minute
 	}
 	return &Worker{
 		svc: svc,
@@ -64,7 +69,6 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	candidates := make([]metadata.PlacementTransitionRecord, 0, len(transitions))
-	nowUnix := w.now().Unix()
 	for _, transition := range transitions {
 		switch transition.State {
 		case metadata.PlacementTransitionQueued, metadata.PlacementTransitionRunning:
@@ -112,7 +116,77 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		return candidates[i].LastProgressAtUnix < candidates[j].LastProgressAtUnix
 	})
 
-	transition := candidates[0]
+	return w.runTransition(ctx, candidates[0])
+}
+
+type maintenanceWorkLeaseStore interface {
+	ValidateMaintenanceWorkLease(ctx context.Context, claim metadata.MaintenanceWorkRecord, leaseOwner string) (metadata.MaintenanceWorkRecord, error)
+	RenewMaintenanceWorkLease(ctx context.Context, claim metadata.MaintenanceWorkRecord, leaseOwner string, leaseDuration time.Duration) (metadata.MaintenanceWorkRecord, error)
+}
+
+// RunClaimedOnce applies exactly the transition identified by a previously
+// claimed work row. It uses point validation only; discovery and scheduling
+// belong to the bounded work-ready index consumer.
+func (w *Worker) RunClaimedOnce(ctx context.Context, claim metadata.MaintenanceWorkRecord) (bool, error) {
+	leaseStore, ok := w.svc.store.(maintenanceWorkLeaseStore)
+	if !ok || w.cfg.WorkLeaseOwner == "" || claim.VolumeID != w.cfg.VolumeID {
+		return false, metadata.ErrMaintenanceWorkLeaseLost
+	}
+	current, err := leaseStore.ValidateMaintenanceWorkLease(ctx, claim, w.cfg.WorkLeaseOwner)
+	if err != nil {
+		return false, err
+	}
+	transition, err := w.svc.store.GetPlacementTransition(ctx, current.VolumeID, current.PlacementRef)
+	if err != nil {
+		return false, err
+	}
+	if transition.VolumeID != current.VolumeID || transition.PlacementRef != current.PlacementRef || transition.Reason != current.Reason || transition.CurrentReplicaSetID != current.CurrentReplicaSetID || transition.TargetReplicaSetID != current.TargetReplicaSetID || (transition.State != metadata.PlacementTransitionQueued && transition.State != metadata.PlacementTransitionRunning) {
+		return false, metadata.ErrMaintenanceWorkStale
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	renewDone := make(chan error, 1)
+	go func() {
+		interval := w.cfg.WorkLeaseDuration / 3
+		if interval < time.Second {
+			interval = time.Second
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		renewClaim := current
+		for {
+			select {
+			case <-runCtx.Done():
+				renewDone <- nil
+				return
+			case <-ticker.C:
+				next, err := leaseStore.RenewMaintenanceWorkLease(runCtx, renewClaim, w.cfg.WorkLeaseOwner, w.cfg.WorkLeaseDuration)
+				if err != nil {
+					cancel()
+					renewDone <- err
+					return
+				}
+				renewClaim = next
+			}
+		}
+	}()
+	worked, runErr := w.runTransition(runCtx, transition)
+	cancel()
+	renewErr := <-renewDone
+	if runErr != nil {
+		return worked, runErr
+	}
+	if renewErr != nil {
+		latest, latestErr := w.svc.store.GetPlacementTransition(ctx, current.VolumeID, current.PlacementRef)
+		if latestErr == nil && latest.State == metadata.PlacementTransitionCompleted {
+			return worked, nil
+		}
+		return worked, renewErr
+	}
+	return worked, nil
+}
+
+func (w *Worker) runTransition(ctx context.Context, transition metadata.PlacementTransitionRecord) (bool, error) {
+	nowUnix := w.now().Unix()
 	if _, err := w.svc.ApplyTransition(ctx, w.cfg.VolumeID, transition.PlacementRef, w.cfg.ReplicaClients, w.cfg.GatewayID, w.cfg.HostID); err != nil {
 		latest, latestErr := w.svc.store.GetPlacementTransition(ctx, w.cfg.VolumeID, transition.PlacementRef)
 		if latestErr == nil {
@@ -143,7 +217,7 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 			)
 			return true, nil
 		}
-		if isTransitionPreconditionError(err) {
+		if isTransitionPreconditionError(err) || isTransitionWriterContextConflict(err) {
 			if transitionPreconditionScope(err) == "target" {
 				replanned, replanErr := w.svc.ReplanTransitionTarget(ctx, w.cfg.VolumeID, transition)
 				if replanErr != nil {

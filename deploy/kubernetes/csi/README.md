@@ -13,7 +13,8 @@ helm upgrade --install namrbd-csi deploy/kubernetes/csi/helm/namrbd-csi \
   --namespace namrbd-system \
   --create-namespace \
   --set image.repository=ghcr.io/nosway/namrbd-csi-driver \
-  --set image.tag=local \
+  --set image.tag=v1.0.0 \
+  --set image.digest=sha256:e6a1e2111f896a54b725bb8f28e19461ad27bd8786d1f682d6ba1b34470fb958 \
   --set config.adminEndpoint=namrbd-sbs-service:9897 \
   --set config.gatewayURL=http://namrbd-gateway:9701
 ```
@@ -21,6 +22,15 @@ helm upgrade --install namrbd-csi deploy/kubernetes/csi/helm/namrbd-csi \
 The chart creates the `CSIDriver`, RBAC, controller `Deployment`, node
 `DaemonSet`, Community replicated `StorageClass`, and `VolumeSnapshotClass` in
 one render.
+
+Release and qualification renders require every driver and sidecar reference
+to retain both its reviewed tag and immutable digest. The chart defaults name
+the selected, unpublished `v1.0.0` driver candidate; it is not a v1.1.0 release
+artifact. Publish an operator-built image and configure its exact digest before
+install. Changing a version, digest, Kubernetes cell, or runtime creates a new
+qualification combination; it is not an in-place patch substitution.
+The chart rejects a missing driver digest and rejects
+`storageClasses.ec63.create=true` unless `edition=enterprise` is explicit.
 
 ## kind PVC Binding Demo
 
@@ -43,6 +53,10 @@ The demo installs only the pieces required for PVC binding:
 - `sidecars.csiSnapshotter.enabled=false`;
 - `sidecars.csiResizer.enabled=false`;
 - `node.enabled=false`.
+
+Because kind loads an unpublished local image, the demo explicitly sets
+`compatibility.enforceImmutableImages=false` and clears `image.digest`. This is
+a development-only exception and its result is not CSI release evidence.
 
 This proves the controller/provisioner path. It intentionally does not mount
 the volume into a workload pod or validate host block-device I/O.

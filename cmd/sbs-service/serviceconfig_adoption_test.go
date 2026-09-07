@@ -35,24 +35,83 @@ func envMap(m map[string]string) serviceconfig.EnvLookup {
 }
 
 type sbsProbe struct {
-	clusterID, nodeID, metadataBackend, grpcListen, pdEndpoints, keyspace string
-	timeout, lease, renew, healthInterval, healthTimeout, healthCooldown  time.Duration
-	trace                                                                 bool
-	batchMax, healthShards, healthConcurrency, healthSuspect, healthDown  int
+	clusterID, sbsClusterID, nodeID, metadataBackend                       string
+	grpcListen, httpListen, payloadRoot, pdEndpoints, keyspace, apiVersion string
+	clusterSummaryState                                                    string
+	timeout, lease, renew, healthInterval, healthTimeout, healthCooldown   time.Duration
+	summaryDegradedAfter, summaryRebuildRequiredAfter                      time.Duration
+	trace, serviceOwned, nativeAllocation, asyncFinalize                   bool
+	batchMax, laneBuckets, healthShards, healthConcurrency                 int
+	healthSuspect, healthDown                                              int
 }
 
 func (p *sbsProbe) binding() sbsServiceConfigBinding {
 	return sbsServiceConfigBinding{
-		ClusterID: &p.clusterID, NodeID: &p.nodeID, MetadataBackend: &p.metadataBackend,
-		GRPCListen:      &p.grpcListen,
+		ClusterID: &p.clusterID, SBSClusterID: &p.sbsClusterID, NodeID: &p.nodeID, MetadataBackend: &p.metadataBackend,
+		GRPCListen: &p.grpcListen, HTTPListen: &p.httpListen, PayloadRoot: &p.payloadRoot,
 		TiKVPDEndpoints: &p.pdEndpoints, TiKVKeyspace: &p.keyspace,
-		TiKVTimeout: &p.timeout, TiKVOperationTrace: &p.trace,
+		TiKVAPIVersion: &p.apiVersion, TiKVTimeout: &p.timeout, TiKVOperationTrace: &p.trace,
 		LeaderLeaseDuration: &p.lease, LeaderRenewInterval: &p.renew,
-		WriteEffectsBatchMax: &p.batchMax,
-		HealthShardCount:     &p.healthShards, HealthConcurrency: &p.healthConcurrency,
+		ServiceOwnedWriteEffects: &p.serviceOwned, NativeAllocationFastPath: &p.nativeAllocation,
+		WriteEffectsBatchMax: &p.batchMax, WriteEffectsLaneBuckets: &p.laneBuckets,
+		AsyncWriteMutationFinalize: &p.asyncFinalize,
+		HealthShardCount:           &p.healthShards, HealthConcurrency: &p.healthConcurrency,
 		HealthInterval: &p.healthInterval, HealthTimeout: &p.healthTimeout,
 		HealthSuspectAfter: &p.healthSuspect, HealthDownAfter: &p.healthDown,
-		HealthRecoveryCooldown: &p.healthCooldown,
+		HealthRecoveryCooldown:             &p.healthCooldown,
+		ClusterSummaryState:                &p.clusterSummaryState,
+		ClusterSummaryDegradedAfter:        &p.summaryDegradedAfter,
+		ClusterSummaryRebuildRequiredAfter: &p.summaryRebuildRequiredAfter,
+	}
+}
+
+func installedEnforcedSummaryConfig(t *testing.T) string {
+	t.Helper()
+	return installedSBSConfig(t, func(body string) string {
+		replacements := []struct {
+			old string
+			new string
+		}{
+			{"cluster_id: namrbd-prod", "cluster_id: namrbd-lab"},
+			{"sbs_cluster_id: sbs-prod", "sbs_cluster_id: sbs-lab-9n"},
+			{"node_id: sbs-svc-01", "node_id: svc-runtime"},
+			{"grpc_listen: 0.0.0.0:9090", "grpc_listen: 0.0.0.0:9443"},
+			{"http_listen: 127.0.0.1:9092", "http_listen: 0.0.0.0:9081"},
+			{"  payload_root: /var/lib/namrbd/sbs\n", ""},
+			{"keyspace: namrbd-prod", "keyspace: summary-validation"},
+			{"api_version: v2", "api_version: v1"},
+			{"timeout_seconds: 5", "timeout_seconds: 3"},
+			{"timeout_seconds: 2", "timeout_seconds: 3"},
+			{"state: disabled", "state: enforced"},
+			{"freshness_degraded_seconds: 300", "freshness_degraded_seconds: 30"},
+			{"freshness_rebuild_required_seconds: 900", "freshness_rebuild_required_seconds: 90"},
+		}
+		for _, replacement := range replacements {
+			body = strings.Replace(body, replacement.old, replacement.new, 1)
+		}
+		return body
+	})
+}
+
+func TestEnforcedClusterSummaryCandidateUsesBoundedBudgets(t *testing.T) {
+	var p sbsProbe
+	if _, err := applySBSServiceConfig(installedEnforcedSummaryConfig(t), p.binding(), map[string]string{}, noEnv); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if p.clusterID != "namrbd-lab" || p.sbsClusterID != "sbs-lab-9n" || p.metadataBackend != "tikv" || p.apiVersion != "v1" {
+		t.Fatalf("authority config not applied: %+v", p)
+	}
+	if p.clusterSummaryState != clusterSummaryStateEnforced || p.summaryDegradedAfter != 30*time.Second || p.summaryRebuildRequiredAfter != 90*time.Second {
+		t.Fatalf("summary gate not enforced: %+v", p)
+	}
+	if !p.serviceOwned || !p.nativeAllocation || p.asyncFinalize || p.batchMax != 64 || p.laneBuckets != 8 {
+		t.Fatalf("write-effect profile differs from bounded candidate: %+v", p)
+	}
+	if p.healthShards != 4 || p.healthConcurrency != 16 || p.healthInterval != 10*time.Second || p.healthTimeout != 3*time.Second {
+		t.Fatalf("bounded health profile differs from candidate: %+v", p)
+	}
+	if p.payloadRoot != "" {
+		t.Fatalf("distributed candidate gave sbs-service a local payload authority: %q", p.payloadRoot)
 	}
 }
 
@@ -80,6 +139,12 @@ func TestConfigSuppliesSettings(t *testing.T) {
 	if p.healthShards != 4 || p.healthConcurrency != 16 || p.healthInterval != 10*time.Second || p.healthTimeout != 2*time.Second || p.healthSuspect != 3 || p.healthDown != 6 || p.healthCooldown != 30*time.Second {
 		t.Errorf("health config not applied: %+v", p)
 	}
+	if p.clusterSummaryState != clusterSummaryStateDisabled {
+		t.Errorf("cluster summary state = %q", p.clusterSummaryState)
+	}
+	if p.summaryDegradedAfter != 5*time.Minute || p.summaryRebuildRequiredAfter != 15*time.Minute {
+		t.Errorf("cluster summary freshness=%s/%s", p.summaryDegradedAfter, p.summaryRebuildRequiredAfter)
+	}
 }
 
 func TestLargeScaleRequiresTiKVMetadataBackend(t *testing.T) {
@@ -90,6 +155,28 @@ func TestLargeScaleRequiresTiKVMetadataBackend(t *testing.T) {
 	if _, err := applySBSServiceConfig(path, p.binding(), map[string]string{}, noEnv); err == nil ||
 		!strings.Contains(err.Error(), "metadata_backend must be tikv") {
 		t.Fatalf("large_scale config accepted Pebble metadata authority: %v", err)
+	}
+}
+
+func TestClusterSummaryStateRejectsUnknownValue(t *testing.T) {
+	path := installedSBSConfig(t, func(body string) string {
+		return strings.Replace(body, "state: disabled", "state: permissive", 1)
+	})
+	var p sbsProbe
+	if _, err := applySBSServiceConfig(path, p.binding(), map[string]string{}, noEnv); err == nil ||
+		!strings.Contains(err.Error(), "summary.state must be disabled, shadow, or enforced") {
+		t.Fatalf("unknown cluster summary state accepted: %v", err)
+	}
+}
+
+func TestClusterSummaryFreshnessThresholdsAreOrdered(t *testing.T) {
+	path := installedSBSConfig(t, func(body string) string {
+		return strings.Replace(body, "freshness_rebuild_required_seconds: 900", "freshness_rebuild_required_seconds: 60", 1)
+	})
+	var p sbsProbe
+	if _, err := applySBSServiceConfig(path, p.binding(), map[string]string{}, noEnv); err == nil ||
+		!strings.Contains(err.Error(), "freshness_rebuild_required_seconds must exceed") {
+		t.Fatalf("unordered cluster summary freshness accepted: %v", err)
 	}
 }
 
@@ -145,14 +232,14 @@ func TestEveryEnvBackedFlagDefers(t *testing.T) {
 	// Spot-check the ones this binding covers end to end.
 	for _, tc := range []struct{ envName, want string }{
 		{"NAMRBD_CLUSTER_ID", "env-cluster"},
-		{"NAMRBD_SBS_ADMIN_ADDR", "127.0.0.1:1"},
+		{"NAMRBD_SBS_SERVICE_GRPC_LISTEN", "127.0.0.1:1"},
 		{"NAMRBD_TIKV_KEYSPACE", "env-keyspace"},
 	} {
 		var p sbsProbe
 		switch tc.envName {
 		case "NAMRBD_CLUSTER_ID":
 			p.clusterID = tc.want
-		case "NAMRBD_SBS_ADMIN_ADDR":
+		case "NAMRBD_SBS_SERVICE_GRPC_LISTEN":
 			p.grpcListen = tc.want
 		case "NAMRBD_TIKV_KEYSPACE":
 			p.keyspace = tc.want
@@ -162,9 +249,9 @@ func TestEveryEnvBackedFlagDefers(t *testing.T) {
 			t.Fatalf("apply: %v", err)
 		}
 		got := map[string]string{
-			"NAMRBD_CLUSTER_ID":     p.clusterID,
-			"NAMRBD_SBS_ADMIN_ADDR": p.grpcListen,
-			"NAMRBD_TIKV_KEYSPACE":  p.keyspace,
+			"NAMRBD_CLUSTER_ID":              p.clusterID,
+			"NAMRBD_SBS_SERVICE_GRPC_LISTEN": p.grpcListen,
+			"NAMRBD_TIKV_KEYSPACE":           p.keyspace,
 		}[tc.envName]
 		if got != tc.want {
 			t.Errorf("%s did not outrank the config file: got %q", tc.envName, got)
@@ -266,6 +353,7 @@ func TestEverySBSServiceConfigFieldIsAccountedFor(t *testing.T) {
 		"sbs_service.tikv.tls.enable", "sbs_service.tikv.tls.cert_file", "sbs_service.tikv.tls.key.file",
 		"sbs_service.leader.lease_duration_seconds", "sbs_service.leader.renew_interval_seconds",
 		"sbs_service.health",
+		"sbs_service.summary",
 		"sbs_service.write_effects.service_owned", "sbs_service.write_effects.native_allocation_fast_path",
 		"sbs_service.write_effects.batch_max", "sbs_service.write_effects.lane_bucket_count",
 		"sbs_service.write_effects.async_mutation_finalize",

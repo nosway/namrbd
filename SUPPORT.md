@@ -8,7 +8,7 @@ the exact command, and the first observed error.
 This open-source repository does not promise a response-time SLA. Feature and
 integration status is documented in
 [`docs-src/feature-status.md`](docs-src/feature-status.md); code being present
-does not by itself establish v1.0 support.
+does not by itself establish v1.1 support.
 
 Do not report vulnerabilities in a public issue. Follow
 [`SECURITY.md`](SECURITY.md) for private reporting.

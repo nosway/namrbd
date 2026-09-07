@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package sbs.internalapi.v1;
+
+option go_package = "github.com/nosway/namrbd/sbs/internalapi/v1;internalv1";
+
+// PersistentReservationAuthorityService is an internal, fail-closed authority
+// used by protocol targets. Tokens capture the durable PR generation at
+// connect time and every I/O rechecks that generation and access mode.
+service PersistentReservationAuthorityService {
+  rpc IssuePersistentReservationToken(IssuePersistentReservationTokenRequest) returns (IssuePersistentReservationTokenResponse);
+  rpc CheckPersistentReservationAccess(CheckPersistentReservationAccessRequest) returns (CheckPersistentReservationAccessResponse);
+}
+
+message PersistentReservationAccessToken {
+  string volume_id = 1;
+  string host_nqn = 2;
+  uint64 reservation_generation = 3;
+}
+
+message IssuePersistentReservationTokenRequest {
+  string volume_id = 1;
+  string host_nqn = 2;
+}
+
+message IssuePersistentReservationTokenResponse {
+  PersistentReservationAccessToken token = 1;
+}
+
+message CheckPersistentReservationAccessRequest {
+  PersistentReservationAccessToken token = 1;
+  bool write = 2;
+}
+
+message CheckPersistentReservationAccessResponse {
+  bool allowed = 1;
+  uint64 current_generation = 2;
+  string reason = 3;
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -12,7 +13,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"slices"
@@ -66,9 +66,14 @@ const (
 	defaultNativeAllocationFastPath                    = true
 	defaultServiceRuntimeWriteEffectsBatchCoalesceWait = time.Millisecond
 
-	adminVolumeSummaryModeMetadataKey = "namrbd-volume-summary-mode"
-	adminVolumeSummaryModeSpecOnly    = "spec-only"
-	ecMaintenanceScanOperationKind    = "ec_maintenance_scan"
+	adminVolumeSummaryModeMetadataKey         = "namrbd-volume-summary-mode"
+	adminVolumeSummaryModeSpecOnly            = "spec-only"
+	ecMaintenanceScanOperationKind            = "ec_maintenance_scan"
+	clusterSummaryStateDisabled               = "disabled"
+	clusterSummaryStateShadow                 = "shadow"
+	clusterSummaryStateEnforced               = "enforced"
+	defaultClusterSummaryDegradedAfter        = 5 * time.Minute
+	defaultClusterSummaryRebuildRequiredAfter = 15 * time.Minute
 )
 
 var buildVersion = namrbdversion.ProductVersion()
@@ -134,9 +139,11 @@ type storedOperation struct {
 	ApprovalID             string `json:"approval_id,omitempty"`
 	RiskAcknowledged       bool   `json:"risk_acknowledged,omitempty"`
 	FollowOnRepairRequired bool   `json:"follow_on_repair_required,omitempty"`
+	RequestID              string `json:"request_id,omitempty"`
 }
 
 type operationAudit struct {
+	RequestID              string
 	Actor                  string
 	Reason                 string
 	ApprovalID             string
@@ -145,6 +152,7 @@ type operationAudit struct {
 }
 
 func operationAuditFromMeta(meta *adminv1.RequestMeta, defaultReason string) operationAudit {
+	requestID := strings.TrimSpace(meta.GetRequestId())
 	actor := strings.TrimSpace(meta.GetActor())
 	if actor == "" {
 		actor = "unknown"
@@ -153,12 +161,24 @@ func operationAuditFromMeta(meta *adminv1.RequestMeta, defaultReason string) ope
 	if reason == "" {
 		reason = defaultReason
 	}
-	return operationAudit{Actor: actor, Reason: reason}
+	return operationAudit{RequestID: requestID, Actor: actor, Reason: reason}
+}
+
+// nodeDrainRequestIdentity is a durable, exact mapping for one accepted drain
+// request. It lets a caller recover an operation ID after a response loss
+// without completing the legacy operation or mutation history.
+type nodeDrainRequestIdentity struct {
+	Schema       string `json:"schema"`
+	OperationID  string `json:"operation_id"`
+	Kind         string `json:"kind"`
+	TargetNodeID string `json:"target_node_id"`
+	RequestID    string `json:"request_id"`
 }
 
 type operationStore struct {
 	mu   sync.RWMutex
 	kv   clustermeta.KV
+	repo *clustermeta.Repository
 	root string
 }
 
@@ -187,17 +207,18 @@ func newReplicaClientCache() *replicaClientCache {
 
 func newMaintenanceSettings() *maintenanceSettings {
 	return &maintenanceSettings{
-		generation:              1,
-		maxConcurrentRepairs:    1,
-		maxConcurrentRebalances: 1,
-		maxConcurrentDrains:     1,
-		maxConcurrentPayloadGCs: maxInt(getenvInt("NAMRBD_SBS_MAX_CONCURRENT_PAYLOAD_GCS", 1), 1),
-		pausePayloadGCs:         getenvBool("NAMRBD_SBS_PAUSE_PAYLOAD_GCS", false),
+		generation:                  1,
+		maxConcurrentRepairs:        1,
+		maxConcurrentRebalances:     1,
+		maxConcurrentDrains:         1,
+		maxTotalConcurrentMovements: 1,
+		maxConcurrentPayloadGCs:     maxInt(getenvInt("NAMRBD_SBS_MAX_CONCURRENT_PAYLOAD_GCS", 1), 1),
+		pausePayloadGCs:             getenvBool("NAMRBD_SBS_PAUSE_PAYLOAD_GCS", false),
 	}
 }
 
 func newOperationStore(kv clustermeta.KV, root string) *operationStore {
-	return &operationStore{kv: kv, root: root}
+	return &operationStore{kv: kv, repo: clustermeta.NewRepository(kv, root), root: root}
 }
 
 func (s *operationStore) create(kind, nodeID, volumeID, phase string, state adminv1.OperationState) (*adminv1.OperationStatus, error) {
@@ -224,11 +245,98 @@ func (s *operationStore) createAudited(kind, nodeID, volumeID, phase string, sta
 		ApprovalID:             strings.TrimSpace(audit.ApprovalID),
 		RiskAcknowledged:       audit.RiskAcknowledged,
 		FollowOnRepairRequired: audit.FollowOnRepairRequired,
+		RequestID:              strings.TrimSpace(audit.RequestID),
 	}
 	if err := s.putLocked(context.Background(), record); err != nil {
 		return nil, fmt.Errorf("persist operation %s: %w", opID, err)
 	}
 	return record.toProto(), nil
+}
+
+// createNodeDrainAudited atomically persists the node.drain operation and its
+// request identity. A repeat with the same exact identity returns the original
+// operation and never starts a second drain.
+func (s *operationStore) createNodeDrainAudited(ctx context.Context, nodeID, phase string, state adminv1.OperationState, audit operationAudit) (*adminv1.OperationStatus, bool, error) {
+	nodeID = strings.TrimSpace(nodeID)
+	requestID := strings.TrimSpace(audit.RequestID)
+	if requestID == "" {
+		op, err := s.createAudited("node.drain", nodeID, "", phase, state, audit)
+		return op, err == nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	identityKey := nodeDrainRequestIdentityKey(s.root, nodeID, requestID)
+	var existing *adminv1.OperationStatus
+	var created storedOperation
+	err := clustermeta.RunInTransaction(ctx, s.kv, func(tx clustermeta.ReadWriter) error {
+		identityRaw, found, err := tx.Get(ctx, identityKey)
+		if err != nil {
+			return fmt.Errorf("read request identity: %w", err)
+		}
+		if found {
+			record, err := s.operationForNodeDrainIdentityLocked(ctx, tx, identityRaw, nodeID, requestID)
+			if err != nil {
+				return err
+			}
+			existing = record.toProto()
+			return nil
+		}
+
+		nextSeq, err := nextOperationSequence(ctx, tx, s.root)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC().Unix()
+		created = storedOperation{
+			OperationID:            fmt.Sprintf("op-%06d", nextSeq),
+			Kind:                   "node.drain",
+			State:                  state.String(),
+			TargetNodeID:           nodeID,
+			Phase:                  phase,
+			StartedAtUnix:          now,
+			LastProgressUnix:       now,
+			RequestID:              requestID,
+			Actor:                  strings.TrimSpace(audit.Actor),
+			Reason:                 strings.TrimSpace(audit.Reason),
+			ApprovalID:             strings.TrimSpace(audit.ApprovalID),
+			RiskAcknowledged:       audit.RiskAcknowledged,
+			FollowOnRepairRequired: audit.FollowOnRepairRequired,
+		}
+		recordRaw, err := json.Marshal(created)
+		if err != nil {
+			return fmt.Errorf("marshal operation: %w", err)
+		}
+		identityRaw, err = json.Marshal(nodeDrainRequestIdentity{
+			Schema:       "sbs-node-drain-request-identity/v1",
+			OperationID:  created.OperationID,
+			Kind:         created.Kind,
+			TargetNodeID: created.TargetNodeID,
+			RequestID:    created.RequestID,
+		})
+		if err != nil {
+			return fmt.Errorf("marshal request identity: %w", err)
+		}
+		if err := tx.Set(ctx, operationKey(s.root, created.OperationID), recordRaw); err != nil {
+			return fmt.Errorf("write operation: %w", err)
+		}
+		subjectID, after := clustermeta.AdminOperationSummaryContribution(created.OperationID, created.State, true)
+		if _, err := s.repo.ApplySummarySubjectMutationInTransaction(ctx, tx, subjectID, clustermeta.SummaryCounters{}, after, time.Now().UTC()); err != nil {
+			return fmt.Errorf("update operation summary: %w", err)
+		}
+		if err := tx.Set(ctx, identityKey, identityRaw); err != nil {
+			return err
+		}
+		return clustermeta.AdvanceOperationListRevision(ctx, tx, s.root, clustermeta.OperationListSourceAdmin, created.OperationID, time.Now().UTC())
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if existing != nil {
+		return existing, false, nil
+	}
+	return created.toProto(), true, nil
 }
 
 func (s *operationStore) update(opID string, mutate func(*adminv1.OperationStatus)) (*adminv1.OperationStatus, error) {
@@ -256,6 +364,60 @@ func (s *operationStore) get(opID string) (*adminv1.OperationStatus, error) {
 		return nil, err
 	}
 	return record.toProto(), nil
+}
+
+func (s *operationStore) getNodeDrainByRequestIdentity(ctx context.Context, nodeID, requestID string) (*adminv1.OperationStatus, bool, error) {
+	nodeID = strings.TrimSpace(nodeID)
+	requestID = strings.TrimSpace(requestID)
+	if nodeID == "" || requestID == "" {
+		return nil, false, fmt.Errorf("node_id and request_id are required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	raw, found, err := s.kv.Get(ctx, nodeDrainRequestIdentityKey(s.root, nodeID, requestID))
+	if err != nil {
+		return nil, false, err
+	}
+	if !found {
+		return nil, false, nil
+	}
+	record, err := s.operationForNodeDrainIdentityLocked(ctx, s.kv, raw, nodeID, requestID)
+	if err != nil {
+		return nil, false, err
+	}
+	return record.toProto(), true, nil
+}
+
+func (s *operationStore) operationForNodeDrainIdentityLocked(ctx context.Context, reader interface {
+	Get(context.Context, string) ([]byte, bool, error)
+}, identityRaw []byte, nodeID, requestID string) (storedOperation, error) {
+	var identity nodeDrainRequestIdentity
+	if err := json.Unmarshal(identityRaw, &identity); err != nil {
+		return storedOperation{}, fmt.Errorf("decode request identity: %w", err)
+	}
+	if identity.Schema != "sbs-node-drain-request-identity/v1" ||
+		identity.Kind != "node.drain" ||
+		identity.TargetNodeID != nodeID ||
+		identity.RequestID != requestID ||
+		identity.OperationID == "" {
+		return storedOperation{}, fmt.Errorf("invalid node drain request identity")
+	}
+	raw, found, err := reader.Get(ctx, operationKey(s.root, identity.OperationID))
+	if err != nil {
+		return storedOperation{}, err
+	}
+	if !found {
+		return storedOperation{}, fmt.Errorf("node drain request identity refers to missing operation %q", identity.OperationID)
+	}
+	var record storedOperation
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return storedOperation{}, err
+	}
+	if record.OperationID != identity.OperationID || record.Kind != identity.Kind ||
+		record.TargetNodeID != identity.TargetNodeID || record.RequestID != identity.RequestID {
+		return storedOperation{}, fmt.Errorf("node drain request identity does not match operation %q", identity.OperationID)
+	}
+	return record, nil
 }
 
 func (s *operationStore) list(kind string, state adminv1.OperationState) []*adminv1.OperationStatus {
@@ -305,7 +467,26 @@ func (s *operationStore) putLocked(ctx context.Context, record storedOperation) 
 	if err != nil {
 		return err
 	}
-	return s.kv.Set(ctx, operationKey(s.root, record.OperationID), raw)
+	now := time.Now().UTC()
+	return clustermeta.RunInTransaction(ctx, s.kv, func(tx clustermeta.ReadWriter) error {
+		var before storedOperation
+		beforeRaw, found, err := tx.Get(ctx, operationKey(s.root, record.OperationID))
+		if err != nil {
+			return err
+		}
+		if found {
+			if err := json.Unmarshal(beforeRaw, &before); err != nil {
+				return err
+			}
+		}
+		if err := clustermeta.PutAdminOperationListRecordInTransaction(ctx, tx, s.root, record.OperationID, raw, now); err != nil {
+			return err
+		}
+		subjectID, beforeCounters := clustermeta.AdminOperationSummaryContribution(record.OperationID, before.State, found)
+		_, afterCounters := clustermeta.AdminOperationSummaryContribution(record.OperationID, record.State, true)
+		_, err = s.repo.ApplySummarySubjectMutationInTransaction(ctx, tx, subjectID, beforeCounters, afterCounters, now)
+		return err
+	})
 }
 
 func (s *operationStore) getLocked(ctx context.Context, opID string) (storedOperation, error) {
@@ -344,6 +525,7 @@ func storedOperationFromProto(op *adminv1.OperationStatus) storedOperation {
 		ApprovalID:             op.GetApprovalId(),
 		RiskAcknowledged:       op.GetRiskAcknowledged(),
 		FollowOnRepairRequired: op.GetFollowOnRepairRequired(),
+		RequestID:              op.GetRequestId(),
 	}
 	if ts := op.GetStartedAt(); ts != nil {
 		record.StartedAtUnix = ts.AsTime().Unix()
@@ -373,7 +555,12 @@ func (o storedOperation) toProto() *adminv1.OperationStatus {
 		ApprovalId:             o.ApprovalID,
 		RiskAcknowledged:       o.RiskAcknowledged,
 		FollowOnRepairRequired: o.FollowOnRepairRequired,
+		RequestId:              o.RequestID,
 	}
+}
+
+type kmsRuntimeCloser interface {
+	Close() error
 }
 
 type server struct {
@@ -384,6 +571,7 @@ type server struct {
 	internalv1.UnimplementedECMetadataServiceServer
 	internalv1.UnimplementedChunkIDAllocatorServiceServer
 	internalv1.UnimplementedPlacementResolverServiceServer
+	internalv1.UnimplementedPersistentReservationAuthorityServiceServer
 
 	clusterID                 string
 	sbsClusterID              string
@@ -396,38 +584,73 @@ type server struct {
 	payloadRoot               string
 	startedAt                 time.Time
 
-	kv         clustermeta.KV
-	repo       *clustermeta.Repository
-	ops        *operationStore
-	cache      *replicaClientCache
-	viewCache  *publishedViewCache
-	maint      *maintenanceSettings
-	leader     *leaderLeaseManager
-	httpClient *http.Client
-	ready      atomic.Bool
+	kv                        clustermeta.KV
+	repo                      *clustermeta.Repository
+	ops                       *operationStore
+	cache                     *replicaClientCache
+	viewCache                 *publishedViewCache
+	maint                     *maintenanceSettings
+	leader                    *leaderLeaseManager
+	httpClient                *http.Client
+	worm                      enterpriseWORMLifecycle
+	wormEnabled               bool
+	ready                     atomic.Bool
+	backupSchedulerReconciled atomic.Bool
+	drainProjectionReady      atomic.Bool
+	healthProjectionReady     atomic.Bool
+	workProjectionReady       atomic.Bool
+	lastSummaryRefreshUnix    atomic.Int64
+	runtimeCtx                context.Context
 
-	placementApplyInternalService         clustercontrol.PlacementApplyInternalService
-	writeSessionInternalService           clustercontrol.WriteSessionInternalService
-	ecMetadataInternalService             clustercontrol.ECMetadataInternalService
-	serviceOwnedWriteEffects              bool
-	writeEffectsQueue                     *serviceWriteEffectsQueue
-	writeIntentQueue                      *serviceWriteIntentQueue
-	writeSessionCommitLocksMu             sync.Mutex
-	writeSessionCommitLocks               map[string]*sync.Mutex
-	chunkIDAllocatorService               clustercontrol.ChunkIDAllocatorInternalService
-	placementResolverService              clustercontrol.PlacementResolverInternalService
-	placementApplyTimeout                 time.Duration
-	placementApplyObservability           placementApplyObservability
-	writeSessionObservability             writeSessionObservability
-	chunkIDAllocatorObservability         chunkIDAllocatorObservability
-	placementResolverObservability        placementResolverObservability
-	now                                   func() time.Time
-	maintenanceMu                         sync.Mutex
-	ecMaintenanceMu                       sync.Mutex
-	budgetLeaseMu                         sync.Mutex
-	securityAuditMu                       sync.Mutex
-	iscsiMu                               sync.Mutex
-	iscsiWriterFenceProjector             func(context.Context, service.ISCSIWriterFence) error
+	placementApplyInternalService       clustercontrol.PlacementApplyInternalService
+	writeSessionInternalService         clustercontrol.WriteSessionInternalService
+	ecMetadataInternalService           clustercontrol.ECMetadataInternalService
+	serviceOwnedWriteEffects            bool
+	writeEffectsQueue                   *serviceWriteEffectsQueue
+	writeIntentQueue                    *serviceWriteIntentQueue
+	writeSessionCommitLocksMu           sync.Mutex
+	writeSessionCommitLocks             map[string]*sync.Mutex
+	chunkIDAllocatorService             clustercontrol.ChunkIDAllocatorInternalService
+	placementResolverService            clustercontrol.PlacementResolverInternalService
+	placementApplyTimeout               time.Duration
+	placementApplyObservability         placementApplyObservability
+	writeSessionObservability           writeSessionObservability
+	chunkIDAllocatorObservability       chunkIDAllocatorObservability
+	placementResolverObservability      placementResolverObservability
+	phaseADCurrentObservability         phaseADCurrentObservability
+	clusterSummaryState                 string
+	clusterSummaryDegradedAfter         time.Duration
+	clusterSummaryRebuildRequiredAfter  time.Duration
+	now                                 func() time.Time
+	maintenanceMu                       sync.Mutex
+	maintenanceRebalanceCursorMu        sync.Mutex
+	maintenanceRebalanceNodeID          string
+	maintenanceRebalancePlacementCursor string
+	payloadGCCatalogCursorMu            sync.Mutex
+	payloadGCCatalogCursor              string
+	payloadGCCatalogRevision            uint64
+	ecMaintenanceMu                     sync.Mutex
+	budgetLeaseMu                       sync.Mutex
+	securityAuditMu                     sync.Mutex
+	rbacAuditMu                         sync.Mutex
+	rbacGatewayDelegatorIdentities      map[string]struct{}
+	rbacDelegatedClientCAFile           string
+	rbacDelegatedClientRevocationFile   string
+	rbacEnforced                        bool
+	rbacServiceActorCertificateFile     string
+	rbacServiceActorKeyFile             string
+	rbacServiceActorBindingGeneration   uint64
+	kmsRuntime                          kmsRuntimeCloser
+	iscsiMu                             sync.Mutex
+	iscsiWriterFenceProjector           func(context.Context, service.ISCSIWriterFence) error
+	compressionPolicyProjector          func(context.Context, service.CompressionPolicy) (service.CompressionRuntimeStatus, error)
+	compressionStatusCollector          func(context.Context, string, string, uint64) (service.CompressionRuntimeStatus, error)
+	tieringTargetChecker                func(context.Context, string, string, string, string, bool, bool) (string, error)
+	tieringSnapshotExporter             func(context.Context, string, string, string) (uint64, uint64, string, error)
+	tieringSnapshotHydrator             func(context.Context, string, string) (uint64, uint64, string, error)
+	enterpriseBackupRuntime
+	tieringRuntimeMu                      sync.Mutex
+	tieringRuntimeCancel                  map[string]context.CancelFunc
 	lastMaintenanceRunByVolume            map[string]int64
 	maintenanceVolumeCooldown             time.Duration
 	autoRebalanceMinVolumeAge             time.Duration
@@ -705,11 +928,12 @@ type sbsDataStoreSummary struct {
 type maintenanceSettings struct {
 	mu sync.RWMutex
 
-	generation              uint64
-	maxConcurrentRepairs    int
-	maxConcurrentRebalances int
-	maxConcurrentDrains     int
-	maxConcurrentPayloadGCs int
+	generation                  uint64
+	maxConcurrentRepairs        int
+	maxConcurrentRebalances     int
+	maxConcurrentDrains         int
+	maxTotalConcurrentMovements int
+	maxConcurrentPayloadGCs     int
 
 	pauseRepairs    bool
 	pauseRebalances bool
@@ -718,15 +942,16 @@ type maintenanceSettings struct {
 }
 
 type maintenanceSnapshot struct {
-	generation              uint64
-	maxConcurrentRepairs    int
-	maxConcurrentRebalances int
-	maxConcurrentDrains     int
-	maxConcurrentPayloadGCs int
-	pauseRepairs            bool
-	pauseRebalances         bool
-	pauseDrains             bool
-	pausePayloadGCs         bool
+	generation                  uint64
+	maxConcurrentRepairs        int
+	maxConcurrentRebalances     int
+	maxConcurrentDrains         int
+	maxTotalConcurrentMovements int
+	maxConcurrentPayloadGCs     int
+	pauseRepairs                bool
+	pauseRebalances             bool
+	pauseDrains                 bool
+	pausePayloadGCs             bool
 }
 
 type observabilitySnapshot struct {
@@ -774,6 +999,15 @@ type observabilitySnapshot struct {
 	OperationsFailed            int
 	OperationsCompleted         int
 	OperationsCanceled          int
+	ClusterSummaryHealth        string
+	ClusterSummaryReason        string
+	ClusterSummaryPartial       bool
+	ClusterSummaryStale         bool
+	ClusterSummaryRebuild       bool
+	ClusterSummarySourceRev     uint64
+	ClusterSummaryBaselineRev   uint64
+	ClusterSummaryAgeMillis     uint64
+	ClusterSummaryUpdatedUnix   int64
 	LocalIsLeader               bool
 	LeaderState                 string
 	LeaseExpiresAtUnix          int64
@@ -839,45 +1073,62 @@ type failedTransitionBatchBacklog struct {
 
 func (s *server) GetClusterStatus(ctx context.Context, req *adminv1.GetClusterStatusRequest) (*adminv1.GetClusterStatusResponse, error) {
 	cluster, _ := s.clusterRef(req.GetCluster())
-	nodes, err := s.repo.ListNodeMemberships(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "list node memberships: %v", err)
-	}
 	activeNodes := uint32(0)
 	drainingNodes := uint32(0)
-	for _, node := range nodes {
-		switch node.LifecycleState {
-		case clustermeta.NodeLifecycleActive:
-			activeNodes++
-		case clustermeta.NodeLifecycleDraining:
-			drainingNodes++
-		}
-	}
 
 	var volumes []clustermeta.VolumeState
 	var snapshot observabilitySnapshot
 	var degradedExtents uint64
-	detailTimeout := s.clusterStatusDetailTimeout()
-	if detailTimeout > 0 {
-		detailCtx, cancelDetails := context.WithTimeout(ctx, detailTimeout)
-		defer cancelDetails()
-
-		volumes, err = s.repo.ListVolumeStates(detailCtx)
+	quorumHealth := adminv1.QuorumHealth_QUORUM_HEALTH_HEALTHY
+	var summaryAssessment clustermeta.ClusterSummaryAssessment
+	if s.effectiveClusterSummaryState() == clusterSummaryStateEnforced {
+		var err error
+		summaryAssessment, err = s.repo.AssessClusterSummary(ctx, clustermeta.SummaryKindCluster, s.currentTime(), s.clusterSummaryPolicy())
 		if err != nil {
-			log.Printf("sbs-service cluster status volume scan skipped: %v", err)
-			volumes = nil
+			return nil, status.Errorf(codes.Internal, "assess cluster summary aggregate: %v", err)
 		}
-		snapshot, _ = s.observabilitySnapshot(detailCtx)
-
-		for _, volume := range volumes {
-			if err := detailCtx.Err(); err != nil {
-				log.Printf("sbs-service cluster status degraded extent scan truncated: %v", err)
-				break
+		snapshot = observabilitySnapshotFromAssessment(summaryAssessment)
+		activeNodes = uint32(summaryAssessment.Read.Counters.ActiveNodes)
+		drainingNodes = uint32(summaryAssessment.Read.Counters.DrainingNodes)
+		degradedExtents = summaryAssessment.Read.Counters.DegradedExtents
+		quorumHealth = quorumHealthFromSummary(summaryAssessment.Health)
+	} else {
+		nodes, err := s.repo.ListNodeMemberships(ctx)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "list node memberships: %v", err)
+		}
+		for _, node := range nodes {
+			switch node.LifecycleState {
+			case clustermeta.NodeLifecycleActive:
+				activeNodes++
+			case clustermeta.NodeLifecycleDraining:
+				drainingNodes++
 			}
-			if volume.Status == clustermeta.VolumeStatusDegraded || volume.Status == clustermeta.VolumeStatusRepairing || volume.Status == clustermeta.VolumeStatusRebalancing || volume.Status == clustermeta.VolumeStatusBlocked {
-				mappings, err := s.repo.ListExtentMappings(detailCtx, volume.VolumeID)
-				if err == nil {
-					degradedExtents += uint64(len(mappings))
+		}
+	}
+	if s.effectiveClusterSummaryState() != clusterSummaryStateEnforced {
+		if detailTimeout := s.clusterStatusDetailTimeout(); detailTimeout > 0 {
+			detailCtx, cancelDetails := context.WithTimeout(ctx, detailTimeout)
+			defer cancelDetails()
+
+			var err error
+			volumes, err = s.repo.ListVolumeStates(detailCtx)
+			if err != nil {
+				log.Printf("sbs-service cluster status volume scan skipped: %v", err)
+				volumes = nil
+			}
+			snapshot, _ = s.observabilitySnapshot(detailCtx)
+
+			for _, volume := range volumes {
+				if err := detailCtx.Err(); err != nil {
+					log.Printf("sbs-service cluster status degraded extent scan truncated: %v", err)
+					break
+				}
+				if volume.Status == clustermeta.VolumeStatusDegraded || volume.Status == clustermeta.VolumeStatusRepairing || volume.Status == clustermeta.VolumeStatusRebalancing || volume.Status == clustermeta.VolumeStatusBlocked {
+					mappings, err := s.repo.ListExtentMappings(detailCtx, volume.VolumeID)
+					if err == nil {
+						degradedExtents += uint64(len(mappings))
+					}
 				}
 			}
 		}
@@ -894,7 +1145,7 @@ func (s *server) GetClusterStatus(ctx context.Context, req *adminv1.GetClusterSt
 	return &adminv1.GetClusterStatusResponse{
 		Cluster:                     cluster,
 		LeaderNodeId:                leaderNodeID,
-		QuorumHealth:                adminv1.QuorumHealth_QUORUM_HEALTH_HEALTHY,
+		QuorumHealth:                quorumHealth,
 		ActiveNodes:                 activeNodes,
 		DrainingNodes:               drainingNodes,
 		DegradedExtents:             degradedExtents,
@@ -937,6 +1188,20 @@ func (s *server) GetClusterStatus(ctx context.Context, req *adminv1.GetClusterSt
 		HealthProbeCount:                          uint64(healthStatus.ProbeCount),
 		HealthTransitionCount:                     uint64(healthStatus.TransitionCount),
 		HealthVolumeReconcileCount:                uint64(healthStatus.VolumeReconcileCount),
+		ClusterSummaryHealth:                      clusterSummaryHealthProto(summaryAssessment.Health),
+		ClusterSummaryReason:                      summaryAssessment.Reason,
+		ClusterSummaryPartial:                     summaryAssessment.Partial,
+		ClusterSummaryStale:                       summaryAssessment.Stale,
+		ClusterSummaryRebuildRequired:             summaryAssessment.RebuildRequired,
+		ClusterSummarySourceRevision:              summaryAssessment.Read.MaximumSourceRevision,
+		ClusterSummaryBaselineSourceRevision:      summaryAssessment.Read.BaselineSourceRevision,
+		ClusterSummaryFreshnessAgeMillis:          summaryAssessment.FreshnessAgeMillis,
+		ClusterSummaryFreshnessUpdatedUnix:        summaryAssessment.FreshnessUpdatedUnix,
+		KnownNodes:                                uint32(snapshot.KnownNodes),
+		HealthyNodes:                              uint32(snapshot.HealthyNodes),
+		SuspectNodes:                              uint32(snapshot.SuspectNodes),
+		DownNodes:                                 uint32(snapshot.DownNodes),
+		RemovedNodes:                              uint32(snapshot.RemovedNodes),
 	}, nil
 }
 
@@ -955,7 +1220,153 @@ func (s *server) boundedObservabilitySnapshot() (observabilitySnapshot, string) 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return s.observabilitySnapshot(ctx)
+	if s.effectiveClusterSummaryState() == clusterSummaryStateEnforced {
+		snapshot, leaderNodeID, err := s.aggregateObservabilitySnapshot(ctx)
+		if err != nil {
+			log.Printf("sbs-service enforced cluster summary unavailable: %v", err)
+			return observabilitySnapshot{}, s.nodeID
+		}
+		return snapshot, leaderNodeID
+	}
+	snapshot, leaderNodeID := s.observabilitySnapshot(ctx)
+	snapshot.ClusterSummaryHealth = s.effectiveClusterSummaryState()
+	return snapshot, leaderNodeID
+}
+
+func (s *server) effectiveClusterSummaryState() string {
+	state := strings.TrimSpace(s.clusterSummaryState)
+	if state == "" {
+		return clusterSummaryStateDisabled
+	}
+	return state
+}
+
+func validateClusterSummaryState(state string) error {
+	switch strings.TrimSpace(state) {
+	case clusterSummaryStateDisabled, clusterSummaryStateShadow, clusterSummaryStateEnforced:
+		return nil
+	default:
+		return fmt.Errorf("cluster summary state %q must be disabled, shadow, or enforced", state)
+	}
+}
+
+func (s *server) clusterSummaryPolicy() clustermeta.ClusterSummaryPolicy {
+	degradedAfter := s.clusterSummaryDegradedAfter
+	if degradedAfter <= 0 {
+		degradedAfter = defaultClusterSummaryDegradedAfter
+	}
+	rebuildAfter := s.clusterSummaryRebuildRequiredAfter
+	if rebuildAfter <= 0 {
+		rebuildAfter = defaultClusterSummaryRebuildRequiredAfter
+	}
+	if rebuildAfter <= degradedAfter {
+		rebuildAfter = degradedAfter + defaultClusterSummaryDegradedAfter
+	}
+	return clustermeta.ClusterSummaryPolicy{
+		DegradedAfter: degradedAfter, RebuildRequiredAfter: rebuildAfter,
+	}
+}
+
+func clusterSummaryHealthProto(health clustermeta.SummaryHealth) adminv1.ClusterSummaryHealth {
+	switch health {
+	case clustermeta.SummaryHealthReady:
+		return adminv1.ClusterSummaryHealth_CLUSTER_SUMMARY_HEALTH_READY
+	case clustermeta.SummaryHealthDegraded:
+		return adminv1.ClusterSummaryHealth_CLUSTER_SUMMARY_HEALTH_DEGRADED
+	case clustermeta.SummaryHealthRebuildRequired:
+		return adminv1.ClusterSummaryHealth_CLUSTER_SUMMARY_HEALTH_REBUILD_REQUIRED
+	default:
+		return adminv1.ClusterSummaryHealth_CLUSTER_SUMMARY_HEALTH_UNSPECIFIED
+	}
+}
+
+func quorumHealthFromSummary(health clustermeta.SummaryHealth) adminv1.QuorumHealth {
+	switch health {
+	case clustermeta.SummaryHealthReady:
+		return adminv1.QuorumHealth_QUORUM_HEALTH_HEALTHY
+	case clustermeta.SummaryHealthDegraded:
+		return adminv1.QuorumHealth_QUORUM_HEALTH_DEGRADED
+	case clustermeta.SummaryHealthRebuildRequired:
+		return adminv1.QuorumHealth_QUORUM_HEALTH_UNAVAILABLE
+	default:
+		return adminv1.QuorumHealth_QUORUM_HEALTH_UNSPECIFIED
+	}
+}
+
+func observabilitySnapshotFromSummary(counters clustermeta.SummaryCounters) observabilitySnapshot {
+	return observabilitySnapshot{
+		KnownNodes:                  int(counters.KnownNodes),
+		ActiveNodes:                 int(counters.ActiveNodes),
+		DrainingNodes:               int(counters.DrainingNodes),
+		RemovedNodes:                int(counters.RemovedNodes),
+		HealthyNodes:                int(counters.HealthyNodes),
+		SuspectNodes:                int(counters.SuspectNodes),
+		DownNodes:                   int(counters.DownNodes),
+		Volumes:                     int(counters.VolumeCount),
+		VolumeHealthy:               int(counters.HealthyVolumes),
+		VolumeDegraded:              int(counters.DegradedVolumes + counters.RepairingVolumes + counters.RebalancingVolumes),
+		VolumeBlocked:               int(counters.BlockedVolumes),
+		RepairBacklog:               int(counters.RepairBacklog),
+		RepairBacklogBytes:          counters.RepairBacklogBytes,
+		RepairBacklogChunks:         counters.RepairBacklogChunks,
+		RebalanceBacklog:            int(counters.RebalanceBacklog),
+		RebalanceBacklogBytes:       counters.RebalanceBacklogBytes,
+		RebalanceBacklogChunks:      counters.RebalanceBacklogChunks,
+		DrainBacklog:                int(counters.DrainBacklog),
+		DrainBacklogBytes:           counters.DrainBacklogBytes,
+		DrainBacklogChunks:          counters.DrainBacklogChunks,
+		RetiredPayloadBacklogBytes:  counters.RetiredPayloadBacklogBytes,
+		RetiredPayloadBacklogChunks: counters.RetiredPayloadBacklogChunks,
+		RetiredPayloadFailedBatches: counters.RetiredPayloadFailedBatches,
+		TransitionFailedBatches:     counters.TransitionFailedBatches,
+		TransitionRecentBatches:     counters.TransitionRecentBatches,
+		TransitionSmallBatches:      counters.TransitionSmallBatches,
+		TransitionRequeued:          counters.TransitionRequeued,
+		TransitionRetryPages:        counters.TransitionRetryPages,
+		TransitionRetryWindows:      counters.TransitionRetryWindows,
+		TransitionRetryWindowBytes:  counters.TransitionRetryWindowBytes,
+		TransitionRetryWindowChunks: counters.TransitionRetryWindowChunks,
+		MaintenanceCooldownVolumes:  counters.MaintenanceCooldownVolumes,
+		OperationsTotal:             int(counters.OperationCount),
+		OperationsRunning:           int(counters.RunningOperations),
+		OperationsFailed:            int(counters.FailedOperations),
+		OperationsCompleted:         int(counters.CompletedOperations),
+		OperationsCanceled:          int(counters.CanceledOperations),
+	}
+}
+
+func observabilitySnapshotFromAssessment(assessment clustermeta.ClusterSummaryAssessment) observabilitySnapshot {
+	snapshot := observabilitySnapshotFromSummary(assessment.Read.Counters)
+	snapshot.ClusterSummaryHealth = string(assessment.Health)
+	snapshot.ClusterSummaryReason = assessment.Reason
+	snapshot.ClusterSummaryPartial = assessment.Partial
+	snapshot.ClusterSummaryStale = assessment.Stale
+	snapshot.ClusterSummaryRebuild = assessment.RebuildRequired
+	snapshot.ClusterSummarySourceRev = assessment.Read.MaximumSourceRevision
+	snapshot.ClusterSummaryBaselineRev = assessment.Read.BaselineSourceRevision
+	snapshot.ClusterSummaryAgeMillis = assessment.FreshnessAgeMillis
+	snapshot.ClusterSummaryUpdatedUnix = assessment.FreshnessUpdatedUnix
+	return snapshot
+}
+
+func (s *server) aggregateObservabilitySnapshot(ctx context.Context) (observabilitySnapshot, string, error) {
+	assessment, err := s.repo.AssessClusterSummary(ctx, clustermeta.SummaryKindCluster, s.currentTime(), s.clusterSummaryPolicy())
+	if err != nil {
+		return observabilitySnapshot{}, s.nodeID, err
+	}
+	snapshot := observabilitySnapshotFromAssessment(assessment)
+	snapshot.LocalIsLeader = true
+	snapshot.LeaderState = "leader"
+	leaderNodeID := s.nodeID
+	if s.leader != nil {
+		snapshot.LocalIsLeader = s.leader.IsLeader()
+		snapshot.LeaderState = s.leader.State()
+		if record, err := s.leader.CurrentLeader(ctx); err == nil && record.NodeID != "" {
+			leaderNodeID = record.NodeID
+			snapshot.LeaseExpiresAtUnix = record.ExpiresAtUnix
+		}
+	}
+	return snapshot, leaderNodeID, nil
 }
 
 func (s *server) GetLeader(ctx context.Context, req *adminv1.GetLeaderRequest) (*adminv1.GetLeaderResponse, error) {
@@ -978,13 +1389,39 @@ func (s *server) ListNodes(ctx context.Context, req *adminv1.ListNodesRequest) (
 	if err != nil {
 		return nil, err
 	}
-	page, err := s.repo.ListMembershipProjectionPage(ctx, req.GetPageToken(), int(req.GetPageSize()), req.GetIncludeTombstones())
+	if req.GetPageSize() > clustermeta.MembershipProjectionPageMaximum {
+		return nil, status.Errorf(codes.InvalidArgument, "page_size %d exceeds maximum %d", req.GetPageSize(), clustermeta.MembershipProjectionPageMaximum)
+	}
+	cursor := ""
+	var pinnedRevision uint64
+	if strings.TrimSpace(req.GetPageToken()) != "" {
+		token, tokenErr := decodeMembershipPageToken(req.GetPageToken())
+		if tokenErr != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid node page_token: %v", tokenErr)
+		}
+		if token.IncludeTombstones != req.GetIncludeTombstones() {
+			return nil, status.Error(codes.InvalidArgument, "node page_token include_tombstones filter mismatch")
+		}
+		cursor = token.Cursor
+		pinnedRevision = token.ProjectionRevision
+	}
+	page, err := s.repo.ListMembershipProjectionPage(ctx, cursor, int(req.GetPageSize()), req.GetIncludeTombstones())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list node membership projection: %v", err)
 	}
 	s.observeMembershipProjection(page.Status)
 	if page.Status.Stale {
 		return nil, status.Errorf(codes.FailedPrecondition, "SBS membership projection is %s: authority revision=%d projection revision=%d lag=%dms", page.Status.ProjectionHealth, page.Status.MembershipRevision, page.Status.MembershipProjectionRevision, page.Status.ProjectionLagMS)
+	}
+	if pinnedRevision != 0 && page.Status.MembershipProjectionRevision != pinnedRevision {
+		return nil, status.Errorf(codes.FailedPrecondition, "node page_token revision mismatch: token=%d current=%d", pinnedRevision, page.Status.MembershipProjectionRevision)
+	}
+	nextPageToken := ""
+	if page.NextCursor != "" {
+		nextPageToken, err = encodeMembershipPageToken(page.NextCursor, page.Status.MembershipProjectionRevision, req.GetIncludeTombstones())
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "encode node page_token: %v", err)
+		}
 	}
 	resp := &adminv1.ListNodesResponse{
 		Cluster:                      cluster,
@@ -993,7 +1430,7 @@ func (s *server) ListNodes(ctx context.Context, req *adminv1.ListNodesRequest) (
 		ProjectionLagMs:              page.Status.ProjectionLagMS,
 		ProjectionHealth:             page.Status.ProjectionHealth,
 		ProjectionStale:              page.Status.Stale,
-		NextPageToken:                page.NextCursor,
+		NextPageToken:                nextPageToken,
 		ProjectionRebuildCount:       page.Status.ProjectionRebuildCount,
 		ProjectionResyncCount:        page.Status.ProjectionResyncCount,
 	}
@@ -1541,17 +1978,21 @@ func (s *server) DrainNode(ctx context.Context, req *adminv1.DrainNodeRequest) (
 	if err != nil {
 		return nil, err
 	}
-	op, err := s.beginNodeDrain(ctx, req.GetNodeId(), "node.drain", operationAuditFromMeta(req.GetMeta(), "drain"))
+	op, created, err := s.beginNodeDrain(ctx, req.GetNodeId(), "node.drain", operationAuditFromMeta(req.GetMeta(), "drain"))
 	if err != nil {
 		return nil, err
+	}
+	message := "node marked draining"
+	if !created {
+		message = "node drain already accepted for request_id"
 	}
 
 	return &adminv1.DrainNodeResponse{
 		Cluster: cluster,
 		Operation: &adminv1.OperationHandle{
-			Accepted:    true,
+			Accepted:    created,
 			OperationId: op.GetOperationId(),
-			Message:     "node marked draining",
+			Message:     message,
 		},
 	}, nil
 }
@@ -1564,36 +2005,45 @@ func (s *server) LeaveNode(ctx context.Context, req *adminv1.LeaveNodeRequest) (
 	if err != nil {
 		return nil, err
 	}
-	op, err := s.beginNodeDrain(ctx, req.GetNodeId(), "node.leave", operationAuditFromMeta(req.GetMeta(), "leave"))
+	op, created, err := s.beginNodeDrain(ctx, req.GetNodeId(), "node.leave", operationAuditFromMeta(req.GetMeta(), "leave"))
 	if err != nil {
 		return nil, err
 	}
 	return &adminv1.LeaveNodeResponse{
 		Cluster: cluster,
 		Operation: &adminv1.OperationHandle{
-			Accepted: true, OperationId: op.GetOperationId(), Message: "node leave accepted; drain required before remove",
+			Accepted: created, OperationId: op.GetOperationId(), Message: "node leave accepted; drain required before remove",
 		},
 	}, nil
 }
 
-func (s *server) beginNodeDrain(ctx context.Context, nodeID, operationKind string, audit operationAudit) (*adminv1.OperationStatus, error) {
+func (s *server) beginNodeDrain(ctx context.Context, nodeID, operationKind string, audit operationAudit) (*adminv1.OperationStatus, bool, error) {
 	nodeID = strings.TrimSpace(nodeID)
 	if nodeID == "" {
-		return nil, status.Error(codes.InvalidArgument, "node_id is required")
+		return nil, false, status.Error(codes.InvalidArgument, "node_id is required")
 	}
 	if err := enforceDependencyMembershipChange(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	rec, err := s.repo.GetNodeMembership(ctx, nodeID)
 	if err != nil {
 		if errors.Is(err, clustermeta.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "node %q not found", nodeID)
+			return nil, false, status.Errorf(codes.NotFound, "node %q not found", nodeID)
 		}
-		return nil, status.Errorf(codes.Internal, "get node membership: %v", err)
+		return nil, false, status.Errorf(codes.Internal, "get node membership: %v", err)
 	}
-	op, err := s.ops.createAudited(operationKind, nodeID, "", "evacuation_pending", adminv1.OperationState_OPERATION_STATE_RUNNING, audit)
+	created := true
+	var op *adminv1.OperationStatus
+	if operationKind == "node.drain" {
+		op, created, err = s.ops.createNodeDrainAudited(ctx, nodeID, "evacuation_pending", adminv1.OperationState_OPERATION_STATE_RUNNING, audit)
+	} else {
+		op, err = s.ops.createAudited(operationKind, nodeID, "", "evacuation_pending", adminv1.OperationState_OPERATION_STATE_RUNNING, audit)
+	}
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "create operation: %v", err)
+		return nil, false, status.Errorf(codes.Internal, "create operation: %v", err)
+	}
+	if !created {
+		return op, false, nil
 	}
 	rec.LifecycleState = clustermeta.NodeLifecycleDraining
 	rec.DesiredState = string(clustermeta.NodeLifecycleDraining)
@@ -1603,15 +2053,15 @@ func (s *server) beginNodeDrain(ctx context.Context, nodeID, operationKind strin
 	if _, _, err := s.repo.CompareAndSetNodeMembership(ctx, rec, rec.Generation); err != nil {
 		s.failOperation(op.GetOperationId(), err)
 		if errors.Is(err, clustermeta.ErrCASConflict) {
-			return nil, status.Errorf(codes.Aborted, "node membership changed concurrently: %v", err)
+			return nil, false, status.Errorf(codes.Aborted, "node membership changed concurrently: %v", err)
 		}
-		return nil, status.Errorf(codes.Internal, "put node membership: %v", err)
+		return nil, false, status.Errorf(codes.Internal, "put node membership: %v", err)
 	}
-	if err := s.enqueueDrainTransitions(ctx, nodeID); err != nil {
+	if err := s.enqueueDrainTransitions(withPhaseADDrainObservation(ctx, op.GetOperationId(), nodeID), nodeID); err != nil {
 		s.failOperation(op.GetOperationId(), err)
-		return nil, status.Errorf(codes.Internal, "enqueue drain transitions: %v", err)
+		return nil, false, status.Errorf(codes.Internal, "enqueue drain transitions: %v", err)
 	}
-	return s.refreshDrainOperation(ctx, op), nil
+	return s.refreshDrainOperation(ctx, op), true, nil
 }
 
 func (s *server) RemoveNode(ctx context.Context, req *adminv1.RemoveNodeRequest) (*adminv1.RemoveNodeResponse, error) {
@@ -1676,6 +2126,10 @@ func (s *server) ForceRemoveNode(ctx context.Context, req *adminv1.ForceRemoveNo
 }
 
 func (s *server) ListVolumes(ctx context.Context, req *adminv1.ListVolumesRequest) (*adminv1.ListVolumesResponse, error) {
+	budget, err := s.admitLegacyExpensive(ctx, "list_volumes", req.GetAdmission())
+	if err != nil {
+		return nil, err
+	}
 	cluster, _ := s.clusterRef(req.GetCluster())
 	volumes, err := s.repo.ListVolumeStates(ctx)
 	if err != nil {
@@ -1684,6 +2138,67 @@ func (s *server) ListVolumes(ctx context.Context, req *adminv1.ListVolumesReques
 	resp := &adminv1.ListVolumesResponse{Cluster: cluster}
 	for _, vol := range volumes {
 		resp.Volumes = append(resp.Volumes, s.volumeToProtoCached(ctx, vol))
+	}
+	if err := s.completeLegacyExpensive("list_volumes", budget, len(resp.Volumes)); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (s *server) ListVolumesPage(ctx context.Context, req *adminv1.ListVolumesPageRequest) (*adminv1.ListVolumesPageResponse, error) {
+	cluster, err := s.clusterRef(req.GetCluster())
+	if err != nil {
+		return nil, err
+	}
+	if req.GetPageSize() > clustermeta.VolumeCatalogPageMaximum {
+		return nil, status.Errorf(codes.InvalidArgument, "page_size %d exceeds maximum %d", req.GetPageSize(), clustermeta.VolumeCatalogPageMaximum)
+	}
+	cursor := ""
+	var expectedRevision uint64
+	if strings.TrimSpace(req.GetPageToken()) != "" {
+		token, tokenErr := decodeVolumePageToken(req.GetPageToken(), req)
+		if tokenErr != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid volume page_token: %v", tokenErr)
+		}
+		cursor = token.Cursor
+		expectedRevision = token.CatalogRevision
+	}
+	filterStatus, err := volumeStatusFromProto(req.GetHealth())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	page, err := s.repo.ListVolumeCatalogPage(ctx, cursor, int(req.GetPageSize()), expectedRevision, clustermeta.VolumeCatalogFilter{
+		Status: filterStatus, RedundancyBackend: req.GetRedundancyBackend(), TopologyMode: req.GetTopologyMode(),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, clustermeta.ErrVolumeCatalogRebuildRequired):
+			return nil, status.Error(codes.FailedPrecondition, "volume catalog projection rebuild required")
+		case errors.Is(err, clustermeta.ErrVolumeCatalogRevision):
+			return nil, status.Errorf(codes.FailedPrecondition, "volume page_token revision mismatch: token=%d", expectedRevision)
+		case errors.Is(err, clustermeta.ErrVolumeCatalogInvalid):
+			return nil, status.Errorf(codes.InvalidArgument, "invalid volume page request: %v", err)
+		default:
+			return nil, status.Errorf(codes.Internal, "list volume catalog page: %v", err)
+		}
+	}
+	nextPageToken := ""
+	if page.NextCursor != "" {
+		nextPageToken, err = encodeVolumePageToken(page.NextCursor, page.State.Revision, req)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "encode volume page_token: %v", err)
+		}
+	}
+	resp := &adminv1.ListVolumesPageResponse{
+		Cluster: cluster, CatalogRevision: page.State.Revision, NextPageToken: nextPageToken,
+		ProjectionHealth: "healthy", ScannedRecords: uint32(page.ScannedCount), GeneratedAt: timestamppb.New(s.currentTime().UTC()),
+	}
+	age := s.currentTime().UTC().Sub(time.Unix(page.State.UpdatedAtUnix, 0).UTC())
+	if age > 0 {
+		resp.FreshnessAgeMillis = age.Milliseconds()
+	}
+	for _, entry := range page.Entries {
+		resp.Volumes = append(resp.Volumes, volumeStateAndSpecToSpecOnlyProto(entry.State, volumeSpecRecordFromMetadata(entry.Spec)))
 	}
 	return resp, nil
 }
@@ -2140,10 +2655,6 @@ func (s *server) CreateVolume(ctx context.Context, req *adminv1.CreateVolumeRequ
 	if redundancyBackend == clustermeta.RedundancyBackendEC {
 		volume.ProtectionPolicy = fmt.Sprintf("ec:%s", ecProfile.ProfileID)
 	}
-	if err := s.repo.PutVolumeState(ctx, volume); err != nil {
-		s.failOperation(op.GetOperationId(), err)
-		return nil, status.Errorf(codes.Internal, "put volume state: %v", err)
-	}
 	specRecord := volumeSpecRecord{
 		VolumeID:          volumeID,
 		SizeBytes:         req.GetSizeBytes(),
@@ -2170,9 +2681,9 @@ func (s *server) CreateVolume(ctx context.Context, req *adminv1.CreateVolumeRequ
 		specRecord.ECMaxShardsPerFailureDomain = ecProfile.MaxShardsPerFailureDomain
 		specRecord.WeakPlacementAllowed = req.GetWeakPlacementAllowed()
 	}
-	if err := s.putVolumeSpec(ctx, specRecord); err != nil {
+	if err := s.repo.PutVolumeAuthority(ctx, volume, metadataVolumeSpecRecord(specRecord)); err != nil {
 		s.failOperation(op.GetOperationId(), err)
-		return nil, status.Errorf(codes.Internal, "put volume spec: %v", err)
+		return nil, status.Errorf(codes.Internal, "put volume authority: %v", err)
 	}
 	if redundancyBackend == clustermeta.RedundancyBackendReplicated {
 		if err := s.createInitialPlacement(ctx, volumeID, req.GetSizeBytes(), extentSizeBytes, replicationFactor, req.GetPolicyName(), topologyMode, selectedNodes); err != nil {
@@ -2381,6 +2892,9 @@ func (s *server) DeleteVolume(ctx context.Context, req *adminv1.DeleteVolumeRequ
 		}
 		return nil, status.Errorf(codes.Internal, "get volume: %v", err)
 	}
+	if err := s.validateEnterpriseVolumeDeletion(ctx, volumeID); err != nil {
+		return nil, err
+	}
 
 	transitions, err := s.repo.ListPlacementTransitions(ctx, volumeID)
 	if err != nil {
@@ -2441,6 +2955,9 @@ func (s *server) PurgeVolume(ctx context.Context, req *adminv1.PurgeVolumeReques
 			return nil, status.Errorf(codes.NotFound, "volume %q not found", volumeID)
 		}
 		return nil, status.Errorf(codes.Internal, "get volume: %v", err)
+	}
+	if err := s.validateEnterpriseVolumeDeletion(ctx, volumeID); err != nil {
+		return nil, err
 	}
 
 	op, err := s.ops.create("volume.purge", "", volumeID, "purging", adminv1.OperationState_OPERATION_STATE_RUNNING)
@@ -2765,7 +3282,10 @@ func (s *server) DeleteSnapshot(ctx context.Context, req *adminv1.DeleteSnapshot
 		return nil, status.Errorf(codes.FailedPrecondition, "snapshot %q is referenced by %d clone(s)", snapshotID, snapshot.CloneReferenceCount)
 	}
 	if snapshot.State != clustermeta.SnapshotStateDeleted {
-		if _, err := s.repo.MarkSnapshotState(ctx, snapshotID, clustermeta.SnapshotStateDeleted, ""); err != nil {
+		if _, err := s.repo.MarkSnapshotStateAuthorized(ctx, snapshotID, clustermeta.SnapshotStateDeleted, "", req.GetMeta().GetActor()); err != nil {
+			if errors.Is(err, clustermeta.ErrProtectedDeletionRejected) {
+				return nil, status.Errorf(codes.FailedPrecondition, "mark snapshot deleted: %v", err)
+			}
 			return nil, status.Errorf(codes.Internal, "mark snapshot deleted: %v", err)
 		}
 	}
@@ -3278,6 +3798,7 @@ func materializeContextStatusCode(err error) codes.Code {
 
 type materializeReadViewReader interface {
 	Read(ctx context.Context, req clusterreplication.ReadRequest) (*clusterreplication.ReadResponse, error)
+	ReadSnapshot(ctx context.Context, snapshotID string, req clusterreplication.ReadRequest) (*clusterreplication.ReadResponse, error)
 	ReadClone(ctx context.Context, cloneID string, req clusterreplication.ReadRequest) (*clusterreplication.ReadResponse, error)
 }
 
@@ -3383,6 +3904,48 @@ func (r *materializeECReadViewService) Read(ctx context.Context, req clusterrepl
 		VolumeID: req.VolumeID,
 		Data:     resp.Data,
 	}, nil
+}
+
+func (r *materializeECReadViewService) ReadSnapshot(ctx context.Context, snapshotID string, req clusterreplication.ReadRequest) (*clusterreplication.ReadResponse, error) {
+	snapshotID = strings.TrimSpace(snapshotID)
+	if snapshotID == "" {
+		return nil, fmt.Errorf("snapshot_id is required")
+	}
+	pageBytes := req.PageBytes
+	if pageBytes == 0 {
+		pageBytes = r.volume.ExtentPageBytes
+	}
+	chunkSizeBytes := req.ChunkSizeBytes
+	if chunkSizeBytes == 0 {
+		chunkSizeBytes = r.volume.ChunkSizeBytes
+	}
+	allocationPages, err := r.resolver.ResolveSnapshotAllocationPages(ctx, snapshotID, req.OffsetBytes, req.LengthBytes, pageBytes, chunkSizeBytes)
+	if err != nil {
+		return nil, err
+	}
+	requestID := strings.TrimSpace(req.RequestID)
+	if requestID == "" {
+		requestID = fmt.Sprintf("materialize-ec-snapshot-read-%s-%020d", snapshotID, req.OffsetBytes)
+	}
+	sessionID := strings.TrimSpace(r.sessionPrefix)
+	if sessionID == "" {
+		sessionID = "materialize-ec-snapshot-read"
+	}
+	resp, err := r.reader.ReadFromAllocationPages(ctx, clusterec.ReadRequest{
+		Volume: r.volume,
+		Context: service.SBSRequestContext{
+			RequestID: requestID,
+			GatewayID: "sbs-service",
+			HostID:    r.hostID,
+			SessionID: sessionID,
+		},
+		Offset: req.OffsetBytes,
+		Length: req.LengthBytes,
+	}, allocationPages)
+	if err != nil {
+		return nil, err
+	}
+	return &clusterreplication.ReadResponse{VolumeID: req.VolumeID, Data: resp.Data}, nil
 }
 
 func (r *materializeECReadViewService) ReadClone(ctx context.Context, cloneID string, req clusterreplication.ReadRequest) (*clusterreplication.ReadResponse, error) {
@@ -3892,6 +4455,10 @@ func (s *server) SetMaintenanceThrottle(ctx context.Context, req *adminv1.SetMai
 			rec.MaxConcurrentDrains = int(req.GetMaxConcurrentDrains())
 			changed = true
 		}
+		if req.GetMaxTotalConcurrentMovements() > 0 {
+			rec.MaxTotalConcurrentMovements = int(req.GetMaxTotalConcurrentMovements())
+			changed = true
+		}
 		return changed
 	}); err != nil {
 		return nil, status.Errorf(codes.Internal, "persist maintenance throttle: %v", err)
@@ -3925,16 +4492,17 @@ func (s *server) GetMaintenanceStatus(ctx context.Context, req *adminv1.GetMaint
 	return &adminv1.GetMaintenanceStatusResponse{
 		Cluster: cluster,
 		Throttle: &adminv1.MaintenanceThrottleSummary{
-			Authority:               maintenanceThrottleAuthority,
-			Generation:              settings.generation,
-			MaxConcurrentRepairs:    uint32(settings.maxConcurrentRepairs),
-			MaxConcurrentRebalances: uint32(settings.maxConcurrentRebalances),
-			MaxConcurrentDrains:     uint32(settings.maxConcurrentDrains),
-			MaxConcurrentPayloadGcs: uint32(settings.maxConcurrentPayloadGCs),
-			PauseRepairs:            settings.pauseRepairs,
-			PauseRebalances:         settings.pauseRebalances,
-			PauseDrains:             settings.pauseDrains,
-			PausePayloadGcs:         settings.pausePayloadGCs,
+			Authority:                   maintenanceThrottleAuthority,
+			Generation:                  settings.generation,
+			MaxConcurrentRepairs:        uint32(settings.maxConcurrentRepairs),
+			MaxConcurrentRebalances:     uint32(settings.maxConcurrentRebalances),
+			MaxConcurrentDrains:         uint32(settings.maxConcurrentDrains),
+			MaxTotalConcurrentMovements: uint32(settings.maxTotalConcurrentMovements),
+			MaxConcurrentPayloadGcs:     uint32(settings.maxConcurrentPayloadGCs),
+			PauseRepairs:                settings.pauseRepairs,
+			PauseRebalances:             settings.pauseRebalances,
+			PauseDrains:                 settings.pauseDrains,
+			PausePayloadGcs:             settings.pausePayloadGCs,
 		},
 		Budgets: s.backgroundBudgetSummaries(ctx, settings),
 	}, nil
@@ -4020,20 +4588,36 @@ func (s *server) ResumeMaintenance(ctx context.Context, req *adminv1.ResumeMaint
 	}, nil
 }
 
-func (s *server) ListRepairs(context.Context, *adminv1.ListRepairsRequest) (*adminv1.ListRepairsResponse, error) {
-	repairs, err := s.listTransitionsByReason(context.Background(), "repair")
+func (s *server) ListRepairs(ctx context.Context, req *adminv1.ListRepairsRequest) (*adminv1.ListRepairsResponse, error) {
+	budget, err := s.admitLegacyExpensive(ctx, "list_repairs", req.GetAdmission())
+	if err != nil {
+		return nil, err
+	}
+	cluster, _ := s.clusterRef(req.GetCluster())
+	repairs, err := s.listTransitionsByReason(ctx, "repair")
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list repair transitions: %v", err)
 	}
-	return &adminv1.ListRepairsResponse{Repairs: repairs}, nil
+	if err := s.completeLegacyExpensive("list_repairs", budget, len(repairs)); err != nil {
+		return nil, err
+	}
+	return &adminv1.ListRepairsResponse{Cluster: cluster, Repairs: repairs}, nil
 }
 
-func (s *server) ListRebalances(context.Context, *adminv1.ListRebalancesRequest) (*adminv1.ListRebalancesResponse, error) {
-	rebalances, err := s.listTransitionsByReason(context.Background(), "rebalance")
+func (s *server) ListRebalances(ctx context.Context, req *adminv1.ListRebalancesRequest) (*adminv1.ListRebalancesResponse, error) {
+	budget, err := s.admitLegacyExpensive(ctx, "list_rebalances", req.GetAdmission())
+	if err != nil {
+		return nil, err
+	}
+	cluster, _ := s.clusterRef(req.GetCluster())
+	rebalances, err := s.listTransitionsByReason(ctx, "rebalance")
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list rebalance transitions: %v", err)
 	}
-	return &adminv1.ListRebalancesResponse{Rebalances: toRebalanceSummaries(rebalances)}, nil
+	if err := s.completeLegacyExpensive("list_rebalances", budget, len(rebalances)); err != nil {
+		return nil, err
+	}
+	return &adminv1.ListRebalancesResponse{Cluster: cluster, Rebalances: toRebalanceSummaries(rebalances)}, nil
 }
 
 func (s *server) GetOperation(ctx context.Context, req *adminv1.GetOperationRequest) (*adminv1.GetOperationResponse, error) {
@@ -4044,15 +4628,33 @@ func (s *server) GetOperation(ctx context.Context, req *adminv1.GetOperationRequ
 	op, err := s.ops.get(req.GetOperationId())
 	if err != nil {
 		if errors.Is(err, clustermeta.ErrNotFound) {
-			mutation, mutationErr := s.repo.FindMutationOperationByID(ctx, req.GetOperationId())
+			mutationRead, mutationErr := s.repo.GetMutationOperationByIDPoint(ctx, req.GetOperationId())
 			if mutationErr == nil {
-				related, _ := s.repo.ListMutationOperations(ctx, mutation.VolumeID)
+				var children *clustermeta.OperationChildrenSummary
+				if summary, summaryErr := s.repo.GetOperationChildrenSummary(ctx, mutationRead.Operation.OperationID); summaryErr == nil {
+					children = &summary
+				} else if !errors.Is(summaryErr, clustermeta.ErrNotFound) {
+					return nil, status.Errorf(codes.Internal, "get operation child summary: %v", summaryErr)
+				}
+				var related []clustermeta.MutationOperationRecord
+				if mutationRead.Operation.Kind == "transition_batch" && strings.TrimSpace(mutationRead.Operation.IdempotencyKey) != "" {
+					if parent, parentErr := s.repo.GetMutationOperationByIDPoint(ctx, mutationRead.Operation.IdempotencyKey); parentErr == nil {
+						related = append(related, parent.Operation)
+					} else if !errors.Is(parentErr, clustermeta.ErrNotFound) {
+						return nil, status.Errorf(codes.Internal, "get parent mutation operation: %v", parentErr)
+					}
+				}
 				return &adminv1.GetOperationResponse{
 					Cluster:   cluster,
-					Operation: mutationOperationToAdminStatus(mutation, related),
+					Operation: mutationOperationToAdminStatusWithChildren(mutationRead.Operation, related, children),
 				}, nil
 			}
 			if errors.Is(mutationErr, clustermeta.ErrNotFound) {
+				if _, stateErr := s.repo.GetMaintenanceIndexState(ctx); errors.Is(stateErr, clustermeta.ErrNotFound) {
+					return nil, status.Error(codes.FailedPrecondition, "operation-by-id projection rebuild required")
+				} else if stateErr != nil {
+					return nil, status.Errorf(codes.Internal, "read operation-by-id projection state: %v", stateErr)
+				}
 				return nil, status.Errorf(codes.NotFound, "operation %q not found", req.GetOperationId())
 			}
 			return nil, status.Errorf(codes.Internal, "get mutation operation: %v", mutationErr)
@@ -4063,7 +4665,42 @@ func (s *server) GetOperation(ctx context.Context, req *adminv1.GetOperationRequ
 	return &adminv1.GetOperationResponse{Cluster: cluster, Operation: op}, nil
 }
 
+// GetOperationByRequestIdentity performs only the durable node-drain request
+// identity lookup plus the referenced operation point read. It intentionally
+// does not refresh progress or fall back to ListOperations: callers use this
+// to recover a lost start response and then explicitly choose any status read.
+func (s *server) GetOperationByRequestIdentity(ctx context.Context, req *adminv1.GetOperationByRequestIdentityRequest) (*adminv1.GetOperationByRequestIdentityResponse, error) {
+	cluster, err := s.clusterRef(req.GetCluster())
+	if err != nil {
+		return nil, err
+	}
+	kind := strings.TrimSpace(req.GetKind())
+	nodeID := strings.TrimSpace(req.GetTargetNodeId())
+	requestID := strings.TrimSpace(req.GetRequestId())
+	if kind != "node.drain" {
+		return nil, status.Error(codes.InvalidArgument, "kind must be node.drain")
+	}
+	if nodeID == "" || requestID == "" {
+		return nil, status.Error(codes.InvalidArgument, "target_node_id and request_id are required")
+	}
+	op, found, err := s.ops.getNodeDrainByRequestIdentity(ctx, nodeID, requestID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get node drain request identity: %v", err)
+	}
+	return &adminv1.GetOperationByRequestIdentityResponse{
+		Cluster:   cluster,
+		Found:     found,
+		Operation: op,
+	}, nil
+}
+
 func (s *server) ListOperations(ctx context.Context, req *adminv1.ListOperationsRequest) (*adminv1.ListOperationsResponse, error) {
+	budget, err := s.admitLegacyExpensive(ctx, "list_operations", req.GetAdmission())
+	if err != nil {
+		return nil, err
+	}
+	started := time.Now()
+	filterClass := operationListFilterClass(req.GetKind(), int32(req.GetState()))
 	cluster, _ := s.clusterRef(req.GetCluster())
 	ops := s.ops.list(req.GetKind(), req.GetState())
 	for i := range ops {
@@ -4071,8 +4708,11 @@ func (s *server) ListOperations(ctx context.Context, req *adminv1.ListOperations
 	}
 	mutationOps, err := s.repo.ListAllMutationOperations(ctx)
 	if err != nil {
+		s.phaseADCurrentObservability.recordOperationList(filterClass, "mutation_list", time.Since(started), len(ops), 0, 0)
 		return nil, status.Errorf(codes.Internal, "list mutation operations: %v", err)
 	}
+	mutationScanned := len(mutationOps)
+	mutationReturned := 0
 	for _, mutation := range mutationOps {
 		op := mutationOperationToAdminStatus(mutation, mutationOps)
 		if req.GetKind() != "" && op.GetKind() != req.GetKind() {
@@ -4082,6 +4722,7 @@ func (s *server) ListOperations(ctx context.Context, req *adminv1.ListOperations
 			continue
 		}
 		ops = append(ops, op)
+		mutationReturned++
 	}
 	sort.Slice(ops, func(i, j int) bool {
 		left := int64(0)
@@ -4097,9 +4738,86 @@ func (s *server) ListOperations(ctx context.Context, req *adminv1.ListOperations
 		}
 		return left < right
 	})
+	s.phaseADCurrentObservability.recordOperationList(filterClass, "", time.Since(started), len(ops)-mutationReturned, mutationScanned, mutationReturned)
+	if err := s.completeLegacyExpensive("list_operations", budget, len(ops)); err != nil {
+		return nil, err
+	}
 	return &adminv1.ListOperationsResponse{
 		Cluster:    cluster,
 		Operations: ops,
+	}, nil
+}
+
+func (s *server) ListOperationsPage(ctx context.Context, req *adminv1.ListOperationsPageRequest) (*adminv1.ListOperationsPageResponse, error) {
+	cluster, err := s.clusterRef(req.GetCluster())
+	if err != nil {
+		return nil, err
+	}
+	pageSize := int(req.GetPageSize())
+	if pageSize == 0 {
+		pageSize = clustermeta.MaintenanceIndexPageDefault
+	}
+	if pageSize < 1 || pageSize > clustermeta.MaintenanceIndexPageMaximum {
+		return nil, status.Errorf(codes.InvalidArgument, "page_size %d exceeds maximum %d", req.GetPageSize(), clustermeta.MaintenanceIndexPageMaximum)
+	}
+	filter, err := operationPageFilterFromRequest(req)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid operation page filter: %v", err)
+	}
+	phase, cursor, expectedRevision := "", "", ""
+	if strings.TrimSpace(req.GetPageToken()) != "" {
+		token, tokenErr := decodeOperationPageToken(req.GetPageToken(), req)
+		if tokenErr != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid operation page_token: %v", tokenErr)
+		}
+		phase, cursor, expectedRevision = token.Phase, token.Cursor, token.ProjectionRevision
+	}
+	before, err := s.repo.GetOperationListProjection(ctx)
+	if err != nil {
+		if errors.Is(err, clustermeta.ErrOperationListRebuildRequired) {
+			return nil, status.Error(codes.FailedPrecondition, "operation list projection rebuild required")
+		}
+		return nil, status.Errorf(codes.Internal, "read operation list projection: %v", err)
+	}
+	if expectedRevision != "" && expectedRevision != before.RevisionDigest {
+		return nil, status.Errorf(codes.FailedPrecondition, "operation page_token revision mismatch: token=%s current=%s", expectedRevision, before.RevisionDigest)
+	}
+	page, err := s.ops.listPage(ctx, phase, cursor, pageSize, filter)
+	if err != nil {
+		switch {
+		case errors.Is(err, clustermeta.ErrOperationListRebuildRequired):
+			return nil, status.Error(codes.FailedPrecondition, "operation list projection rebuild required")
+		case errors.Is(err, clustermeta.ErrOperationListChanged), errors.Is(err, clustermeta.ErrMaintenanceIndexChanged):
+			return nil, status.Error(codes.FailedPrecondition, "operation list projection changed during page read")
+		case errors.Is(err, clustermeta.ErrOperationListInvalid), errors.Is(err, clustermeta.ErrMaintenanceIndexInvalid):
+			return nil, status.Errorf(codes.FailedPrecondition, "operation list projection invalid: %v", err)
+		default:
+			return nil, status.Errorf(codes.Internal, "list operation page: %v", err)
+		}
+	}
+	after, err := s.repo.GetOperationListProjection(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "recheck operation list projection: %v", err)
+	}
+	if before.RevisionDigest != after.RevisionDigest {
+		return nil, status.Error(codes.FailedPrecondition, "operation list projection changed during page read")
+	}
+	nextToken := ""
+	if page.NextPhase != "" {
+		nextToken, err = encodeOperationPageToken(page.NextPhase, page.NextCursor, after.RevisionDigest, req)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "encode operation page_token: %v", err)
+		}
+	}
+	now := s.currentTime().UTC()
+	freshnessAge := now.Sub(time.Unix(after.UpdatedAtUnix, 0).UTC())
+	if freshnessAge < 0 {
+		freshnessAge = 0
+	}
+	return &adminv1.ListOperationsPageResponse{
+		Cluster: cluster, Operations: page.Operations, ProjectionRevision: after.RevisionDigest,
+		NextPageToken: nextToken, FreshnessAgeMillis: freshnessAge.Milliseconds(),
+		ProjectionHealth: "healthy", ScannedRecords: uint32(page.ScannedCount), GeneratedAt: timestamppb.New(now),
 	}, nil
 }
 
@@ -4300,7 +5018,7 @@ func main() {
 	}, os.Stderr)...)
 	os.Args = append(os.Args[:1], cliux.RewriteCommandArgs(os.Args[1:], false, false)...)
 	fs := flag.NewFlagSet("sbs-service", flag.ExitOnError)
-	configPath := fs.String("config", "", "service config file path (AA-IMPL-001F); when set it supplies stable settings, while environment variables and explicitly typed flags still win")
+	configPath := fs.String("config", "", "service config file path; when set it supplies stable settings, while environment variables and explicitly typed flags still win")
 	clusterID := fs.String("cluster-id", getenvOrDefault("NAMRBD_CLUSTER_ID", "namrbd-dev"), "cluster id")
 	sbsClusterID := fs.String("sbs-cluster-id", getenvOrDefault("NAMRBD_SBS_CLUSTER_ID", ""), "SBS cluster id; defaults to --cluster-id when omitted")
 	nodeID := fs.String("node-id", getenvCompatOrDefault(envcompat.SBSServiceNodeID, "sbs-svc-1"), "local sbs-service node id")
@@ -4320,6 +5038,8 @@ func main() {
 	tikvAsyncCommit := fs.Bool("tikv-async-commit", getenvBool("NAMRBD_TIKV_ASYNC_COMMIT", false), "enable TiKV async commit for metadata transactions")
 	tikvOnePhaseCommit := fs.Bool("tikv-one-phase-commit", getenvBool("NAMRBD_TIKV_ONE_PHASE_COMMIT", false), "enable TiKV one-phase commit for eligible metadata transactions")
 	grpcListen := fs.String("sbs-service-listen", getenvCompatOrDefault(envcompat.SBSServiceGRPCListen, "0.0.0.0:9443"), "listen address for sbs-service gRPC")
+	adminTransport := registerAdminTransportFlags(fs)
+	kmsOptions := registerKMSRuntimeFlags(fs)
 	httpListen := fs.String("sbs-service-http-listen", getenvCompatOrDefault(envcompat.SBSServiceHTTPListen, "0.0.0.0:9081"), "listen address for sbs-service HTTP health and observability")
 	payloadRoot := fs.String("payload-root", getenvOrDefault("NAMRBD_SBS_PAYLOAD_ROOT", ""), "local replica payload root for automatic payload GC")
 	serviceOwnedWriteEffects := fs.Bool("service-owned-write-effects", getenvBool("NAMRBD_SBS_SERVICE_OWNED_WRITE_EFFECTS", defaultServiceOwnedWriteEffects), "own the ordered service-side write-effects queue for append-only write metadata mode")
@@ -4335,6 +5055,9 @@ func main() {
 	healthSuspectAfter := maxInt(getenvInt("NAMRBD_SBS_DATA_SUSPECT_AFTER", 3), 1)
 	healthDownAfter := maxInt(getenvInt("NAMRBD_SBS_DATA_DOWN_AFTER", 6), 1)
 	healthRecoveryCooldown := getenvDuration("NAMRBD_SBS_DATA_RECOVER_COOLDOWN", 30*time.Second)
+	clusterSummaryState := clusterSummaryStateDisabled
+	clusterSummaryDegradedAfter := defaultClusterSummaryDegradedAfter
+	clusterSummaryRebuildRequiredAfter := defaultClusterSummaryRebuildRequiredAfter
 	cliux.InstallStructuredUsage(fs, "sbs-service", func(name string) bool {
 		f := fs.Lookup(name)
 		labOnly := f != nil && strings.Contains(strings.ToLower(f.Usage), "lab only")
@@ -4342,6 +5065,12 @@ func main() {
 			name == "write-effects-lane-bucket-count" || name == "write-intent-batch-coalesce-wait"
 	})
 	fs.Parse(os.Args[1:])
+	if err := adminTransport.validate(); err != nil {
+		log.Fatalf("configure authenticated admin transport: %v", err)
+	}
+	if err := kmsOptions.validate(); err != nil {
+		log.Fatalf("configure KMS runtime: %v", err)
+	}
 
 	// Without --config sbs-service behaves exactly as before. Adoption is
 	// additive so existing deployments and lab fixtures are unaffected.
@@ -4366,15 +5095,18 @@ func main() {
 			TiKVKeyFile:        tikvKeyFile,
 			TiKVOperationTrace: tikvOperationTrace,
 
-			LeaderLeaseDuration:    leaderLeaseDuration,
-			LeaderRenewInterval:    leaderRenewInterval,
-			HealthShardCount:       &healthShardCount,
-			HealthConcurrency:      &healthConcurrency,
-			HealthInterval:         &healthInterval,
-			HealthTimeout:          &healthTimeout,
-			HealthSuspectAfter:     &healthSuspectAfter,
-			HealthDownAfter:        &healthDownAfter,
-			HealthRecoveryCooldown: &healthRecoveryCooldown,
+			LeaderLeaseDuration:                leaderLeaseDuration,
+			LeaderRenewInterval:                leaderRenewInterval,
+			HealthShardCount:                   &healthShardCount,
+			HealthConcurrency:                  &healthConcurrency,
+			HealthInterval:                     &healthInterval,
+			HealthTimeout:                      &healthTimeout,
+			HealthSuspectAfter:                 &healthSuspectAfter,
+			HealthDownAfter:                    &healthDownAfter,
+			HealthRecoveryCooldown:             &healthRecoveryCooldown,
+			ClusterSummaryState:                &clusterSummaryState,
+			ClusterSummaryDegradedAfter:        &clusterSummaryDegradedAfter,
+			ClusterSummaryRebuildRequiredAfter: &clusterSummaryRebuildRequiredAfter,
 
 			ServiceOwnedWriteEffects:   serviceOwnedWriteEffects,
 			NativeAllocationFastPath:   nativeAllocationFastPath,
@@ -4393,6 +5125,9 @@ func main() {
 	}
 	if strings.TrimSpace(*sbsClusterID) == "" {
 		*sbsClusterID = strings.TrimSpace(*clusterID)
+	}
+	if err := validateClusterSummaryState(clusterSummaryState); err != nil {
+		log.Fatalf("validate cluster summary state: %v", err)
 	}
 
 	nativeAllocationFastPathEnabled := *nativeAllocationFastPath
@@ -4424,6 +5159,15 @@ func main() {
 	defer backend.close()
 	backend.repo.SetNativeAllocationFastPath(nativeAllocationFastPathEnabled)
 	backend.repo.SetAsyncWriteMutationFinalize(*asyncWriteMutationFinalize)
+	wormLifecycle, err := configureEnterpriseWORMGuard(context.Background(), backend.repo, backend.kv, defaultMetadataRoot, getenvBool("NAMRBD_ENTERPRISE_WORM", false))
+	if err != nil {
+		log.Fatalf("configure Enterprise WORM guard: %v", err)
+	}
+	kmsRuntime, err := newKMSRuntime(context.Background(), kmsOptions)
+	if err != nil {
+		log.Fatalf("configure KMS runtime: %v", err)
+	}
+	defer kmsRuntime.Close()
 
 	srv := &server{
 		clusterID:                 *clusterID,
@@ -4443,6 +5187,9 @@ func main() {
 		viewCache:                 newPublishedViewCache(getenvDuration("NAMRBD_SBS_PUBLISHED_VIEW_CACHE_TTL", defaultPublishedViewCacheTTL)),
 		maint:                     newMaintenanceSettings(),
 		leader:                    newLeaderLeaseManager(backend.kv, defaultMetadataRoot, *nodeID),
+		worm:                      wormLifecycle,
+		wormEnabled:               wormLifecycle != nil,
+		kmsRuntime:                kmsRuntime,
 		placementApplyInternalService: clustercontrol.NewRepositoryBackedPlacementApplyInternalService(
 			backend.repo,
 		),
@@ -4477,6 +5224,9 @@ func main() {
 			getenvDuration("NAMRBD_SBS_PLACEMENT_RESOLVER_CACHE_TTL", clustercontrol.DefaultPlacementResolverCacheTTL),
 		),
 		placementApplyTimeout:                 getenvDuration("NAMRBD_SBS_PLACEMENT_APPLY_TIMEOUT", defaultPlacementApplyTimeout),
+		clusterSummaryState:                   clusterSummaryState,
+		clusterSummaryDegradedAfter:           clusterSummaryDegradedAfter,
+		clusterSummaryRebuildRequiredAfter:    clusterSummaryRebuildRequiredAfter,
 		now:                                   time.Now,
 		maintenanceVolumeCooldown:             5 * time.Second,
 		autoRebalanceMinVolumeAge:             getenvDuration("NAMRBD_SBS_AUTO_REBALANCE_MIN_VOLUME_AGE", defaultAutoRebalanceMinVolumeAge),
@@ -4501,14 +5251,18 @@ func main() {
 		log.Fatalf("listen gRPC %s: %v", *grpcListen, err)
 	}
 	grpcSrv := grpc.NewServer()
-	adminv1.RegisterAdminServiceServer(grpcSrv, srv)
-	adminv1.RegisterOperationsServiceServer(grpcSrv, srv)
+	registerAdminServicesOnProductListener(grpcSrv, srv, adminTransport.enabled())
 	sbsv1.RegisterVolumeServiceServer(grpcSrv, sbsgrpc.NewServer(newClusterVolumeServiceProxy(srv)))
 	internalv1.RegisterPlacementApplyServiceServer(grpcSrv, srv)
 	internalv1.RegisterWriteSessionServiceServer(grpcSrv, srv)
 	internalv1.RegisterECMetadataServiceServer(grpcSrv, srv)
 	internalv1.RegisterChunkIDAllocatorServiceServer(grpcSrv, srv)
 	internalv1.RegisterPlacementResolverServiceServer(grpcSrv, srv)
+	internalv1.RegisterPersistentReservationAuthorityServiceServer(grpcSrv, srv)
+	adminRuntime, err := newAuthenticatedAdminGRPCRuntime(srv, adminTransport)
+	if err != nil {
+		log.Fatalf("configure authenticated admin gRPC listener: %v", err)
+	}
 
 	httpSrv := &http.Server{
 		Addr:    *httpListen,
@@ -4517,6 +5271,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	srv.runtimeCtx = ctx
 
 	go func() {
 		log.Printf("sbs-service gRPC listening on %s (metadata_backend=%s runtime_mode=%s tikv_pd_endpoints_configured=%t metadata_path_configured=%t)", *grpcListen, backend.name, srv.metadataRuntimeMode, srv.tikvPDEndpointsConfigured, srv.metadataPathConfigured)
@@ -4524,6 +5279,14 @@ func main() {
 			log.Fatalf("serve gRPC: %v", err)
 		}
 	}()
+	if adminRuntime != nil {
+		go func() {
+			log.Printf("sbs-service authenticated admin gRPC listening on %s (trust_profile=%s min_tls=1.3 client_certificate=required san_identity=required revocation=required rbac_enforced=%t bootstrap_restricted=%t server_cert_sha256=%s server_cert_not_after=%s)", adminRuntime.address, adminMTLSTrustProfile, adminRuntime.rbacEnforced, adminRuntime.bootstrapRestricted, adminRuntime.serverFingerprint, adminRuntime.serverCertificateUntil.UTC().Format(time.RFC3339))
+			if err := adminRuntime.serve(); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				log.Fatalf("serve authenticated admin gRPC: %v", err)
+			}
+		}()
+	}
 	go func() {
 		log.Printf("sbs-service HTTP observability listening on %s", *httpListen)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -4531,6 +5294,8 @@ func main() {
 		}
 	}()
 	go srv.leader.Run(ctx)
+	startEnterpriseTieringReconciler(ctx, srv)
+	startEnterpriseBackupScheduler(ctx, srv)
 	go srv.runBackgroundMaintenance(ctx)
 	go srv.runBackgroundECMaintenance(ctx)
 	// AA-IMPL-004B. TiKV reachability is learned from the reads this service
@@ -4544,7 +5309,18 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
+	if adminRuntime != nil {
+		adminRuntime.gracefulStop()
+	}
 	grpcSrv.GracefulStop()
+}
+
+func registerAdminServicesOnProductListener(grpcServer *grpc.Server, srv *server, separateAuthenticatedListener bool) {
+	if separateAuthenticatedListener {
+		return
+	}
+	adminv1.RegisterAdminServiceServer(grpcServer, srv)
+	adminv1.RegisterOperationsServiceServer(grpcServer, srv)
 }
 
 func observabilityMux(s *server) http.Handler {
@@ -4610,6 +5386,15 @@ func observabilityMux(s *server) http.Handler {
 			"runtime_mode":                                    s.effectiveMetadataRuntimeMode(),
 			"tikv_pd_endpoints_configured":                    s.tikvPDEndpointsConfigured,
 			"metadata_path_configured":                        s.metadataPathConfigured,
+			"cluster_summary_health":                          snapshot.ClusterSummaryHealth,
+			"cluster_summary_reason":                          snapshot.ClusterSummaryReason,
+			"cluster_summary_partial":                         snapshot.ClusterSummaryPartial,
+			"cluster_summary_stale":                           snapshot.ClusterSummaryStale,
+			"cluster_summary_rebuild_required":                snapshot.ClusterSummaryRebuild,
+			"cluster_summary_source_revision":                 snapshot.ClusterSummarySourceRev,
+			"cluster_summary_baseline_source_revision":        snapshot.ClusterSummaryBaselineRev,
+			"cluster_summary_freshness_age_millis":            snapshot.ClusterSummaryAgeMillis,
+			"cluster_summary_freshness_updated_unix":          snapshot.ClusterSummaryUpdatedUnix,
 			"placement_apply_timeout_seconds":                 placementApplyTimeout.Seconds(),
 			"placement_apply_timeout_enabled":                 placementApplyTimeout > 0,
 			"placement_apply_requests_total":                  placementApplyStats.RequestsTotal,
@@ -4684,6 +5469,14 @@ func observabilityMux(s *server) http.Handler {
 			"volumes": snapshot.Volumes,
 		})
 	})
+	mux.HandleFunc("/debug/phase-ad/current-observation", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(s.phaseADCurrentObservability.snapshot())
+	})
 	mux.HandleFunc("/debug/volume", func(w http.ResponseWriter, r *http.Request) {
 		s.handleDebugVolume(w, r)
 	})
@@ -4733,13 +5526,37 @@ func observabilityMux(s *server) http.Handler {
 		s.handleDebugECDrainVolume(w, r)
 	})
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		snapshot, _ := s.boundedObservabilitySnapshot()
+		snapshot, _, aggregateErr := s.aggregateObservabilitySnapshot(r.Context())
+		if aggregateErr != nil {
+			snapshot.ClusterSummaryHealth = string(clustermeta.SummaryHealthRebuildRequired)
+			snapshot.ClusterSummaryReason = "aggregate_unavailable"
+			snapshot.ClusterSummaryPartial = true
+			snapshot.ClusterSummaryRebuild = true
+		}
 		tikvPressure := clustermeta.TiKVPressureSnapshotNow()
+		fleetObservation, fleetObservationErr := s.repo.GetFleetObservation(r.Context())
+		fleetObservationAge := time.Duration(0)
+		fleetObservationStale := fleetObservationErr != nil
+		if fleetObservationErr == nil {
+			fleetObservationAge = s.currentTime().Sub(time.Unix(fleetObservation.ObservedAtUnix, 0).UTC())
+			if fleetObservationAge < 0 {
+				fleetObservationAge = 0
+			}
+			fleetObservationStale = fleetObservationAge >= s.clusterSummaryPolicy().DegradedAfter
+		}
+		fleetHealthCounts := map[string]uint64{}
+		for _, health := range fleetObservationHealth(fleetObservation) {
+			fleetHealthCounts[health.Code] = health.Count
+		}
+		if fleetObservationStale || snapshot.ClusterSummaryPartial || snapshot.ClusterSummaryStale || snapshot.ClusterSummaryRebuild {
+			fleetHealthCounts["SBS_FLEET_CHECK_STALE"] = 1
+		}
 		settings := s.effectiveMaintenanceSettingsSnapshot(r.Context())
 		placementApplyStats := s.placementApplyObservability.snapshot()
 		writeSessionStats := s.writeSessionObservability.snapshot()
 		chunkIDAllocatorStats := s.chunkIDAllocatorObservability.snapshot()
 		placementResolverStats := s.placementResolverObservability.snapshot()
+		phaseADStats := s.phaseADCurrentObservability.snapshot()
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		_, _ = fmt.Fprintln(w, "# HELP sbs_service_ready Whether the sbs-service process is locally ready.")
 		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_ready gauge")
@@ -4747,14 +5564,123 @@ func observabilityMux(s *server) http.Handler {
 		_, _ = fmt.Fprintln(w, "# HELP sbs_service_leader Whether this instance currently owns the leader lease.")
 		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_leader gauge")
 		_, _ = fmt.Fprintf(w, "sbs_service_leader %d\n", boolToMetric(snapshot.LocalIsLeader))
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_cluster_summary_health Current bounded cluster-summary health state.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_cluster_summary_health gauge")
+		for _, state := range []string{"disabled", "shadow", "ready", "degraded", "rebuild_required"} {
+			_, _ = fmt.Fprintf(w, "sbs_service_cluster_summary_health{state=\"%s\"} %d\n", state, boolToMetric(snapshot.ClusterSummaryHealth == state))
+		}
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_cluster_summary_partial Whether the bounded summary read is incomplete.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_cluster_summary_partial gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_cluster_summary_partial %d\n", boolToMetric(snapshot.ClusterSummaryPartial))
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_cluster_summary_stale Whether the complete summary exceeded its freshness threshold.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_cluster_summary_stale gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_cluster_summary_stale %d\n", boolToMetric(snapshot.ClusterSummaryStale))
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_cluster_summary_rebuild_required Whether a bounded aggregate rebuild is required.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_cluster_summary_rebuild_required gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_cluster_summary_rebuild_required %d\n", boolToMetric(snapshot.ClusterSummaryRebuild))
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_cluster_summary_freshness_age_seconds Age of the oldest aggregate component used by the response.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_cluster_summary_freshness_age_seconds gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_cluster_summary_freshness_age_seconds %.3f\n", float64(snapshot.ClusterSummaryAgeMillis)/1000)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_cluster_summary_source_revision Highest source revision represented by the aggregate.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_cluster_summary_source_revision gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_cluster_summary_source_revision %d\n", snapshot.ClusterSummarySourceRev)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_cluster_summary_baseline_source_revision Rebuild baseline source revision represented by every shard.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_cluster_summary_baseline_source_revision gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_cluster_summary_baseline_source_revision %d\n", snapshot.ClusterSummaryBaselineRev)
 		_, _ = fmt.Fprintln(w, "# HELP sbs_service_tikv_operations_total SBS metadata requests to TiKV by operation class.")
 		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_tikv_operations_total counter")
 		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"batch_get\"} %d\n", tikvPressure.BatchGetCount)
 		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"batch_get_key\"} %d\n", tikvPressure.BatchGetKeyCount)
 		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"batch_get_chunk\"} %d\n", tikvPressure.BatchGetChunkCount)
 		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"point_get\"} %d\n", tikvPressure.PointGetCount)
+		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"range_page\"} %d\n", tikvPressure.RangePageCount)
 		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"full_scan\"} %d\n", tikvPressure.FullScanCount)
 		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operations_total{operation=\"txn_retry\"} %d\n", tikvPressure.TxnRetryCount)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_tikv_operation_duration_seconds_total Cumulative TiKV request duration by bounded operation class.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_tikv_operation_duration_seconds_total counter")
+		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operation_duration_seconds_total{operation=\"point_get\"} %.9f\n", float64(tikvPressure.PointGetNanos)/float64(time.Second))
+		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operation_duration_seconds_total{operation=\"batch_get\"} %.9f\n", float64(tikvPressure.BatchGetNanos)/float64(time.Second))
+		_, _ = fmt.Fprintf(w, "sbs_service_tikv_operation_duration_seconds_total{operation=\"range_page\"} %.9f\n", float64(tikvPressure.RangePageNanos)/float64(time.Second))
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_tikv_hot_region_candidates_total Oversized batch or maximum-size page requests requiring region-distribution review.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_tikv_hot_region_candidates_total counter")
+		_, _ = fmt.Fprintf(w, "sbs_service_tikv_hot_region_candidates_total %d\n", tikvPressure.HotCandidateCount)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_fleet_health Current bounded fleet health count by stable code.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_fleet_health gauge")
+		for _, code := range []string{"SBS_APPLY_PAUSED", "SBS_HOST_CHECK_FAILED", "SBS_CONFIG_DRIFT", "SBS_STRAY_NODE", "SBS_STORAGE_CLAIM_MISMATCH", "SBS_FLEET_CHECK_STALE"} {
+			_, _ = fmt.Fprintf(w, "sbs_service_fleet_health{health_code=\"%s\"} %d\n", code, fleetHealthCounts[code])
+		}
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_fleet_apply_state Current fleet apply operation state.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_fleet_apply_state gauge")
+		for _, state := range []string{"idle", "running", "paused", "completed", "failed"} {
+			_, _ = fmt.Fprintf(w, "sbs_service_fleet_apply_state{state=\"%s\"} %d\n", state, boolToMetric(fleetObservation.ApplyState == state))
+		}
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_fleet_manifest_source_revision Source revision joining manifest/config/store observations.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_fleet_manifest_source_revision gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_fleet_manifest_source_revision %d\n", fleetObservation.SourceRevision)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_fleet_observation_age_seconds Age of the signed fleet observation aggregate.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_fleet_observation_age_seconds gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_fleet_observation_age_seconds %.3f\n", fleetObservationAge.Seconds())
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_fleet_capacity_bytes Fleet capacity from the signed observation by fixed state.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_fleet_capacity_bytes gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_fleet_capacity_bytes{state=\"usable\"} %d\n", fleetObservation.UsableBytes)
+		_, _ = fmt.Fprintf(w, "sbs_service_fleet_capacity_bytes{state=\"free\"} %d\n", fleetObservation.FreeBytes)
+		_, _ = fmt.Fprintf(w, "sbs_service_fleet_capacity_bytes{state=\"reserved\"} %d\n", fleetObservation.ReservedBytes)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_fleet_capacity_nodes Fleet capacity observation nodes by fixed state.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_fleet_capacity_nodes gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_fleet_capacity_nodes{state=\"missing\"} %d\n", fleetObservation.MissingNodeCount)
+		_, _ = fmt.Fprintf(w, "sbs_service_fleet_capacity_nodes{state=\"stale\"} %d\n", fleetObservation.StaleNodeCount)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_fleet_zone_nodes Fleet node counts by bounded zone and state.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_fleet_zone_nodes gauge")
+		for _, zone := range fleetObservation.Zones {
+			_, _ = fmt.Fprintf(w, "sbs_service_fleet_zone_nodes{zone=%q,state=\"active\"} %d\n", zone.Zone, zone.ActiveNodes)
+			_, _ = fmt.Fprintf(w, "sbs_service_fleet_zone_nodes{zone=%q,state=\"draining\"} %d\n", zone.Zone, zone.DrainingNodes)
+			_, _ = fmt.Fprintf(w, "sbs_service_fleet_zone_nodes{zone=%q,state=\"suspect\"} %d\n", zone.Zone, zone.SuspectNodes)
+			_, _ = fmt.Fprintf(w, "sbs_service_fleet_zone_nodes{zone=%q,state=\"down\"} %d\n", zone.Zone, zone.DownNodes)
+		}
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_maintenance_oldest_age_seconds Oldest queued work age by reason.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_maintenance_oldest_age_seconds gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_maintenance_oldest_age_seconds{reason=\"repair\"} %d\n", fleetObservation.RepairOldestAgeSeconds)
+		_, _ = fmt.Fprintf(w, "sbs_service_maintenance_oldest_age_seconds{reason=\"rebalance\"} %d\n", fleetObservation.RebalanceOldestAgeSeconds)
+		_, _ = fmt.Fprintf(w, "sbs_service_maintenance_oldest_age_seconds{reason=\"drain\"} %d\n", fleetObservation.DrainOldestAgeSeconds)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_maintenance_claim_latency_seconds Last aggregate claim latency by reason.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_maintenance_claim_latency_seconds gauge")
+		_, _ = fmt.Fprintf(w, "sbs_service_maintenance_claim_latency_seconds{reason=\"repair\"} %.3f\n", float64(fleetObservation.RepairClaimLatencyMillis)/1000)
+		_, _ = fmt.Fprintf(w, "sbs_service_maintenance_claim_latency_seconds{reason=\"rebalance\"} %.3f\n", float64(fleetObservation.RebalanceClaimLatencyMillis)/1000)
+		_, _ = fmt.Fprintf(w, "sbs_service_maintenance_claim_latency_seconds{reason=\"drain\"} %.3f\n", float64(fleetObservation.DrainClaimLatencyMillis)/1000)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_phase_ad_operation_list_requests_total Current-version operation list requests by bounded label class.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_phase_ad_operation_list_requests_total counter")
+		for _, filter := range []string{"all", "kind", "state", "kind_state"} {
+			_, _ = fmt.Fprintf(w, "sbs_service_phase_ad_operation_list_requests_total{filter=\"%s\"} %d\n", filter, phaseADStats.OperationListRequestsByFilter[filter])
+			_, _ = fmt.Fprintf(w, "sbs_service_phase_ad_operation_list_duration_seconds_total{filter=\"%s\"} %.9f\n", filter, float64(phaseADStats.OperationListDurationNanos[filter])/float64(time.Second))
+		}
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_phase_ad_operation_list_records_total Existing operation-list records observed by source.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_phase_ad_operation_list_records_total counter")
+		_, _ = fmt.Fprintf(w, "sbs_service_phase_ad_operation_list_records_total{source=\"stored_returned\"} %d\n", phaseADStats.OperationListStoredReturned)
+		_, _ = fmt.Fprintf(w, "sbs_service_phase_ad_operation_list_records_total{source=\"mutation_scanned\"} %d\n", phaseADStats.OperationListMutationScanned)
+		_, _ = fmt.Fprintf(w, "sbs_service_phase_ad_operation_list_records_total{source=\"mutation_returned\"} %d\n", phaseADStats.OperationListMutationReturned)
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_phase_ad_legacy_expensive_calls_total Legacy unpaged completion requests by bounded surface and outcome.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_phase_ad_legacy_expensive_calls_total counter")
+		for _, surface := range []string{"list_volumes", "list_operations", "list_repairs", "list_rebalances"} {
+			for _, outcome := range []string{"requested", "admitted", "rejected", "completed", "budget_exceeded"} {
+				_, _ = fmt.Fprintf(w, "sbs_service_phase_ad_legacy_expensive_calls_total{surface=\"%s\",outcome=\"%s\"} %d\n", surface, outcome, phaseADStats.LegacyExpensiveBySurface[surface][outcome])
+			}
+		}
+		fullCompletionTotal := uint64(0)
+		for _, surface := range []string{"list_volumes", "list_operations", "list_repairs", "list_rebalances"} {
+			fullCompletionTotal += phaseADStats.LegacyExpensiveBySurface[surface]["completed"]
+		}
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_metadata_completion_total Metadata enumeration completion by fixed class.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_metadata_completion_total counter")
+		_, _ = fmt.Fprintf(w, "sbs_service_metadata_completion_total{state=\"full\"} %d\n", fullCompletionTotal)
+		_, _ = fmt.Fprintln(w, "sbs_service_metadata_completion_total{state=\"nested\"} 0")
+		_, _ = fmt.Fprintln(w, "# HELP sbs_service_phase_ad_drain_observation_errors_total Drain errors observed without changing drain behavior.")
+		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_phase_ad_drain_observation_errors_total counter")
+		for _, stage := range []string{"compute_progress_list_volume_states", "compute_progress_ensure_mappings", "compute_progress_list_replica_sets", "compute_progress_evaluate_extent_health", "enqueue_list_volume_states", "enqueue_ensure_mappings", "enqueue_list_replica_sets", "enqueue_evaluate_extent_health", "enqueue_get_placement_transition", "enqueue_plan_replacement", "enqueue_put_replica_set", "enqueue_put_placement_transition"} {
+			for _, class := range []string{"metadata_not_found", "other"} {
+				key := stage + ":" + class
+				_, _ = fmt.Fprintf(w, "sbs_service_phase_ad_drain_observation_errors_total{stage=\"%s\",class=\"%s\"} %d\n", stage, class, phaseADStats.DrainErrorsByStageAndClass[key])
+			}
+		}
 		_, _ = fmt.Fprintln(w, "# HELP sbs_service_nodes Number of known nodes by lifecycle and health.")
 		_, _ = fmt.Fprintln(w, "# TYPE sbs_service_nodes gauge")
 		_, _ = fmt.Fprintf(w, "sbs_service_nodes{state=\"known\"} %d\n", snapshot.KnownNodes)
@@ -4920,12 +5846,36 @@ func operationsSeqKey(root string) string {
 	return fmt.Sprintf("%s/admin/operations-seq", root)
 }
 
+func nextOperationSequence(ctx context.Context, tx clustermeta.ReadWriter, root string) (uint64, error) {
+	raw, found, err := tx.Get(ctx, operationsSeqKey(root))
+	if err != nil {
+		return 0, err
+	}
+	current := uint64(0)
+	if found {
+		current, err = strconv.ParseUint(string(raw), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("decode operation sequence: %w", err)
+		}
+	}
+	next := current + 1
+	if err := tx.Set(ctx, operationsSeqKey(root), []byte(strconv.FormatUint(next, 10))); err != nil {
+		return 0, err
+	}
+	return next, nil
+}
+
 func operationsPrefix(root string) string {
 	return fmt.Sprintf("%s/admin/operations/", root)
 }
 
 func operationKey(root, opID string) string {
 	return fmt.Sprintf("%s%s", operationsPrefix(root), opID)
+}
+
+func nodeDrainRequestIdentityKey(root, nodeID, requestID string) string {
+	digest := sha256.Sum256([]byte("node.drain\x00" + nodeID + "\x00" + requestID))
+	return fmt.Sprintf("%s/admin/operation-request-identities/v1/%x", root, digest)
 }
 
 func volumeSpecKey(root, volumeID string) string {
@@ -5239,6 +6189,10 @@ func (s *server) volumeToProto(ctx context.Context, rec clustermeta.VolumeState)
 
 func (s *server) volumeToSpecOnlyProto(ctx context.Context, rec clustermeta.VolumeState) *adminv1.VolumeSummary {
 	spec, _ := s.getVolumeSpec(ctx, rec.VolumeID)
+	return volumeStateAndSpecToSpecOnlyProto(rec, spec)
+}
+
+func volumeStateAndSpecToSpecOnlyProto(rec clustermeta.VolumeState, spec volumeSpecRecord) *adminv1.VolumeSummary {
 	return &adminv1.VolumeSummary{
 		VolumeId:             rec.VolumeID,
 		SizeBytes:            spec.SizeBytes,
@@ -5256,7 +6210,6 @@ func (s *server) volumeToSpecOnlyProto(ctx context.Context, rec clustermeta.Volu
 		WeakPlacementAllowed: spec.WeakPlacementAllowed,
 		ProtectedState:       protectedStateToProto(spec.ProtectedState),
 		Health:               volumeHealthToProto(rec.Status),
-		VolumeRevision:       rec.Revision,
 	}
 }
 
@@ -5351,11 +6304,33 @@ func cloneStateToProto(state clustermeta.CloneState) adminv1.CloneState {
 }
 
 func (s *server) putVolumeSpec(ctx context.Context, rec volumeSpecRecord) error {
-	raw, err := json.Marshal(rec)
-	if err != nil {
-		return err
+	return s.repo.PutVolumeSpec(ctx, metadataVolumeSpecRecord(rec))
+}
+
+func metadataVolumeSpecRecord(rec volumeSpecRecord) clustermeta.VolumeSpecRecord {
+	return clustermeta.VolumeSpecRecord{
+		VolumeID: rec.VolumeID, SizeBytes: rec.SizeBytes, BlockSize: rec.BlockSize,
+		ChunkSizeBytes: rec.ChunkSizeBytes, ExtentPageBytes: rec.ExtentPageBytes, ExtentSizeBytes: rec.ExtentSizeBytes,
+		ReplicationFactor: rec.ReplicationFactor, PolicyName: rec.PolicyName, TopologyMode: rec.TopologyMode,
+		RedundancyBackend: rec.RedundancyBackend, ECProfileID: rec.ECProfileID, ECCodecID: rec.ECCodecID,
+		ECDataShards: rec.ECDataShards, ECParityShards: rec.ECParityShards, ECStripeUnitBytes: rec.ECStripeUnitBytes,
+		ECFailureDomain: rec.ECFailureDomain, ECMaxUnavailableFailureDomains: rec.ECMaxUnavailableFailureDomains,
+		ECMaxShardsPerFailureDomain: rec.ECMaxShardsPerFailureDomain, WeakPlacementAllowed: rec.WeakPlacementAllowed,
+		CreatedBy: rec.CreatedBy, CreatedReason: rec.CreatedReason, CreatedAtUnix: rec.CreatedAtUnix, ProtectedState: rec.ProtectedState,
 	}
-	return s.kv.Set(ctx, volumeSpecKey(s.root, rec.VolumeID), raw)
+}
+
+func volumeSpecRecordFromMetadata(rec clustermeta.VolumeSpecRecord) volumeSpecRecord {
+	return volumeSpecRecord{
+		VolumeID: rec.VolumeID, SizeBytes: rec.SizeBytes, BlockSize: rec.BlockSize,
+		ChunkSizeBytes: rec.ChunkSizeBytes, ExtentPageBytes: rec.ExtentPageBytes, ExtentSizeBytes: rec.ExtentSizeBytes,
+		ReplicationFactor: rec.ReplicationFactor, PolicyName: rec.PolicyName, TopologyMode: rec.TopologyMode,
+		RedundancyBackend: rec.RedundancyBackend, ECProfileID: rec.ECProfileID, ECCodecID: rec.ECCodecID,
+		ECDataShards: rec.ECDataShards, ECParityShards: rec.ECParityShards, ECStripeUnitBytes: rec.ECStripeUnitBytes,
+		ECFailureDomain: rec.ECFailureDomain, ECMaxUnavailableFailureDomains: rec.ECMaxUnavailableFailureDomains,
+		ECMaxShardsPerFailureDomain: rec.ECMaxShardsPerFailureDomain, WeakPlacementAllowed: rec.WeakPlacementAllowed,
+		CreatedBy: rec.CreatedBy, CreatedReason: rec.CreatedReason, CreatedAtUnix: rec.CreatedAtUnix, ProtectedState: rec.ProtectedState,
+	}
 }
 
 func (s *server) getVolumeSpec(ctx context.Context, volumeID string) (volumeSpecRecord, error) {
@@ -5459,6 +6434,9 @@ func (s *server) nodeReplicaReference(ctx context.Context, nodeID string) (strin
 	if err != nil {
 		return "", false, err
 	}
+	if !progress.enqueueCompleted {
+		return "drain placement planning is incomplete", true, nil
+	}
 	if progress.extentsRemaining == 0 {
 		return "", false, nil
 	}
@@ -5469,22 +6447,47 @@ type drainProgress struct {
 	extentsRemaining uint64
 	bytesRemaining   uint64
 	sampleRef        string
+	enqueueCompleted bool
 }
 
 func (s *server) computeDrainProgress(ctx context.Context, nodeID string) (drainProgress, error) {
-	volumes, err := s.repo.ListVolumeStates(ctx)
+	ready, err := s.phaseADMaintenanceIndexReady(ctx)
 	if err != nil {
 		return drainProgress{}, err
 	}
+	if ready {
+		point, err := s.repo.GetDrainProgressPoint(ctx, nodeID)
+		if err != nil {
+			return drainProgress{}, err
+		}
+		persisted := point.Progress
+		return drainProgress{
+			extentsRemaining: persisted.RemainingExtents,
+			bytesRemaining:   persisted.RemainingBytes,
+			sampleRef:        persisted.SampleRef,
+			enqueueCompleted: persisted.EnqueueCompleted,
+		}, nil
+	}
+	return s.computeDrainProgressLegacy(ctx, nodeID)
+}
+
+func (s *server) computeDrainProgressLegacy(ctx context.Context, nodeID string) (drainProgress, error) {
+	volumes, err := s.repo.ListVolumeStates(ctx)
+	if err != nil {
+		s.observePhaseADDrainError(ctx, "compute_progress_list_volume_states", nodeID, "", 0, err)
+		return drainProgress{}, err
+	}
 	maintSvc := s.newMaintenanceService()
-	progress := drainProgress{}
+	progress := drainProgress{enqueueCompleted: true}
 	for _, volume := range volumes {
 		mappings, err := s.ensureDrainPlacementMappings(ctx, volume, nodeID)
 		if err != nil {
+			s.observePhaseADDrainError(ctx, "compute_progress_ensure_mappings", nodeID, volume.VolumeID, 0, err)
 			return drainProgress{}, err
 		}
 		replicaSets, err := s.repo.ListReplicaSets(ctx, volume.VolumeID)
 		if err != nil {
+			s.observePhaseADDrainError(ctx, "compute_progress_list_replica_sets", nodeID, volume.VolumeID, 0, err)
 			return drainProgress{}, err
 		}
 		nodePlacements := make(map[string]string)
@@ -5505,6 +6508,7 @@ func (s *server) computeDrainProgress(ctx context.Context, nodeID string) (drain
 			}
 			evaluated, err := maintSvc.EvaluateExtentHealth(ctx, volume.VolumeID, mapping.ExtentID)
 			if err != nil {
+				s.observePhaseADDrainError(ctx, "compute_progress_evaluate_extent_health", nodeID, volume.VolumeID, mapping.ExtentID, err)
 				return drainProgress{}, err
 			}
 			progress.extentsRemaining++
@@ -5515,6 +6519,57 @@ func (s *server) computeDrainProgress(ctx context.Context, nodeID string) (drain
 		}
 	}
 	return progress, nil
+}
+
+func (s *server) phaseADMaintenanceIndexReady(ctx context.Context) (bool, error) {
+	if s.drainProjectionReady.Load() {
+		return true, nil
+	}
+	state, err := s.repo.GetMaintenanceIndexState(ctx)
+	if err == nil {
+		if state.DrainProjectionReady {
+			s.drainProjectionReady.Store(true)
+		}
+		return state.DrainProjectionReady, nil
+	}
+	if errors.Is(err, clustermeta.ErrNotFound) {
+		return false, nil
+	}
+	return false, err
+}
+
+func (s *server) phaseADHealthProjectionReady(ctx context.Context) (bool, error) {
+	if s.healthProjectionReady.Load() {
+		return true, nil
+	}
+	state, err := s.repo.GetMaintenanceIndexState(ctx)
+	if err == nil {
+		if state.HealthProjectionReady {
+			s.healthProjectionReady.Store(true)
+		}
+		return state.HealthProjectionReady, nil
+	}
+	if errors.Is(err, clustermeta.ErrNotFound) {
+		return false, nil
+	}
+	return false, err
+}
+
+func (s *server) phaseADWorkProjectionReady(ctx context.Context) (bool, error) {
+	if s.workProjectionReady.Load() {
+		return true, nil
+	}
+	state, err := s.repo.GetMaintenanceIndexState(ctx)
+	if err == nil {
+		if state.WorkProjectionReady {
+			s.workProjectionReady.Store(true)
+		}
+		return state.WorkProjectionReady, nil
+	}
+	if errors.Is(err, clustermeta.ErrNotFound) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (s *server) deleteVolumeArtifacts(ctx context.Context, volumeID string) error {
@@ -5551,10 +6606,7 @@ func (s *server) deleteVolumeArtifacts(ctx context.Context, volumeID string) err
 	if err := deleteByPrefix(ctx, s.kv, placementTransitionsPrefix(s.root, volumeID)); err != nil {
 		return err
 	}
-	if err := s.repo.DeleteVolumeState(ctx, volumeID); err != nil {
-		return err
-	}
-	return s.kv.Delete(ctx, volumeSpecKey(s.root, volumeID))
+	return s.repo.DeleteVolumeAuthority(ctx, volumeID)
 }
 
 func latestDrainForNode(ops []*adminv1.OperationStatus, nodeID string) *adminv1.OperationStatus {
@@ -5626,7 +6678,7 @@ func (s *server) refreshDrainOperation(ctx context.Context, op *adminv1.Operatio
 		}
 		return op
 	}
-	progress, err := s.computeDrainProgress(ctx, op.GetTargetNodeId())
+	progress, err := s.computeDrainProgress(withPhaseADDrainObservation(ctx, op.GetOperationId(), op.GetTargetNodeId()), op.GetTargetNodeId())
 	if err != nil {
 		_, _ = s.ops.update(op.GetOperationId(), func(cur *adminv1.OperationStatus) {
 			cur.State = adminv1.OperationState_OPERATION_STATE_FAILED
@@ -5641,15 +6693,20 @@ func (s *server) refreshDrainOperation(ctx context.Context, op *adminv1.Operatio
 	updated, err := s.ops.update(op.GetOperationId(), func(cur *adminv1.OperationStatus) {
 		cur.ExtentsRemaining = progress.extentsRemaining
 		cur.BytesRemaining = progress.bytesRemaining
-		if progress.extentsRemaining == 0 {
+		if progress.extentsRemaining == 0 && progress.enqueueCompleted {
 			cur.State = adminv1.OperationState_OPERATION_STATE_COMPLETED
 			cur.Phase = "evacuated"
 			cur.BlockingReason = ""
 			return
 		}
 		cur.State = adminv1.OperationState_OPERATION_STATE_RUNNING
-		cur.Phase = "evacuating"
-		cur.BlockingReason = "awaiting replica evacuation"
+		if !progress.enqueueCompleted {
+			cur.Phase = "evacuation_planning"
+			cur.BlockingReason = "awaiting bounded placement planning"
+		} else {
+			cur.Phase = "evacuating"
+			cur.BlockingReason = "awaiting replica evacuation"
+		}
 	})
 	if err != nil {
 		return op
@@ -5658,18 +6715,149 @@ func (s *server) refreshDrainOperation(ctx context.Context, op *adminv1.Operatio
 }
 
 func (s *server) enqueueDrainTransitions(ctx context.Context, nodeID string) error {
+	ready, err := s.phaseADMaintenanceIndexReady(ctx)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		return s.enqueueDrainTransitionsLegacy(ctx, nodeID)
+	}
+	return s.enqueueDrainTransitionsPage(ctx, nodeID)
+}
+
+func (s *server) enqueueDrainTransitionsPage(ctx context.Context, nodeID string) error {
+	progress, err := s.repo.GetDrainProgress(ctx, nodeID)
+	if errors.Is(err, clustermeta.ErrNotFound) {
+		scope, _ := ctx.Value(phaseADDrainObservationContextKey{}).(phaseADDrainObservationScope)
+		operationID := strings.TrimSpace(scope.OperationID)
+		if operationID == "" {
+			operationID = "compat-drain-" + strings.TrimSpace(nodeID)
+		}
+		progress, err = s.repo.BeginDrainProgress(ctx, nodeID, operationID)
+	}
+	if err != nil {
+		return err
+	}
+	if progress.EnqueueCompleted {
+		return nil
+	}
+	page, err := s.repo.ListPlacementByNodePage(ctx, nodeID, progress.SourceCursor, 1)
+	if err != nil {
+		return err
+	}
+	if len(page.Records) == 0 {
+		if progress.ExtentCursor != "" {
+			return fmt.Errorf("drain placement disappeared while extent page was active")
+		}
+		_, err := s.repo.AdvanceDrainEnqueueCursor(ctx, progress, "", "", true)
+		return err
+	}
+	index := page.Records[0]
+	replicaSet, err := s.repo.GetReplicaSet(ctx, index.VolumeID, index.ReplicaSetID)
+	if err != nil {
+		return err
+	}
+	if !replicaSetContainsNode(replicaSet, nodeID) {
+		return fmt.Errorf("placement index node %q no longer belongs to replica set %q", nodeID, index.ReplicaSetID)
+	}
+	extentPage, err := s.repo.ListExtentMappingsByPlacementPage(ctx, index.VolumeID, index.PlacementRef, progress.ExtentCursor, clustermeta.MaintenanceIndexPageDefault)
+	if err != nil {
+		return err
+	}
+	if len(extentPage.Records) == 0 {
+		return fmt.Errorf("placement %q has no extent mappings", index.PlacementRef)
+	}
+	maintSvc := s.newMaintenanceService()
+	extents := make([]clustermeta.DrainWorkExtent, 0, len(extentPage.Records))
+	extentIDs := make([]uint64, 0, len(extentPage.Records))
+	for _, extentIndex := range extentPage.Records {
+		extentIDs = append(extentIDs, extentIndex.ExtentID)
+	}
+	evaluatedExtents, err := maintSvc.EvaluateExtentHealthSet(ctx, index.VolumeID, extentIDs)
+	if err != nil {
+		return err
+	}
+	var planningExtent *clustermaintenance.EvaluatedExtent
+	for _, evaluated := range evaluatedExtents {
+		if evaluated.Extent.PlacementRef != index.PlacementRef || evaluated.ReplicaSet.ReplicaSetID != index.ReplicaSetID {
+			return fmt.Errorf("placement %q authority changed during drain planning", index.PlacementRef)
+		}
+		if planningExtent == nil {
+			planningExtent = evaluated
+		}
+		extents = append(extents, clustermeta.DrainWorkExtent{ExtentID: evaluated.Extent.ExtentID, DataBytes: evaluated.DataBytes})
+	}
+	finalizePlacement := extentPage.NextCursor == ""
+	var targetReplicaSet clustermeta.ReplicaSetState
+	var transition clustermeta.PlacementTransitionRecord
+	if finalizePlacement {
+		transition, err = s.repo.GetPlacementTransition(ctx, index.VolumeID, index.PlacementRef)
+		if err == nil {
+			if transition.Reason != "drain" || transition.CurrentReplicaSetID != replicaSet.ReplicaSetID {
+				return nil
+			}
+			targetReplicaSet, err = s.repo.GetReplicaSet(ctx, index.VolumeID, transition.TargetReplicaSetID)
+			if err != nil {
+				return err
+			}
+		} else if !errors.Is(err, clustermeta.ErrNotFound) {
+			return err
+		} else {
+			var ok bool
+			targetReplicaSet, ok, err = s.planReplacementReplicaSet(ctx, index.VolumeID, planningExtent.Extent, replicaSet, nodeID, "drain", planningExtent)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return nil
+			}
+			now := time.Now().Unix()
+			transition = clustermeta.PlacementTransitionRecord{
+				VolumeID: index.VolumeID, PlacementRef: index.PlacementRef,
+				State: clustermeta.PlacementTransitionQueued, Reason: "drain",
+				CurrentReplicaSetID: replicaSet.ReplicaSetID,
+				TargetReplicaSetID:  targetReplicaSet.ReplicaSetID,
+				StartedAtUnix:       now, LastProgressAtUnix: now, Attempt: 1,
+			}
+		}
+	}
+	latest, _, err := s.repo.EnqueueDrainWork(ctx, clustermeta.EnqueueDrainWorkRequest{
+		OperationID: progress.OperationID, NodeID: nodeID,
+		VolumeID: index.VolumeID, PlacementRef: index.PlacementRef, ReplicaSetID: index.ReplicaSetID,
+		Extents: extents, FinalizePlacement: finalizePlacement,
+		TargetReplicaSet: targetReplicaSet, Transition: transition,
+	})
+	if err != nil {
+		return err
+	}
+	nextSourceCursor := progress.SourceCursor
+	nextExtentCursor := extentPage.NextCursor
+	completed := false
+	if finalizePlacement {
+		nextSourceCursor = page.NextCursor
+		nextExtentCursor = ""
+		completed = page.NextCursor == ""
+	}
+	_, err = s.repo.AdvanceDrainEnqueueCursor(ctx, latest, nextSourceCursor, nextExtentCursor, completed)
+	return err
+}
+
+func (s *server) enqueueDrainTransitionsLegacy(ctx context.Context, nodeID string) error {
 	volumes, err := s.repo.ListVolumeStates(ctx)
 	if err != nil {
+		s.observePhaseADDrainError(ctx, "enqueue_list_volume_states", nodeID, "", 0, err)
 		return err
 	}
 	maintSvc := s.newMaintenanceService()
 	for _, volume := range volumes {
 		mappings, err := s.ensureDrainPlacementMappings(ctx, volume, nodeID)
 		if err != nil {
+			s.observePhaseADDrainError(ctx, "enqueue_ensure_mappings", nodeID, volume.VolumeID, 0, err)
 			return err
 		}
 		replicaSets, err := s.repo.ListReplicaSets(ctx, volume.VolumeID)
 		if err != nil {
+			s.observePhaseADDrainError(ctx, "enqueue_list_replica_sets", nodeID, volume.VolumeID, 0, err)
 			return err
 		}
 		byPlacement := make(map[string]clustermeta.ReplicaSetState, len(replicaSets))
@@ -5684,6 +6872,7 @@ func (s *server) enqueueDrainTransitions(ctx context.Context, nodeID string) err
 		for _, mapping := range mappings {
 			evaluated, evalErr := maintSvc.EvaluateExtentHealth(ctx, volume.VolumeID, mapping.ExtentID)
 			if evalErr != nil {
+				s.observePhaseADDrainError(ctx, "enqueue_evaluate_extent_health", nodeID, volume.VolumeID, mapping.ExtentID, evalErr)
 				continue
 			}
 			candidates = append(candidates, drainCandidate{mapping: mapping, evaluated: evaluated})
@@ -5700,16 +6889,19 @@ func (s *server) enqueueDrainTransitions(ctx context.Context, nodeID string) err
 			if _, err := s.repo.GetPlacementTransition(ctx, volume.VolumeID, mapping.PlacementRef); err == nil {
 				continue
 			} else if !errors.Is(err, clustermeta.ErrNotFound) {
+				s.observePhaseADDrainError(ctx, "enqueue_get_placement_transition", nodeID, volume.VolumeID, mapping.ExtentID, err)
 				return err
 			}
 			targetReplicaSet, ok, err := s.planReplacementReplicaSet(ctx, volume.VolumeID, mapping, currentReplicaSet, nodeID, "drain", candidate.evaluated)
 			if err != nil {
+				s.observePhaseADDrainError(ctx, "enqueue_plan_replacement", nodeID, volume.VolumeID, mapping.ExtentID, err)
 				return err
 			}
 			if !ok {
 				continue
 			}
 			if err := s.repo.PutReplicaSet(ctx, targetReplicaSet); err != nil {
+				s.observePhaseADDrainError(ctx, "enqueue_put_replica_set", nodeID, volume.VolumeID, mapping.ExtentID, err)
 				return err
 			}
 			if err := s.repo.PutPlacementTransition(ctx, clustermeta.PlacementTransitionRecord{
@@ -5723,6 +6915,7 @@ func (s *server) enqueueDrainTransitions(ctx context.Context, nodeID string) err
 				LastProgressAtUnix:  time.Now().Unix(),
 				Attempt:             1,
 			}); err != nil {
+				s.observePhaseADDrainError(ctx, "enqueue_put_placement_transition", nodeID, volume.VolumeID, mapping.ExtentID, err)
 				return err
 			}
 		}
@@ -7575,7 +8768,7 @@ func (s *server) ecMaintenanceNodeClients(ctx context.Context, spec volumeSpecRe
 		if err != nil {
 			return nil, err
 		}
-		client = newMaterializingSBSClient(client, nodeAdminHTTPEndpoint(node), spec)
+		client = newMaterializingSBSClient(client, spec)
 		clients[node.NodeID] = client
 	}
 	if len(clients) == 0 {
@@ -7987,12 +9180,16 @@ func debugECDrainResponseJSON(volumeID string, resp *clusterec.DrainResponse) ma
 }
 
 func mutationOperationToAdminStatus(rec clustermeta.MutationOperationRecord, related []clustermeta.MutationOperationRecord) *adminv1.OperationStatus {
+	return mutationOperationToAdminStatusWithChildren(rec, related, nil)
+}
+
+func mutationOperationToAdminStatusWithChildren(rec clustermeta.MutationOperationRecord, related []clustermeta.MutationOperationRecord, children *clustermeta.OperationChildrenSummary) *adminv1.OperationStatus {
 	return &adminv1.OperationStatus{
 		OperationId:      rec.OperationID,
 		Kind:             rec.Kind,
 		State:            mutationOperationStateToAdminState(rec.State),
 		TargetVolumeId:   rec.VolumeID,
-		Phase:            mutationOperationPhase(rec, related),
+		Phase:            mutationOperationPhaseWithChildren(rec, related, children),
 		BlockingReason:   rec.IdempotencyKey,
 		StartedAt:        unixTimestamp(rec.StartedAtUnix),
 		LastProgressAt:   unixTimestamp(rec.LastUpdatedAtUnix),
@@ -8020,6 +9217,10 @@ func mutationOperationStateToAdminState(state clustermeta.MutationOperationState
 }
 
 func mutationOperationPhase(rec clustermeta.MutationOperationRecord, related []clustermeta.MutationOperationRecord) string {
+	return mutationOperationPhaseWithChildren(rec, related, nil)
+}
+
+func mutationOperationPhaseWithChildren(rec clustermeta.MutationOperationRecord, related []clustermeta.MutationOperationRecord, children *clustermeta.OperationChildrenSummary) string {
 	base := ""
 	switch {
 	case rec.AllocationRevision > 0 && rec.PlacementRevision > 0:
@@ -8034,6 +9235,9 @@ func mutationOperationPhase(rec clustermeta.MutationOperationRecord, related []c
 	switch rec.Kind {
 	case "payload_gc":
 		summary := payloadGCBatchPhaseSummary(rec, related)
+		if children != nil && children.ChildKind == "payload_gc_batch" {
+			summary = fmt.Sprintf("batches=%d completed=%d running=%d failed=%d chunks=%d", children.Total, children.Completed, children.Running, children.Failed, len(rec.RetiredPhysicalChunkIDs))
+		}
 		return appendPhase(base, summary)
 	case "payload_gc_batch":
 		parent := rec.IdempotencyKey
@@ -8044,6 +9248,16 @@ func mutationOperationPhase(rec clustermeta.MutationOperationRecord, related []c
 		return appendPhase(base, summary)
 	case "transition":
 		summary := transitionBatchPhaseSummary(rec, related)
+		if children != nil && children.ChildKind == "transition_batch" {
+			remainingPages := subtractMutationCompletedPages(rec.AffectedPageNos, rec.CompletedPageNos)
+			summary = fmt.Sprintf("batches=%d completed=%d running=%d failed=%d small=%d pages=%d completed_pages=%d remaining_retry_pages=%d remaining_retry_batches=%d", children.Total, children.Completed, children.Running, children.Failed, children.Small, len(rec.AffectedPageNos), len(rec.CompletedPageNos), len(remainingPages), children.Running+children.Failed)
+			if rec.State == clustermeta.MutationOperationPending && len(remainingPages) > 0 {
+				summary += " retry=requeued"
+				if retrySummary := retryPageWindowPhaseSummary(rec.RetryPageWindows); retrySummary != "" {
+					summary += " " + retrySummary
+				}
+			}
+		}
 		if summary != "" {
 			return appendPhase(base, summary)
 		}
@@ -8581,6 +9795,25 @@ func volumeHealthToProto(v clustermeta.VolumeStatus) adminv1.VolumeHealth {
 	}
 }
 
+func volumeStatusFromProto(v adminv1.VolumeHealth) (clustermeta.VolumeStatus, error) {
+	switch v {
+	case adminv1.VolumeHealth_VOLUME_HEALTH_UNSPECIFIED:
+		return "", nil
+	case adminv1.VolumeHealth_VOLUME_HEALTH_HEALTHY:
+		return clustermeta.VolumeStatusHealthy, nil
+	case adminv1.VolumeHealth_VOLUME_HEALTH_DEGRADED:
+		return clustermeta.VolumeStatusDegraded, nil
+	case adminv1.VolumeHealth_VOLUME_HEALTH_REPAIRING:
+		return clustermeta.VolumeStatusRepairing, nil
+	case adminv1.VolumeHealth_VOLUME_HEALTH_REBALANCING:
+		return clustermeta.VolumeStatusRebalancing, nil
+	case adminv1.VolumeHealth_VOLUME_HEALTH_BLOCKED:
+		return clustermeta.VolumeStatusBlocked, nil
+	default:
+		return "", fmt.Errorf("unsupported volume health filter %d", v)
+	}
+}
+
 func operationStateFromString(v string) adminv1.OperationState {
 	switch v {
 	case adminv1.OperationState_OPERATION_STATE_QUEUED.String():
@@ -8721,15 +9954,16 @@ func (m *maintenanceSettings) snapshot() maintenanceSnapshot {
 		generation = 1
 	}
 	return maintenanceSnapshot{
-		generation:              generation,
-		maxConcurrentRepairs:    maxInt(m.maxConcurrentRepairs, 1),
-		maxConcurrentRebalances: maxInt(m.maxConcurrentRebalances, 1),
-		maxConcurrentDrains:     maxInt(m.maxConcurrentDrains, 1),
-		maxConcurrentPayloadGCs: maxInt(m.maxConcurrentPayloadGCs, 1),
-		pauseRepairs:            m.pauseRepairs,
-		pauseRebalances:         m.pauseRebalances,
-		pauseDrains:             m.pauseDrains,
-		pausePayloadGCs:         m.pausePayloadGCs,
+		generation:                  generation,
+		maxConcurrentRepairs:        maxInt(m.maxConcurrentRepairs, 1),
+		maxConcurrentRebalances:     maxInt(m.maxConcurrentRebalances, 1),
+		maxConcurrentDrains:         maxInt(m.maxConcurrentDrains, 1),
+		maxTotalConcurrentMovements: maxInt(m.maxTotalConcurrentMovements, 1),
+		maxConcurrentPayloadGCs:     maxInt(m.maxConcurrentPayloadGCs, 1),
+		pauseRepairs:                m.pauseRepairs,
+		pauseRebalances:             m.pauseRebalances,
+		pauseDrains:                 m.pauseDrains,
+		pausePayloadGCs:             m.pausePayloadGCs,
 	}
 }
 
@@ -9044,6 +10278,12 @@ func (s *server) runNodeHealthReconcilerOnce(ctx context.Context) error {
 	s.beginNodeHealthRun(len(eligible), shardCount)
 	controller := clustercontrol.NewFromRepository(s.repo)
 	transitioned := false
+	affectedNodeIDs := make(map[string]struct{})
+	for _, node := range eligible {
+		if node.HealthState == clustermeta.NodeHealthSuspect || node.HealthState == clustermeta.NodeHealthDown {
+			affectedNodeIDs[node.NodeID] = struct{}{}
+		}
+	}
 	var runErrors []error
 	shardSize := nodeHealthShardSize
 	if shardCount > 0 {
@@ -9057,6 +10297,7 @@ func (s *server) runNodeHealthReconcilerOnce(ctx context.Context) error {
 			changed, err := s.reconcileNodeHealthResult(ctx, controller, result)
 			if changed {
 				transitioned = true
+				affectedNodeIDs[result.node.NodeID] = struct{}{}
 				s.noteNodeHealthTransition()
 			}
 			if err != nil {
@@ -9065,7 +10306,34 @@ func (s *server) runNodeHealthReconcilerOnce(ctx context.Context) error {
 			}
 		}
 	}
-	if transitioned {
+	affectedReady, err := s.phaseADHealthProjectionReady(ctx)
+	if err != nil {
+		s.noteNodeHealthError(err)
+		runErrors = append(runErrors, fmt.Errorf("load node health affected-set readiness: %w", err))
+	} else if affectedReady {
+		nodeIDs := make([]string, 0, len(affectedNodeIDs))
+		for nodeID := range affectedNodeIDs {
+			nodeIDs = append(nodeIDs, nodeID)
+		}
+		sort.Strings(nodeIDs)
+		for _, nodeID := range nodeIDs {
+			node, getErr := s.repo.GetNodeMembership(ctx, nodeID)
+			if getErr != nil {
+				s.noteNodeHealthError(getErr)
+				runErrors = append(runErrors, fmt.Errorf("get affected node %s: %w", nodeID, getErr))
+				continue
+			}
+			if node.HealthState != clustermeta.NodeHealthSuspect && node.HealthState != clustermeta.NodeHealthDown {
+				continue
+			}
+			if _, reconcileErr := controller.ReconcileNodeHealthTransitionsForNode(ctx, nodeID, clustermeta.MaintenanceIndexPageDefault); reconcileErr != nil {
+				s.noteNodeHealthError(reconcileErr)
+				runErrors = append(runErrors, fmt.Errorf("reconcile affected node %s: %w", nodeID, reconcileErr))
+				continue
+			}
+			s.noteNodeHealthVolumeReconcile()
+		}
+	} else if transitioned {
 		if _, _, err := controller.ReconcileNodeHealthTransitions(ctx); err != nil {
 			s.noteNodeHealthError(err)
 			runErrors = append(runErrors, fmt.Errorf("reconcile node health transitions: %w", err))
@@ -9522,16 +10790,42 @@ func (s *server) runMaintenanceOnce(ctx context.Context) error {
 		return nil
 	}
 	now := s.currentTime()
-	settings, err := s.loadMaintenanceSettingsSnapshot(ctx)
-	if err != nil {
-		return err
+	if s.effectiveClusterSummaryState() == clusterSummaryStateEnforced {
+		last := s.lastSummaryRefreshUnix.Load()
+		if last == 0 || now.Unix()-last >= 10 {
+			if _, err := s.repo.RefreshClusterSummaryFreshness(ctx, clustermeta.SummaryKindCluster, now); err != nil {
+				return fmt.Errorf("refresh cluster summary freshness: %w", err)
+			}
+			s.lastSummaryRefreshUnix.Store(now.Unix())
+		}
 	}
-	volumes, err := s.repo.ListVolumeStates(ctx)
+	if catalog, catalogErr := s.repo.GetVolumeCatalogState(ctx); errors.Is(catalogErr, clustermeta.ErrVolumeCatalogRebuildRequired) || catalogErr == nil && !catalog.Ready {
+		if _, rebuildErr := s.repo.RunVolumeCatalogRebuildPage(ctx, clustermeta.VolumeCatalogPageDefault); rebuildErr != nil && !errors.Is(rebuildErr, clustermeta.ErrCASConflict) {
+			log.Printf("sbs-service maintenance stage=rebuild_volume_catalog error: %v", rebuildErr)
+		}
+	} else if catalogErr != nil {
+		log.Printf("sbs-service maintenance stage=read_volume_catalog error: %v", catalogErr)
+	}
+	settings, err := s.loadMaintenanceSettingsSnapshot(ctx)
 	if err != nil {
 		return err
 	}
 	if err := s.enqueueDrainTransitionsForDrainingNodes(ctx); err != nil {
 		log.Printf("sbs-service maintenance stage=enqueue_drain_transitions error: %v", err)
+	}
+	workReady, err := s.phaseADWorkProjectionReady(ctx)
+	if err != nil {
+		return err
+	}
+	if workReady {
+		if err := s.runMaintenanceWorkReadyOnce(ctx, settings); err != nil {
+			return err
+		}
+		return s.runRetiredPayloadBacklogSweepReadyPage(ctx, settings)
+	}
+	volumes, err := s.repo.ListVolumeStates(ctx)
+	if err != nil {
+		return err
 	}
 	svc := s.newMaintenanceService()
 	configureMaintenanceService(svc)
@@ -9728,6 +11022,159 @@ func (s *server) runMaintenanceOnce(ctx context.Context) error {
 	return nil
 }
 
+func (s *server) runMaintenanceWorkReadyOnce(ctx context.Context, settings maintenanceSnapshot) error {
+	type claimedWork struct {
+		work clustermeta.MaintenanceWorkRecord
+	}
+	leaseOwner := fmt.Sprintf("sbs-service:%s:%d", s.nodeID, s.startedAt.UnixNano())
+	totalLimit := maxInt(settings.maxTotalConcurrentMovements, 1)
+	claims := make([]claimedWork, 0, totalLimit)
+	seen := make(map[string]struct{})
+	for _, reason := range []string{"drain", "repair", "rebalance"} {
+		if len(claims) >= totalLimit {
+			break
+		}
+		limit, paused := maintenanceWorkClaimLimit(settings, reason, len(claims))
+		if paused || limit <= 0 {
+			continue
+		}
+		reasonClaims := 0
+		for _, state := range []string{clustermeta.MaintenanceWorkStateReady, clustermeta.MaintenanceWorkStateLeased} {
+			if reasonClaims >= limit {
+				break
+			}
+			page, err := s.repo.ListMaintenanceWorkPage(ctx, reason, state, "", clustermeta.MaintenanceWorkPageDefault)
+			if err != nil {
+				return fmt.Errorf("list maintenance work reason=%s state=%s: %w", reason, state, err)
+			}
+			for _, index := range page.Records {
+				if reasonClaims >= limit || len(claims) >= totalLimit {
+					break
+				}
+				if _, duplicate := seen[index.WorkID]; duplicate {
+					continue
+				}
+				if cooldownActive, _ := s.maintenanceCooldownState(index.VolumeID, s.currentTime()); cooldownActive {
+					continue
+				}
+				work, err := s.repo.ClaimMaintenanceWork(ctx, index, leaseOwner, 2*time.Minute)
+				if err != nil {
+					if errors.Is(err, clustermeta.ErrCASConflict) || errors.Is(err, clustermeta.ErrMaintenanceIndexChanged) || errors.Is(err, clustermeta.ErrMaintenanceWorkLeaseHeld) || errors.Is(err, clustermeta.ErrMaintenanceWorkStale) {
+						continue
+					}
+					return fmt.Errorf("claim maintenance work %s: %w", index.WorkID, err)
+				}
+				seen[index.WorkID] = struct{}{}
+				claims = append(claims, claimedWork{work: work})
+				reasonClaims++
+			}
+		}
+	}
+	if len(claims) == 0 {
+		if settings.pauseRebalances {
+			return nil
+		}
+		return s.runMaintenanceRebalanceDiscoveryPage(ctx)
+	}
+	svc := s.newMaintenanceService()
+	configureMaintenanceService(svc)
+	var wg sync.WaitGroup
+	for _, claim := range claims {
+		claim := claim
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if s.beforeMaintenanceVolume != nil {
+				s.beforeMaintenanceVolume(ctx, claim.work.VolumeID)
+			}
+			replicaClients, err := s.buildReplicaClientMap(ctx, claim.work.VolumeID)
+			if err != nil {
+				log.Printf("sbs-service maintenance work=%s stage=build_replica_clients error: %v", claim.work.WorkID, err)
+				return
+			}
+			worker := clustermaintenance.NewWorker(svc, clustermaintenance.WorkerConfig{
+				VolumeID: claim.work.VolumeID, ReplicaClients: replicaClients,
+				GatewayID: "sbs-service", HostID: s.nodeID, WorkLeaseOwner: leaseOwner,
+				WorkLeaseDuration: 2 * time.Minute, RetryBackoff: 2 * time.Second, PollInterval: time.Second,
+			})
+			worked, err := worker.RunClaimedOnce(ctx, claim.work)
+			log.Printf("sbs-service maintenance indexed work=%s volume=%s reason=%s lease_generation=%d worked=%t err=%v", claim.work.WorkID, claim.work.VolumeID, claim.work.Reason, claim.work.LeaseGeneration, worked, err)
+			if worked {
+				s.markVolumeMaintenanceRun(claim.work.VolumeID, s.currentTime())
+			}
+		}()
+	}
+	wg.Wait()
+	if settings.pauseRebalances {
+		return nil
+	}
+	return s.runMaintenanceRebalanceDiscoveryPage(ctx)
+}
+
+func maintenanceWorkClaimLimit(settings maintenanceSnapshot, reason string, alreadyClaimed int) (int, bool) {
+	totalRemaining := maxInt(settings.maxTotalConcurrentMovements, 1) - alreadyClaimed
+	if totalRemaining <= 0 {
+		return 0, true
+	}
+	limit := settings.maxConcurrentRepairs
+	paused := settings.pauseRepairs
+	switch reason {
+	case "drain":
+		limit, paused = settings.maxConcurrentDrains, settings.pauseDrains
+	case "rebalance":
+		limit, paused = settings.maxConcurrentRebalances, settings.pauseRebalances
+	}
+	return min(maxInt(limit, 1), totalRemaining), paused
+}
+
+// runMaintenanceRebalanceDiscoveryPage advances one node and at most one
+// placement per tick. The selected volume may do its existing volume-local
+// evaluation, but fleet-wide volume enumeration is never used after the work
+// projection has been promoted.
+func (s *server) runMaintenanceRebalanceDiscoveryPage(ctx context.Context) error {
+	nodes, err := s.repo.ListNodeMemberships(ctx)
+	if err != nil {
+		return err
+	}
+	if len(nodes) == 0 {
+		return nil
+	}
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].NodeID < nodes[j].NodeID })
+	s.maintenanceRebalanceCursorMu.Lock()
+	nodeIndex := 0
+	for i := range nodes {
+		if nodes[i].NodeID == s.maintenanceRebalanceNodeID {
+			nodeIndex = i
+			break
+		}
+	}
+	nodeID := nodes[nodeIndex].NodeID
+	cursor := s.maintenanceRebalancePlacementCursor
+	s.maintenanceRebalanceCursorMu.Unlock()
+
+	page, err := s.repo.ListPlacementByNodePage(ctx, nodeID, cursor, 1)
+	if err != nil && cursor != "" {
+		page, err = s.repo.ListPlacementByNodePage(ctx, nodeID, "", 1)
+	}
+	if err != nil {
+		return err
+	}
+	s.maintenanceRebalanceCursorMu.Lock()
+	if page.NextCursor != "" {
+		s.maintenanceRebalanceNodeID = nodeID
+		s.maintenanceRebalancePlacementCursor = page.NextCursor
+	} else {
+		s.maintenanceRebalanceNodeID = nodes[(nodeIndex+1)%len(nodes)].NodeID
+		s.maintenanceRebalancePlacementCursor = ""
+	}
+	s.maintenanceRebalanceCursorMu.Unlock()
+	if len(page.Records) == 0 {
+		return nil
+	}
+	_, err = s.enqueueVolumeRebalance(ctx, page.Records[0].VolumeID)
+	return err
+}
+
 func (s *server) requeueRetryableFailedTransitions(ctx context.Context, volumeID string) error {
 	transitions, err := s.repo.ListPlacementTransitions(ctx, volumeID)
 	if err != nil {
@@ -9776,7 +11223,7 @@ func (s *server) requeueRetryableFailedTransitions(ctx context.Context, volumeID
 		if transition.State != clustermeta.PlacementTransitionFailed {
 			continue
 		}
-		operationID := fmt.Sprintf("transition-%s", transition.PlacementRef)
+		operationID := clustermeta.TransitionMutationOperationID(transition.VolumeID, transition.PlacementRef)
 		operation, ok := parentByID[operationID]
 		if !ok || operation.Kind != "transition" {
 			continue
@@ -10015,6 +11462,44 @@ func (s *server) runRetiredPayloadBacklogSweep(ctx context.Context, settings mai
 		}()
 	}
 	wg.Wait()
+}
+
+// runRetiredPayloadBacklogSweepReadyPage keeps payload reclamation alive after
+// work-ready promotion without restoring the legacy all-volume completion. One
+// revision-pinned catalog page is visited per maintenance tick; a catalog
+// mutation resets the cursor and the following tick starts a new pass.
+func (s *server) runRetiredPayloadBacklogSweepReadyPage(ctx context.Context, settings maintenanceSnapshot) error {
+	s.payloadGCCatalogCursorMu.Lock()
+	cursor := s.payloadGCCatalogCursor
+	revision := s.payloadGCCatalogRevision
+	s.payloadGCCatalogCursorMu.Unlock()
+
+	page, err := s.repo.ListVolumeCatalogPage(ctx, cursor, clustermeta.VolumeCatalogPageDefault, revision, clustermeta.VolumeCatalogFilter{})
+	if err != nil {
+		if errors.Is(err, clustermeta.ErrVolumeCatalogRevision) {
+			s.payloadGCCatalogCursorMu.Lock()
+			s.payloadGCCatalogCursor = ""
+			s.payloadGCCatalogRevision = 0
+			s.payloadGCCatalogCursorMu.Unlock()
+		}
+		return fmt.Errorf("list bounded payload-gc catalog page: %w", err)
+	}
+	volumes := make([]clustermeta.VolumeState, 0, len(page.Entries))
+	for _, entry := range page.Entries {
+		volumes = append(volumes, entry.State)
+	}
+	s.runRetiredPayloadBacklogSweep(ctx, settings, volumes)
+
+	s.payloadGCCatalogCursorMu.Lock()
+	if page.NextCursor == "" {
+		s.payloadGCCatalogCursor = ""
+		s.payloadGCCatalogRevision = 0
+	} else {
+		s.payloadGCCatalogCursor = page.NextCursor
+		s.payloadGCCatalogRevision = page.State.Revision
+	}
+	s.payloadGCCatalogCursorMu.Unlock()
+	return nil
 }
 
 type retiredPayloadSweepCandidate struct {
@@ -10298,7 +11783,7 @@ func (s *server) buildReplicaClientMap(ctx context.Context, volumeID string) (ma
 			return nil, err
 		}
 		if specErr == nil {
-			client = newMaterializingSBSClient(client, nodeAdminHTTPEndpoint(node), volumeSpec)
+			client = newMaterializingSBSClient(client, volumeSpec)
 		}
 		clients[node.NodeID] = client
 	}
@@ -10317,7 +11802,7 @@ func (s *server) buildReplicaClientMap(ctx context.Context, volumeID string) (ma
 				return nil, err
 			}
 			if specErr == nil {
-				client = newMaterializingSBSClient(client, nodeAdminHTTPEndpoint(node), volumeSpec)
+				client = newMaterializingSBSClient(client, volumeSpec)
 			}
 			clients[replica.ReplicaID] = client
 		}
@@ -10327,17 +11812,18 @@ func (s *server) buildReplicaClientMap(ctx context.Context, volumeID string) (ma
 
 type materializingSBSClient struct {
 	next           service.SBSClient
-	adminHTTP      string
+	materializer   service.VolumeMaterializerSBSClient
 	volumeSpec     volumeSpecRecord
 	materializedMu sync.Mutex
 	materialized   bool
 }
 
-func newMaterializingSBSClient(next service.SBSClient, adminHTTP string, volumeSpec volumeSpecRecord) service.SBSClient {
-	if next == nil || adminHTTP == "" || volumeSpec.VolumeID == "" {
+func newMaterializingSBSClient(next service.SBSClient, volumeSpec volumeSpecRecord) service.SBSClient {
+	materializer, ok := next.(service.VolumeMaterializerSBSClient)
+	if next == nil || !ok || volumeSpec.VolumeID == "" {
 		return next
 	}
-	return &materializingSBSClient{next: next, adminHTTP: strings.TrimRight(adminHTTP, "/"), volumeSpec: volumeSpec}
+	return &materializingSBSClient{next: next, materializer: materializer, volumeSpec: volumeSpec}
 }
 
 func (c *materializingSBSClient) OpenVolume(ctx context.Context, req *service.OpenVolumeRequest) (*service.OpenVolumeResponse, error) {
@@ -10345,40 +11831,35 @@ func (c *materializingSBSClient) OpenVolume(ctx context.Context, req *service.Op
 	if err == nil || !isSBSNotFoundError(err) {
 		return resp, err
 	}
-	if materializeErr := c.materialize(ctx); materializeErr != nil {
+	if materializeErr := c.materialize(ctx, req.Context); materializeErr != nil {
 		return nil, fmt.Errorf("%w; materialize target volume: %v", err, materializeErr)
 	}
 	return c.next.OpenVolume(ctx, req)
 }
 
-func (c *materializingSBSClient) materialize(ctx context.Context) error {
+func (c *materializingSBSClient) materialize(ctx context.Context, requestContext service.SBSRequestContext) error {
 	c.materializedMu.Lock()
 	defer c.materializedMu.Unlock()
 	if c.materialized {
 		return nil
 	}
-	q := url.Values{}
-	q.Set("volume_id", c.volumeSpec.VolumeID)
-	q.Set("size_bytes", strconv.FormatUint(c.volumeSpec.SizeBytes, 10))
-	q.Set("block_size", strconv.FormatUint(uint64(c.volumeSpec.BlockSize), 10))
-	q.Set("prefix", "sbs-"+c.volumeSpec.VolumeID)
-	if c.volumeSpec.ChunkSizeBytes != 0 {
-		q.Set("allocation_chunk_size_bytes", strconv.FormatUint(uint64(c.volumeSpec.ChunkSizeBytes), 10))
-	}
-	if c.volumeSpec.ExtentPageBytes != 0 {
-		q.Set("allocation_page_bytes", strconv.FormatUint(uint64(c.volumeSpec.ExtentPageBytes), 10))
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.adminHTTP+"/debug/materialize-volume?"+q.Encode(), nil)
+	parsedID, err := service.ParseVolumeID(c.volumeSpec.VolumeID)
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
+	if _, err := c.materializer.MaterializeVolume(ctx, &service.MaterializeVolumeRequest{
+		Spec: service.VolumeSpec{
+			ID:              service.HexVolumeID(parsedID),
+			Name:            "sbs-" + c.volumeSpec.VolumeID,
+			Prefix:          "sbs-" + c.volumeSpec.VolumeID,
+			SizeBytes:       c.volumeSpec.SizeBytes,
+			BlockSize:       c.volumeSpec.BlockSize,
+			ChunkSizeBytes:  c.volumeSpec.ChunkSizeBytes,
+			ExtentPageBytes: c.volumeSpec.ExtentPageBytes,
+		},
+		Context: requestContext,
+	}); err != nil {
 		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("unexpected status %s", resp.Status)
 	}
 	c.materialized = true
 	return nil
@@ -10413,7 +11894,7 @@ func (c *materializingSBSClient) ReadPhysicalChunk(ctx context.Context, req *ser
 	if err == nil || !isSBSNotFoundError(err) {
 		return resp, err
 	}
-	if materializeErr := c.materialize(ctx); materializeErr != nil {
+	if materializeErr := c.materialize(ctx, req.Context); materializeErr != nil {
 		return nil, fmt.Errorf("%w; materialize target volume: %v", err, materializeErr)
 	}
 	return next.ReadPhysicalChunk(ctx, req)
@@ -10436,7 +11917,7 @@ func (c *materializingSBSClient) WriteECShard(ctx context.Context, req *service.
 	if err == nil || !isSBSNotFoundError(err) {
 		return resp, err
 	}
-	if materializeErr := c.materialize(ctx); materializeErr != nil {
+	if materializeErr := c.materialize(ctx, req.Context); materializeErr != nil {
 		return nil, fmt.Errorf("%w; materialize target volume: %v", err, materializeErr)
 	}
 	return next.WriteECShard(ctx, req)
@@ -10451,7 +11932,7 @@ func (c *materializingSBSClient) ReadECShard(ctx context.Context, req *service.R
 	if err == nil || !isSBSNotFoundError(err) {
 		return resp, err
 	}
-	if materializeErr := c.materialize(ctx); materializeErr != nil {
+	if materializeErr := c.materialize(ctx, req.Context); materializeErr != nil {
 		return nil, fmt.Errorf("%w; materialize target volume: %v", err, materializeErr)
 	}
 	return next.ReadECShard(ctx, req)
@@ -10518,6 +11999,18 @@ func (c *replicaClientCache) GetISCSIWriterFenceClient(endpoint string) (service
 		return nil, fmt.Errorf("sbs-data endpoint %s does not implement iSCSI writer fencing", endpoint)
 	}
 	return fenceClient, nil
+}
+
+func (c *replicaClientCache) GetCompressionPolicyClient(endpoint string) (service.CompressionPolicySBSClient, error) {
+	client, err := c.Get(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	compressionClient, ok := client.(service.CompressionPolicySBSClient)
+	if !ok {
+		return nil, fmt.Errorf("sbs-data endpoint %s does not implement compression policy projection", endpoint)
+	}
+	return compressionClient, nil
 }
 
 func (c *replicaClientCache) Close() {

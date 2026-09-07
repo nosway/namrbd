@@ -73,15 +73,33 @@ func (r *metadataRepository) EnsureVolume(_ context.Context, spec service.Volume
 	spec = normalizeVolumeSpec(spec)
 	existing, err := r.getVolumeSpec(context.Background(), service.CanonicalVolumeID(uint64(spec.ID)))
 	if err == nil {
-		if existing.ChunkSizeBytes != spec.ChunkSizeBytes || existing.ExtentPageBytes != spec.ExtentPageBytes {
-			return fmt.Errorf("%w: volume_id=%s current_page_bytes=%d current_chunk_size_bytes=%d page_bytes=%d chunk_size_bytes=%d",
+		if spec.SizeBytes < existing.SizeBytes ||
+			existing.BlockSize != spec.BlockSize ||
+			existing.ChunkSizeBytes != spec.ChunkSizeBytes ||
+			existing.ExtentPageBytes != spec.ExtentPageBytes ||
+			existing.Prefix != spec.Prefix {
+			return fmt.Errorf("%w: volume_id=%s current_size_bytes=%d current_block_size=%d current_page_bytes=%d current_chunk_size_bytes=%d current_prefix=%q size_bytes=%d block_size=%d page_bytes=%d chunk_size_bytes=%d prefix=%q",
 				service.ErrVolumeGeometryChange,
 				service.CanonicalVolumeID(uint64(spec.ID)),
+				existing.SizeBytes,
+				existing.BlockSize,
 				existing.ExtentPageBytes,
 				existing.ChunkSizeBytes,
+				existing.Prefix,
+				spec.SizeBytes,
+				spec.BlockSize,
 				spec.ExtentPageBytes,
-				spec.ChunkSizeBytes)
+				spec.ChunkSizeBytes,
+				spec.Prefix)
 		}
+		if spec.SizeBytes == existing.SizeBytes {
+			return nil
+		}
+		// Expansion is the only mutable shape transition. Preserve the
+		// node-local spec fields and advance only the control-plane-authorized
+		// size so a sparse larger tail remains unallocated.
+		existing.SizeBytes = spec.SizeBytes
+		spec = existing
 	} else if !isNotFound(err) {
 		return err
 	}
@@ -466,10 +484,50 @@ func (r *metadataRepository) putISCSIWriterFence(_ context.Context, fence servic
 	return r.putJSON(iscsiWriterFenceKey(fence.VolumeID), fence, pebble.Sync)
 }
 
+func (r *metadataRepository) getCompressionPolicy(_ context.Context, volumeID string) (service.CompressionPolicy, bool, error) {
+	var policy service.CompressionPolicy
+	if err := r.getJSON(compressionPolicyKey(volumeID), &policy); err != nil {
+		if errors.Is(err, pebble.ErrNotFound) {
+			return service.CompressionPolicy{}, false, nil
+		}
+		return service.CompressionPolicy{}, false, err
+	}
+	return policy, true, nil
+}
+
+func (r *metadataRepository) putCompressionPolicy(_ context.Context, policy service.CompressionPolicy) error {
+	return r.putJSON(compressionPolicyKey(policy.VolumeID), policy, pebble.Sync)
+}
+
+func (r *metadataRepository) deleteCompressionPolicy(_ context.Context, volumeID string) error {
+	return r.db.Delete([]byte(compressionPolicyKey(volumeID)), pebble.Sync)
+}
+
+func (r *metadataRepository) listCompressionPolicies(_ context.Context) ([]service.CompressionPolicy, error) {
+	prefix := "compression/policies/"
+	iter, err := r.db.NewIter(&pebble.IterOptions{LowerBound: []byte(prefix), UpperBound: []byte(prefix + "\xff")})
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+	var out []service.CompressionPolicy
+	for iter.First(); iter.Valid(); iter.Next() {
+		var policy service.CompressionPolicy
+		if err := json.Unmarshal(iter.Value(), &policy); err != nil {
+			return nil, fmt.Errorf("decode compression policy %q: %w", iter.Key(), err)
+		}
+		out = append(out, policy)
+	}
+	return out, iter.Error()
+}
+
 func specKey(volumeID string) string  { return fmt.Sprintf("volumes/%s/spec", volumeID) }
 func stateKey(volumeID string) string { return fmt.Sprintf("volumes/%s/state", volumeID) }
 func iscsiWriterFenceKey(volumeID string) string {
 	return fmt.Sprintf("volumes/%s/iscsi-writer-fence", volumeID)
+}
+func compressionPolicyKey(volumeID string) string {
+	return fmt.Sprintf("compression/policies/%s", volumeID)
 }
 func extentPagesPrefix(volumeID string) string {
 	return fmt.Sprintf("volumes/%s/extents/pages/", volumeID)

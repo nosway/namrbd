@@ -24,7 +24,7 @@ Usage of namrbd-csi-driver:
   -cluster-id string
         NAMRBD cluster id (default "namrbd-lab")
   -config string
-        service config file path (AA-IMPL-001H)
+        service config file path
   -driver-name string
         CSI driver name (default "block.namrbd.io")
   -endpoint string
@@ -38,7 +38,7 @@ Usage of namrbd-csi-driver:
   -sbs-cluster-id string
         SBS cluster id (default "sbs-lab")
   -vendor-version string
-        CSI vendor version (default "v1.0.0")
+        CSI vendor version (default "v1.1.0")
 ```
 
 ## Environment variables

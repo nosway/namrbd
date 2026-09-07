@@ -4,23 +4,24 @@ NAMRBD uses three different terms deliberately:
 
 - **Available in public source** means the code or deployment assets are in
   this repository and can be built or inspected.
-- **Validated for v1.0** means the named release path has matching release
+- **Validated for v1.1** means the named release path has matching release
   evidence and is inside the current support boundary.
 - **Advanced feature** means Enterprise development or validation is in
   progress. It is not a general-availability or support commitment.
 
 ## Public Platform
 
-| Capability | Public source | v1.0 status |
+| Capability | Public source | v1.1 status |
 | --- | --- | --- |
 | Replicated userspace block volumes through `namrbd-gateway` and SBS | Included | Validated release path. This is the current supported volume claim. |
-| Volume lifecycle, topology-aware placement, and grow-only expansion | Included | Available as part of the replicated platform; use the userspace gateway boundary for the v1.0 support claim. |
-| Manual replicated snapshot, restore, and immutable read-view workflows | Included | Available in source; not yet validated as a supported v1.0 release surface. |
+| Volume lifecycle, topology-aware placement, and grow-only expansion | Included | Available as part of the replicated platform; use the userspace gateway boundary for the v1.1 support claim. |
+| Manual replicated snapshot, restore, and immutable read-view workflows | Included | Available in source; not yet validated as a supported v1.1 release surface. |
 | Discard, write-zeroes, and reclaim observability | Included | Available in source with userspace evidence; backend and deployment-specific claims require matching release evidence. |
-| Kubernetes CSI provisioning and snapshot restore assets | Included | Integration preview; not yet validated as a supported v1.0 release surface. |
-| Linux kernel block/control modules | Included | Buildable on Linux with matching headers; kernel datapath I/O is outside the current v1.0 support boundary. |
-| Basic iSCSI gateway and `sbsctl iscsi` control | Included, limited to three distinct exported volumes | Integration preview; protocol gateway and external-initiator support are not yet validated for v1.0. |
-| Health, metrics, alerts, Grafana dashboard, operations console, and observe-first MCP tools | Included | Public operations surfaces; support follows the underlying validated deployment path. |
+| Kubernetes CSI provisioning and snapshot restore assets | Included | Integration preview; not yet validated as a supported v1.1 release surface. |
+| Linux kernel block/control modules | Included | Buildable on Linux with matching headers; kernel datapath I/O is outside the current v1.1 support boundary. |
+| Basic iSCSI gateway and `sbsctl iscsi` control | Included, limited to three distinct exported volumes | Integration preview; protocol gateway and external-initiator support are not yet validated for v1.1. |
+| Declarative cluster manifest, canonical export/render/plan, signed host preflight admission, file-backed rollout, standby activation, and host maintenance guardrails | Included | The software workflow is validated with the exact logical `node1..node160`, 8-zone, active-3/standby-2 fixture. This is not a 160-physical-server support claim. |
+| Bounded cluster aggregate, revision-pinned node/volume page and point views, metrics, alerts, Grafana dashboard, operations console, and observe-first MCP tools | Included | Public operations surfaces; normal reads expose stale/partial/rebuild state without raw full-scan fallback. Support follows the underlying validated deployment path. |
 | Local Compose quickstart and kind CSI demo | Included | Development and evaluation workflows, not production topology claims. |
 
 The current release does not publish a general performance benchmark. Results
@@ -40,7 +41,8 @@ date.
 | Automated backup and recovery | Backup targets, schedules and policies, run records, retention holds, restore drills, and recovery evidence. |
 | Security and governance | KMS-backed data keys, payload encryption, key rotation, audit, crypto erase, encrypted backup evidence, and scoped governance/WORM controls. |
 | Performance and QoS | Workload classification, dynamic rate controls, performance tiers, dependency budgets, and scale-oriented observability. |
-| Advanced iSCSI and large-scale operations | Export scale beyond the public cap, redundant target paths, MPIO/ALUA, registry reload, fencing, and controlled membership workflows. |
+| Advanced iSCSI | Export scale beyond the public cap, redundant target paths, MPIO/ALUA, registry reload, and fencing. |
+| Physical fleet-scale qualification | Software workflow evidence includes an 18-host/160-process remote qualification, but 160 independent physical servers, their failure domains, and any support/performance claim still require a dedicated hardware qualification. |
 | Remote replication and disaster recovery | Replication links, recovery points, shipping manifests/workers, standby import, promotion/demotion, and failover orchestration. Some control-plane records exist, while end-to-end remote transfer and failover remain under validation. |
 | Data mobility and repack | Controlled movement between placement or storage geometries with progress, verification, rollback, and recovery boundaries. Broad live migration is not claimed. |
 | Deduplication | Scoped replicated-data dedupe, reference safety, and reclaim workflows. Broad inline dedupe and live EC dedupe are not claimed. |
@@ -53,3 +55,9 @@ boundary.
 
 NVMe/TCP is tracked separately as exploratory future work. It is not a current
 open-source or Enterprise support claim.
+
+The logical 160-node fixture and 18-host/160-process software evidence must not be
+presented as 160 independent physical servers. Physical-160 execution,
+performance, and support claims remain false until the separate hardware
+qualification defines its environment, acceptance thresholds, evidence bundle,
+and rollback/cleanup procedure.

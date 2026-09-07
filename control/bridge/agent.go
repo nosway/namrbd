@@ -66,6 +66,7 @@ type AttachManifestDocument struct {
 	VolumeID                           string                  `json:"volume_id"`
 	Generation                         uint64                  `json:"generation,omitempty"`
 	AttachmentGeneration               uint64                  `json:"attachment_generation,omitempty"`
+	PathPlanRevision                   uint64                  `json:"path_plan_revision,omitempty"`
 	SizeBytes                          uint64                  `json:"size_bytes,omitempty"`
 	BlockSize                          uint32                  `json:"block_size,omitempty"`
 	ChunkSizeBytes                     uint32                  `json:"chunk_size_bytes,omitempty"`

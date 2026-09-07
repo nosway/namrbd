@@ -1,7 +1,7 @@
 First edition
 
 Advanced feature note: Enterprise capability descriptions in the architecture
-manual are designs under development and validation. They are not public v1.0
+manual are designs under development and validation. They are not public v1.1
 support claims; [Feature Status](../../feature-status.md) is authoritative.
 
 # NAMRBD Platform Architecture

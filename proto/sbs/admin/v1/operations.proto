@@ -9,7 +9,13 @@ import "sbs/admin/v1/admin.proto";
 
 service OperationsService {
   rpc GetOperation(GetOperationRequest) returns (GetOperationResponse);
+  // GetOperationByRequestIdentity is a bounded identity lookup for a
+  // previously accepted node drain. It is deliberately separate from the
+  // legacy history-completing ListOperations RPC so a lost start response can
+  // be recovered without reissuing the mutation.
+  rpc GetOperationByRequestIdentity(GetOperationByRequestIdentityRequest) returns (GetOperationByRequestIdentityResponse);
   rpc ListOperations(ListOperationsRequest) returns (ListOperationsResponse);
+  rpc ListOperationsPage(ListOperationsPageRequest) returns (ListOperationsPageResponse);
 }
 
 enum OperationState {
@@ -39,6 +45,7 @@ message OperationStatus {
   string approval_id = 15;
   bool risk_acknowledged = 16;
   bool follow_on_repair_required = 17;
+  string request_id = 18;
 }
 
 message GetOperationRequest {
@@ -51,13 +58,51 @@ message GetOperationResponse {
   OperationStatus operation = 2;
 }
 
+message GetOperationByRequestIdentityRequest {
+  ClusterRef cluster = 1;
+  string kind = 2;
+  string target_node_id = 3;
+  string request_id = 4;
+}
+
+message GetOperationByRequestIdentityResponse {
+  ClusterRef cluster = 1;
+  // found=false is an authoritative empty result for this exact identity.
+  // The returned status is a durable operation record only; callers that need
+  // current drain progress must follow with GetOperation(operation_id).
+  bool found = 2;
+  OperationStatus operation = 3;
+}
+
 message ListOperationsRequest {
   ClusterRef cluster = 1;
   string kind = 2;
   OperationState state = 3;
+  ExpensiveCallAdmission admission = 4;
 }
 
 message ListOperationsResponse {
   ClusterRef cluster = 1;
   repeated OperationStatus operations = 2;
+}
+
+message ListOperationsPageRequest {
+  ClusterRef cluster = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+  string kind = 4;
+  OperationState state = 5;
+  google.protobuf.Timestamp updated_after = 6;
+  google.protobuf.Timestamp updated_before = 7;
+}
+
+message ListOperationsPageResponse {
+  ClusterRef cluster = 1;
+  repeated OperationStatus operations = 2;
+  string projection_revision = 3;
+  string next_page_token = 4;
+  int64 freshness_age_millis = 5;
+  string projection_health = 6;
+  uint32 scanned_records = 7;
+  google.protobuf.Timestamp generated_at = 8;
 }

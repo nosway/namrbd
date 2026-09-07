@@ -3,7 +3,7 @@ Compatibility Reference
 # OS, Kernel, and Kubernetes Compatibility Matrix
 
 This page separates source availability, a compile boundary, integration
-validation, and public v1.0 support. A component appearing in the repository or
+validation, and public v1.1 support. A component appearing in the repository or
 building successfully does not by itself make every operating-system, kernel,
 or Kubernetes combination supported.
 
@@ -19,14 +19,14 @@ response.
 | **Supported** | The exact feature path has named release evidence and documented limits. |
 | **Unvalidated** | The implementation exists, but evidence for the exact platform/version combination is missing. |
 | **Build-only** | Source compilation is checked; runtime I/O and recovery behavior are not established. |
-| **Integration preview** | Assets and workflows are public for evaluation, but not part of the v1.0 support claim. |
+| **Integration preview** | Assets and workflows are public for evaluation, but not part of the v1.1 support claim. |
 | **Unsupported** | The combination is outside the declared implementation or compatibility boundary. |
 
 ## 2. Operating System Matrix
 
 | Platform or distribution | Surface | Current status | Requirements and limits |
 | --- | --- | --- | --- |
-| Linux userspace | Replicated `namrbd-gateway` plus SBS volume path | **Supported feature path**; distribution/version matrix **unvalidated** | This is the current v1.0 volume claim. The release evidence is for the replicated userspace path, not every Linux distribution. |
+| Linux userspace | Replicated `namrbd-gateway` plus SBS volume path | **Supported feature path**; distribution/version matrix **unvalidated** | This is the current v1.1 volume claim. The release evidence is for the replicated userspace path, not every Linux distribution. |
 | GitHub-hosted `ubuntu-latest` | Community binaries, tests, docs, Helm rendering, kernel module compilation | CI-validated at each commit; not a stable distro support range | The runner image changes over time. Use the exact workflow log to identify its Ubuntu and kernel versions. Kernel CI is compile-only. |
 | Ubuntu 20.04+ LTS | etcd or TiKV/PD host examples | Deployment-guide baseline, not a blanket NAMRBD kernel qualification | Follow the backend vendor lifecycle and security policy. Matching NAMRBD runtime evidence is still required. |
 | RHEL 8+ / Rocky Linux 8+ | TiKV/PD host examples | Deployment-guide baseline, not a blanket NAMRBD kernel qualification | The backend guide describes host preparation; it does not validate every NAMRBD kernel and CSI combination. |
@@ -69,7 +69,8 @@ kernel version.
 
 | Kubernetes/CSI combination | Current status | Scope and limits |
 | --- | --- | --- |
-| Kubernetes 1.29+ style APIs on Linux nodes | **Integration preview / unvalidated** | The installation guide uses this as the design baseline, but no exact supported minor-version range is frozen. |
+| Kubernetes `v1.36.1`, Linux/ARM64, containerd 2.2.1 | **Selected / unvalidated** | Current observed candidate cell on Ubuntu 25.10 with kernel `6.17.0-41-generic`; support remains unvalidated until the live release matrix passes twice on one candidate. |
+| Kubernetes `v1.35.7`, Linux/ARM64, containerd 2.2.1 | **Selected / unvalidated** | Adjacent minor selected for qualification; no live result or support claim yet. |
 | Public kind CSI PVC demo | Development validation only | Creates a fresh kind cluster and proves controller provisioning/PVC binding. The node is disabled; it does not prove mount or workload I/O. The kind node image is not pinned as a compatibility claim. |
 | Dynamic provisioning, attach, and node mount | **Integration preview / unvalidated** | Controller and node services exist. Exact Kubernetes, kubelet, kernel, and sidecar combinations require qualification. |
 | `VolumeSnapshot` and restore | **Integration preview / unvalidated** | Snapshot CRDs and an external snapshot controller are required. Backend read-view correctness does not by itself validate Kubernetes integration. |
@@ -78,29 +79,33 @@ kernel version.
 | EC StorageClass | Enterprise development | Disabled by default in the Community Helm values and not a Community support claim. |
 | Kubernetes earlier than 1.29 | **Unvalidated** | No compatibility promise is published. API availability and the selected CSI sidecars must be reviewed before testing. |
 
-### Shipped Helm sidecar defaults
+### Frozen CSI qualification image set
 
 These are deployment defaults, not a declaration that every Kubernetes release
 supports the combination:
 
-| Component | Default image version |
-| --- | --- |
-| `csi-provisioner` | `v5.2.0` |
-| `csi-attacher` | `v4.8.1` |
-| `csi-snapshotter` | `v8.2.0` |
-| `csi-resizer` | `v1.13.2` |
-| `csi-node-driver-registrar` | `v2.13.0` |
-| `livenessprobe` | `v2.15.0` |
+| Component | Reviewed tag | Immutable digest |
+| --- | --- | --- |
+| `namrbd-csi-driver` | `v1.0.0` (selected, unpublished) | `sha256:e6a1e211…fb958` |
+| `csi-provisioner` | `v5.1.0` | `sha256:672e45d6…d322f` |
+| `csi-attacher` | `v4.8.1` | `sha256:69888dba…f86f6` |
+| `csi-snapshotter` | `v8.2.0` | `sha256:dd788d79…ac784` |
+| `csi-resizer` | `v1.13.2` | `sha256:8ddd178b…6d6d4` |
+| `csi-node-driver-registrar` | `v2.13.0` | `sha256:d7138bcc…e25d` |
+| `livenessprobe` | `v2.15.0` | `sha256:2c5f9dc4…b8360f` |
+| `snapshot-controller` | `v8.0.1` | `sha256:32b8e425…04596` |
 
-Use the versions in the Helm chart values for the exact checkout being
-deployed. If a sidecar is overridden, record the override as a new
-qualification combination.
+The release qualification record also retains the full image and three
+external-snapshotter v8.0.1 CRD content digests. Helm and legacy release renders
+use `tag@sha256`; a tag, digest, Kubernetes patch/minor, runtime, architecture,
+or snapshot release change requires requalification. No cell in this table is
+a support claim yet.
 
 ## 5. iSCSI Initiator Compatibility
 
 | Initiator | Current status | Notes |
 | --- | --- | --- |
-| Linux open-iscsi | **Integration preview / unvalidated for v1.0 support** | It is the required compatibility baseline for current validation. Record discovery, login, guarded LUN selection, write/readback, flush, logout, and cleanup. |
+| Linux open-iscsi | **Integration preview / unvalidated for v1.1 support** | It is the required compatibility baseline for current validation. Record discovery, login, guarded LUN selection, write/readback, flush, logout, and cleanup. |
 | Windows native initiator | **Unvalidated** | Connection and limited backend evidence exist, but full SBS-backed write/readback/flush/cleanup is not a support claim. |
 | macOS initiator | **Unsupported** | Excluded until an approved initiator and complete validation environment are available. |
 | MPIO/ALUA or automatic target failover | Enterprise development | Do not infer this behavior from basic single-target access. |
@@ -117,7 +122,18 @@ qualification combination.
 etcd and PD are different authorities even when both use TCP `2379`. Never put
 their addresses in the same endpoint list.
 
-## 7. Qualification Checklist for a New Combination
+## 7. Fleet Scale Qualification
+
+| Scale cell | Current status | Exact boundary |
+| --- | --- | --- |
+| Exact logical `node1..node160`, 8 zones x 20 nodes, active 3 / standby 2 | **Software workflow qualification passed** | Validates strict schema/canonicalization/digest, rejection fixtures, deterministic bundles/plans, signed preflight admission, file-backed rollout/standby/maintenance state, and zero TiKV/storage/daemon actions in pre-apply state transitions. |
+| 18 physical hosts running 160 `sbs-data` processes | **Remote process-scale qualification passed** | Validates control-plane cardinality, bounded metadata pressure, maintenance progress, and the recorded lab workload on that topology. It is not 160 distinct physical hosts. |
+| 160 independent physical servers | **Not run / unsupported** | No physical execution harness, host/failure-domain inventory, acceptance threshold, or support/performance evidence exists. A dedicated hardware qualification is required before making support or performance claims. |
+
+Logical node count, process count, and unique physical-host count are separate
+dimensions. A result may only claim the exact row that supplied its evidence.
+
+## 8. Qualification Checklist for a New Combination
 
 Record the exact operating system, architecture, kernel, Kubernetes, kubelet,
 container runtime, Helm chart, CSI sidecars, NAMRBD commit/image, etcd, PD/TiKV,
@@ -150,7 +166,7 @@ A version row should move from **unvalidated** to **supported** only when the
 release evidence names that exact combination, known limits, rollback or
 disable path, and cleanup result.
 
-## 8. Related Documents
+## 9. Related Documents
 
 - [Feature Status](../feature-status.md)
 - [Installation Guide](installation-guide.md)
@@ -158,4 +174,3 @@ disable path, and cleanup result.
 - [Troubleshooting and FAQ](troubleshooting-and-faq.md)
 - [etcd HA Guide](etcd-ha-cluster-install-operations-guide.md)
 - [TiKV HA Guide](tikv-ha-cluster-install-operations-guide.md)
-

@@ -29,6 +29,7 @@ type Backend interface {
 	CreateVolumeFromSnapshot(context.Context, *adminv1.CreateVolumeFromSnapshotRequest) (*adminv1.CreateVolumeFromSnapshotResponse, error)
 	DeleteVolume(context.Context, *adminv1.DeleteVolumeRequest) (*adminv1.DeleteVolumeResponse, error)
 	GetVolume(context.Context, *adminv1.GetVolumeRequest) (*adminv1.GetVolumeResponse, error)
+	ListVolumes(context.Context, *adminv1.ListVolumesRequest) (*adminv1.ListVolumesResponse, error)
 	CreateSnapshot(context.Context, *adminv1.CreateSnapshotRequest) (*adminv1.CreateSnapshotResponse, error)
 	GetSnapshot(context.Context, *adminv1.GetSnapshotRequest) (*adminv1.GetSnapshotResponse, error)
 	ListSnapshots(context.Context, *adminv1.ListSnapshotsRequest) (*adminv1.ListSnapshotsResponse, error)
@@ -120,8 +121,8 @@ func (s *Server) GetPluginInfo(context.Context, *csipb.GetPluginInfoRequest) (*c
 		Name:          s.driverName,
 		VendorVersion: s.vendorVersion,
 		Manifest: map[string]string{
-			"phase": "L",
-			"scope": "identity-controller",
+			"csi_spec": "v1.13.0",
+			"scope":    "identity-controller-node",
 		},
 	}, nil
 }
@@ -148,8 +149,10 @@ func (s *Server) Probe(context.Context, *csipb.ProbeRequest) (*csipb.ProbeRespon
 func (s *Server) ControllerGetCapabilities(context.Context, *csipb.ControllerGetCapabilitiesRequest) (*csipb.ControllerGetCapabilitiesResponse, error) {
 	return &csipb.ControllerGetCapabilitiesResponse{Capabilities: []*csipb.ControllerServiceCapability{
 		controllerCapability(csipb.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME),
+		controllerCapability(csipb.ControllerServiceCapability_RPC_LIST_VOLUMES),
 		controllerCapability(csipb.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT),
 		controllerCapability(csipb.ControllerServiceCapability_RPC_LIST_SNAPSHOTS),
+		controllerCapability(csipb.ControllerServiceCapability_RPC_GET_SNAPSHOT),
 		controllerCapability(csipb.ControllerServiceCapability_RPC_EXPAND_VOLUME),
 	}}, nil
 }
@@ -161,6 +164,10 @@ func (s *Server) CreateVolume(ctx context.Context, req *csipb.CreateVolumeReques
 	}
 	if err := validateVolumeCapabilities(req.GetVolumeCapabilities()); err != nil {
 		return nil, err
+	}
+	if accessibility := req.GetAccessibilityRequirements(); accessibility != nil &&
+		(len(accessibility.GetRequisite()) != 0 || len(accessibility.GetPreferred()) != 0) {
+		return nil, status.Error(codes.InvalidArgument, "accessibility_requirements are not supported")
 	}
 	params, err := parseVolumeParameters(req.GetParameters())
 	if err != nil {
@@ -177,19 +184,28 @@ func (s *Server) CreateVolume(ctx context.Context, req *csipb.CreateVolumeReques
 
 	source := req.GetVolumeContentSource()
 	if source.GetVolume() != nil {
-		return nil, status.Error(codes.Unimplemented, "volume clone source is not supported in L-SLICE-006")
+		return nil, status.Error(codes.Unimplemented, "volume clone source is not supported")
 	}
 	if snapshot := source.GetSnapshot(); snapshot != nil {
-		if strings.TrimSpace(snapshot.GetSnapshotId()) == "" {
+		snapshotID := strings.TrimSpace(snapshot.GetSnapshotId())
+		if snapshotID == "" {
 			return nil, status.Error(codes.InvalidArgument, "snapshot source snapshot_id is required")
+		}
+		snapshotResp, err := s.backend.GetSnapshot(ctx, &adminv1.GetSnapshotRequest{Cluster: s.cluster, SnapshotId: snapshotID})
+		if err != nil {
+			return nil, mapBackendError(err)
+		}
+		sourceSize := snapshotResp.GetSnapshot().GetSourceSizeBytes()
+		if sourceSize != 0 && sizeBytes < sourceSize {
+			return nil, status.Errorf(codes.OutOfRange, "requested capacity %d is smaller than snapshot %s source size %d", sizeBytes, snapshotID, sourceSize)
 		}
 		resp, err := s.backend.CreateVolumeFromSnapshot(ctx, &adminv1.CreateVolumeFromSnapshotRequest{
 			Cluster:          s.cluster,
 			Meta:             s.meta("csi-create-volume-from-snapshot"),
-			SourceSnapshotId: strings.TrimSpace(snapshot.GetSnapshotId()),
+			SourceSnapshotId: snapshotID,
 			VolumeId:         volumeID,
 			SizeBytes:        sizeBytes,
-			IdempotencyKey:   restoreIdempotencyKey(name, snapshot.GetSnapshotId()),
+			IdempotencyKey:   restoreIdempotencyKey(name, snapshotID),
 		})
 		if err != nil {
 			return nil, mapBackendError(err)
@@ -228,6 +244,47 @@ func (s *Server) CreateVolume(ctx context.Context, req *csipb.CreateVolumeReques
 		return nil, status.Errorf(codes.AlreadyExists, "volume %s exists with size %d, requested %d", volumeID, existingSize, sizeBytes)
 	}
 	return &csipb.CreateVolumeResponse{Volume: volumeFromSummary(volume.GetVolume(), volumeContext("dynamic", name), nil)}, nil
+}
+
+func (s *Server) ListVolumes(ctx context.Context, req *csipb.ListVolumesRequest) (*csipb.ListVolumesResponse, error) {
+	if req.GetMaxEntries() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "max_entries must not be negative")
+	}
+	resp, err := s.backend.ListVolumes(ctx, &adminv1.ListVolumesRequest{
+		Cluster: s.cluster,
+		Admission: &adminv1.ExpensiveCallAdmission{
+			Reason:       "csi controller list volumes compatibility",
+			RecordBudget: 1_000_000,
+		},
+	})
+	if err != nil {
+		return nil, mapBackendError(err)
+	}
+	volumes := append([]*adminv1.VolumeSummary(nil), resp.GetVolumes()...)
+	sort.Slice(volumes, func(i, j int) bool {
+		return volumes[i].GetVolumeId() < volumes[j].GetVolumeId()
+	})
+	start := 0
+	if token := strings.TrimSpace(req.GetStartingToken()); token != "" {
+		parsed, err := strconv.Atoi(token)
+		if err != nil || parsed < 0 || parsed > len(volumes) {
+			return nil, status.Errorf(codes.Aborted, "invalid starting_token %q", token)
+		}
+		start = parsed
+	}
+	maxEntries := int(req.GetMaxEntries())
+	end := len(volumes)
+	if maxEntries > 0 && start+maxEntries < end {
+		end = start + maxEntries
+	}
+	out := &csipb.ListVolumesResponse{Entries: make([]*csipb.ListVolumesResponse_Entry, 0, end-start)}
+	for _, volume := range volumes[start:end] {
+		out.Entries = append(out.Entries, &csipb.ListVolumesResponse_Entry{Volume: volumeFromSummary(volume, nil, nil)})
+	}
+	if end < len(volumes) {
+		out.NextToken = strconv.Itoa(end)
+	}
+	return out, nil
 }
 
 func (s *Server) DeleteVolume(ctx context.Context, req *csipb.DeleteVolumeRequest) (*csipb.DeleteVolumeResponse, error) {
@@ -309,6 +366,9 @@ func (s *Server) DeleteSnapshot(ctx context.Context, req *csipb.DeleteSnapshotRe
 }
 
 func (s *Server) ListSnapshots(ctx context.Context, req *csipb.ListSnapshotsRequest) (*csipb.ListSnapshotsResponse, error) {
+	if req.GetMaxEntries() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "max_entries must not be negative")
+	}
 	var snapshots []*adminv1.SnapshotSummary
 	if strings.TrimSpace(req.GetSnapshotId()) != "" {
 		resp, err := s.backend.GetSnapshot(ctx, &adminv1.GetSnapshotRequest{Cluster: s.cluster, SnapshotId: strings.TrimSpace(req.GetSnapshotId())})
@@ -329,6 +389,9 @@ func (s *Server) ListSnapshots(ctx context.Context, req *csipb.ListSnapshotsRequ
 		}
 		snapshots = resp.GetSnapshots()
 	}
+	sort.Slice(snapshots, func(i, j int) bool {
+		return snapshots[i].GetSnapshotId() < snapshots[j].GetSnapshotId()
+	})
 	start := 0
 	if token := strings.TrimSpace(req.GetStartingToken()); token != "" {
 		parsed, err := strconv.Atoi(token)
@@ -372,6 +435,20 @@ func (s *Server) ControllerExpandVolume(ctx context.Context, req *csipb.Controll
 	targetBytes, err := requestedCapacityBytes(req.GetCapacityRange())
 	if err != nil {
 		return nil, err
+	}
+	volumeResp, err := s.backend.GetVolume(ctx, &adminv1.GetVolumeRequest{Cluster: s.cluster, VolumeId: volumeID})
+	if err != nil {
+		return nil, mapBackendError(err)
+	}
+	currentBytes := volumeResp.GetVolume().GetSizeBytes()
+	if limitBytes := req.GetCapacityRange().GetLimitBytes(); limitBytes > 0 && currentBytes > uint64(limitBytes) {
+		return nil, status.Errorf(codes.OutOfRange, "current capacity %d exceeds requested limit %d", currentBytes, limitBytes)
+	}
+	if currentBytes >= targetBytes {
+		return &csipb.ControllerExpandVolumeResponse{
+			CapacityBytes:         int64(currentBytes),
+			NodeExpansionRequired: req.GetVolumeCapability().GetMount() != nil,
+		}, nil
 	}
 	resp, err := s.backend.ExpandVolume(ctx, &adminv1.ExpandVolumeRequest{
 		Cluster:         s.cluster,
@@ -459,6 +536,9 @@ func mapBackendError(err error) error {
 	}
 	if _, ok := status.FromError(err); ok {
 		return err
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return status.FromContextError(err).Err()
 	}
 	return status.Error(codes.Internal, err.Error())
 }

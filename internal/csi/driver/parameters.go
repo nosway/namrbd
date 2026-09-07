@@ -116,6 +116,9 @@ func parseVolumeParameters(params map[string]string) (VolumeParameters, error) {
 			return VolumeParameters{}, status.Error(codes.InvalidArgument, "ec_profile is required when redundancy_backend=ec")
 		}
 	}
+	if err := validateEditionVolumeParameters(out); err != nil {
+		return VolumeParameters{}, err
+	}
 	return out, nil
 }
 

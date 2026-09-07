@@ -13,6 +13,46 @@ begin.
 
 ### Changed
 
+### Fixed
+
+### Deprecated
+
+### Removed
+
+### Security
+
+### Edition: Community
+
+### Edition: Enterprise only
+
+### Support & Evidence
+
+### Upgrade & Migration
+
+### Known Limits
+
+## [1.1.0] - 2026-09-07
+
+### Added
+
+- Added a declarative cluster manifest workflow with schema validation,
+  deterministic canonicalization and digesting, canonical export/render/plan,
+  signed host preflight admission, and file-backed rollout, standby activation,
+  and host-maintenance guardrails.
+- Added an exact logical `node1..node160` fixture covering eight zones with 20
+  nodes per zone and active-3/standby-2 placement validation. Validation and
+  planning remain pure: they perform no TiKV mutation or daemon action.
+- Added bounded cluster aggregates, revision-pinned node and volume page/point
+  views, bounded operation and maintenance views, fleet metrics and alerts, a
+  Grafana overview, an operations console, and observe-first MCP tools.
+
+### Changed
+
+- Set the product and release binary identity to `v1.1.0`; gateway and SBS
+  runtime compatibility continues to require an exact product SemVer match.
+- Normal fleet reads use bounded summary, page, batch, or point queries and
+  expose stale, partial, or rebuild-required state instead of falling back to
+  raw cluster-wide completion scans.
 - Updated CSI spec to 1.13.0, reedsolomon to 1.14.2, etcd client to 3.7.1,
   gRPC to 1.83.1, and protobuf to 1.36.12 with their resolved transitive
   dependencies.
@@ -21,12 +61,22 @@ begin.
 
 ### Fixed
 
+- Made the Community export self-contained for the logical fleet fixture,
+  dependency-budget contract, module metadata, format checks, and Community
+  build flags inherited from an Enterprise-default canonical checkout.
 - Updated the gateway fleet watch fixture for the etcd 3.7 response-header
   pointer API.
 
 ### Deprecated
 
+- No new deprecations. Environment names deprecated in v1.0.x reach their
+  previously announced removal boundary in this release.
+
 ### Removed
+
+- Removed acceptance of the legacy environment-variable aliases listed in
+  `docs-src/reference/config/index.md`. A v1.1.0 process or `sbsctl` command
+  fails with the canonical replacement name when one is present.
 
 ### Security
 
@@ -35,17 +85,50 @@ begin.
 - Updated the root and bundled gotgt module from logrus 1.9.0 to 1.9.3 to
   resolve GHSA-4f99-4q7p-p3gh / CVE-2025-65637.
 
-### Public Source Boundary
+### Edition: Community
 
 - Assigned root and bundled `gotgt` Go module metadata to each repository
-  independently. Canonical-to-public sync now preserves the public module
-  files, and public-to-canonical import does not copy dependency metadata.
+  independently. Canonical-to-public sync preserves the public module files,
+  and public-to-canonical import does not copy dependency metadata.
+- The manifest, bounded fleet operations, observability, console, and
+  observe-first MCP surfaces described above are included in public source.
+
+### Edition: Enterprise only
+
+- No Enterprise-only capability is promoted to general availability or public
+  support by this release.
 
 ### Support & Evidence
 
+- The supported v1.1 volume claim remains the replicated userspace gateway and
+  SBS path.
+- The exact 160-node logical fixture and an 18-host/160-process software run
+  provide workflow and process-scale evidence only. They do not qualify 160
+  independent physical servers or create a scale/performance support claim.
+
 ### Upgrade & Migration
 
+- Metadata migration required: no destructive or one-way metadata migration.
+  Fleet summaries and bounded indexes are derived state and can report
+  rebuild-required until reconstructed.
+- Rolling upgrade: mixed v1.0.0/v1.1.0 gateway and SBS serving is unsupported
+  because runtime compatibility requires exact product versions. Use a
+  coordinated maintenance restart.
+- Replace every v1.0.x legacy environment name with its documented canonical
+  name before starting a v1.1.0 process.
+- `kernel_module_not_required` for the supported userspace deployment. The
+  separately versioned 1.0.0 kernel modules are unchanged and remain outside
+  the supported userspace volume claim.
+
 ### Known Limits
+
+- The release makes no general IOPS, bandwidth, latency, or fleet-scale
+  performance claim.
+- Snapshot/restore, CSI, kernel datapath I/O, basic iSCSI, and external
+  initiator integrations remain available in source but outside the supported
+  v1.1 release surface unless their feature-status row says otherwise.
+- Qualification of 160 independent physical servers is deferred to a separate
+  hardware qualification.
 
 
 ## [1.0.0] - 2026-08-21

@@ -26,4 +26,3 @@ configuration, or help.
 Test a command package directly while iterating, then run the edition-appropriate
 repository gate. Keep machine-readable output on stdout and diagnostics on
 stderr.
-

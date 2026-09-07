@@ -2,24 +2,39 @@ package local
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/cockroachdb/pebble"
 
+	"github.com/nosway/namrbd/gateway/service"
 	"github.com/nosway/namrbd/gateway/store"
+	"github.com/nosway/namrbd/sbs/cluster/payload/compress"
 )
 
 type objectStore struct {
-	metadataPath string
-	legacyDB     *pebble.DB
-	shards       map[string]*pebble.DB
-	shardPaths   map[string]string
-	closers      []*pebble.DB
+	metadataPath  string
+	legacyDB      *pebble.DB
+	shards        map[string]*pebble.DB
+	shardPaths    map[string]string
+	closers       []*pebble.DB
+	compressionMu sync.RWMutex
+	compression   map[string]*compressionRuntime
+}
+
+type compressionRuntime struct {
+	policy               service.CompressionPolicy
+	compressedBytes      atomic.Uint64
+	uncompressedBytes    atomic.Uint64
+	legacyDecodeCount    atomic.Uint64
+	checksumFailureCount atomic.Uint64
 }
 
 type shardSnapshot struct {
@@ -53,6 +68,7 @@ func newObjectStore(metadataPath string, legacyDB *pebble.DB, stores []StoreSpec
 		legacyDB:     legacyDB,
 		shards:       make(map[string]*pebble.DB),
 		shardPaths:   make(map[string]string),
+		compression:  make(map[string]*compressionRuntime),
 	}
 	for _, spec := range stores {
 		for shardID := 0; shardID < spec.Shards; shardID++ {
@@ -92,6 +108,10 @@ func (s *objectStore) Close() error {
 }
 
 func (s *objectStore) Get(_ context.Context, key string) ([]byte, bool, error) {
+	route, err := parseObjectKey(key)
+	if err != nil {
+		return nil, false, err
+	}
 	target, internalKey, err := s.routeKey(key)
 	if err != nil {
 		return nil, false, err
@@ -103,16 +123,163 @@ func (s *objectStore) Get(_ context.Context, key string) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	defer closer.Close()
-	return append([]byte(nil), raw...), true, nil
+	value := append([]byte(nil), raw...)
+	closer.Close()
+	if !route.isChunk && !route.isObject {
+		return value, true, nil
+	}
+	if !compress.IsEnvelope(value) && !compress.IsLegacyEnvelope(value) {
+		return value, true, nil
+	}
+	decoded, _, err := compress.DecompressPayload(value)
+	if err != nil {
+		if runtime := s.compressionRuntime(route.prefix); runtime != nil && errors.Is(err, compress.ErrChecksumMismatch) {
+			runtime.checksumFailureCount.Add(1)
+		}
+		return nil, false, fmt.Errorf("decode compressed payload %q: %w", key, err)
+	}
+	if runtime := s.compressionRuntime(route.prefix); runtime != nil && compress.IsLegacyEnvelope(value) {
+		runtime.legacyDecodeCount.Add(1)
+	}
+	return decoded, true, nil
 }
 
 func (s *objectStore) Put(_ context.Context, key string, value []byte) error {
+	route, err := parseObjectKey(key)
+	if err != nil {
+		return err
+	}
 	target, internalKey, err := s.routeKey(key)
 	if err != nil {
 		return err
 	}
-	return target.Set([]byte(internalKey), value, pebble.Sync)
+	stored := value
+	if route.isChunk || route.isObject {
+		if runtime := s.compressionRuntime(route.prefix); runtime != nil && runtime.policy.Enabled && len(value) >= int(runtime.policy.MinimumInputBytes) && runtime.policy.Codec != "NONE" {
+			codec, err := compressionCodec(runtime.policy.Codec)
+			if err != nil {
+				return err
+			}
+			encoded, header, err := compress.CompressPayload(value, codec)
+			if err != nil {
+				return fmt.Errorf("compress payload %q: %w", key, err)
+			}
+			stored = encoded
+			if header.Codec == compress.CodecNone {
+				runtime.uncompressedBytes.Add(uint64(len(value)))
+			} else {
+				runtime.compressedBytes.Add(uint64(len(encoded)))
+			}
+		} else if runtime != nil {
+			runtime.uncompressedBytes.Add(uint64(len(value)))
+		}
+	}
+	return target.Set([]byte(internalKey), stored, pebble.Sync)
+}
+
+func compressionCodec(raw string) (compress.Codec, error) {
+	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	case "NONE":
+		return compress.CodecNone, nil
+	case "LZ4":
+		if !compress.CodecLZ4.Valid() {
+			return 0, fmt.Errorf("compression codec LZ4 is unavailable in this edition")
+		}
+		return compress.CodecLZ4, nil
+	case "ZSTD":
+		if !compress.CodecZSTD.Valid() {
+			return 0, fmt.Errorf("compression codec ZSTD is unavailable in this edition")
+		}
+		return compress.CodecZSTD, nil
+	default:
+		return 0, fmt.Errorf("unsupported compression codec %q", raw)
+	}
+}
+
+func compressionPrefix(volumeID string) string { return "sbs-" + volumeID }
+
+func (s *objectStore) compressionRuntime(prefix string) *compressionRuntime {
+	s.compressionMu.RLock()
+	defer s.compressionMu.RUnlock()
+	return s.compression[prefix]
+}
+
+func (s *objectStore) applyCompressionPolicy(policy service.CompressionPolicy, aliases ...string) (bool, service.CompressionRuntimeStatus, error) {
+	if err := policy.Validate(); err != nil {
+		return false, service.CompressionRuntimeStatus{}, err
+	}
+	if policy.Level != 0 {
+		return false, service.CompressionRuntimeStatus{}, fmt.Errorf("compression level %d is not supported; use level 0", policy.Level)
+	}
+	if _, err := compressionCodec(policy.Codec); err != nil {
+		return false, service.CompressionRuntimeStatus{}, err
+	}
+	prefix := compressionPrefix(policy.VolumeID)
+	s.compressionMu.Lock()
+	defer s.compressionMu.Unlock()
+	current := s.compression[prefix]
+	if current == nil {
+		for _, alias := range aliases {
+			if runtime := s.compression[strings.TrimSpace(alias)]; runtime != nil {
+				current = runtime
+				break
+			}
+		}
+	}
+	if current != nil {
+		if current.policy.PolicyRevision > policy.PolicyRevision {
+			return false, compressionStatus(current), staleGeneration("compression policy revision is stale")
+		}
+		if current.policy.PolicyRevision == policy.PolicyRevision {
+			if current.policy != policy {
+				return false, compressionStatus(current), staleGeneration("compression policy conflicts at current revision")
+			}
+			return false, compressionStatus(current), nil
+		}
+	}
+	runtime := &compressionRuntime{policy: policy}
+	s.compression[prefix] = runtime
+	s.compression["ec-"+policy.VolumeID] = runtime
+	for _, alias := range aliases {
+		if alias = strings.TrimSpace(alias); alias != "" {
+			s.compression[alias] = runtime
+		}
+	}
+	return true, compressionStatus(runtime), nil
+}
+
+func (s *objectStore) compressionStatusForVolume(volumeID string) service.CompressionRuntimeStatus {
+	runtime := s.compressionRuntime(compressionPrefix(volumeID))
+	if runtime == nil {
+		return service.CompressionRuntimeStatus{VolumeID: volumeID}
+	}
+	return compressionStatus(runtime)
+}
+
+func (s *objectStore) removeCompressionPolicy(volumeID string, aliases ...string) {
+	s.compressionMu.Lock()
+	defer s.compressionMu.Unlock()
+	delete(s.compression, compressionPrefix(volumeID))
+	delete(s.compression, "ec-"+volumeID)
+	for _, alias := range aliases {
+		delete(s.compression, strings.TrimSpace(alias))
+	}
+}
+
+func compressionStatus(runtime *compressionRuntime) service.CompressionRuntimeStatus {
+	if runtime == nil {
+		return service.CompressionRuntimeStatus{}
+	}
+	return service.CompressionRuntimeStatus{
+		VolumeID:             runtime.policy.VolumeID,
+		PolicyID:             runtime.policy.PolicyID,
+		PolicyRevision:       runtime.policy.PolicyRevision,
+		Applied:              true,
+		CompressedBytes:      runtime.compressedBytes.Load(),
+		UncompressedBytes:    runtime.uncompressedBytes.Load(),
+		LegacyDecodeCount:    runtime.legacyDecodeCount.Load(),
+		ChecksumFailureCount: runtime.checksumFailureCount.Load(),
+	}
 }
 
 func (s *objectStore) Delete(_ context.Context, key string) error {

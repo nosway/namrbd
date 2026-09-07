@@ -7,7 +7,7 @@ Kubernetes CSI integration, snapshots and restore building blocks, and public
 operations assets.
 
 Read [Feature Status](feature-status.md) to distinguish source availability
-from the v1.0 release support boundary. Advanced Enterprise capabilities are
+from the v1.1 release support boundary. Advanced Enterprise capabilities are
 also summarized there as work under development and validation, rather than as
 generally available features.
 

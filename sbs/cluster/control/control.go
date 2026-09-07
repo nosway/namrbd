@@ -2,6 +2,8 @@ package control
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/nosway/namrbd/sbs/cluster/maintenance"
@@ -28,6 +30,17 @@ type repairScanner interface {
 	ScanAndEnqueueRepairs(ctx context.Context, volumeID string) (int, error)
 }
 
+type nodeHealthAffectedStore interface {
+	GetMaintenanceIndexState(ctx context.Context) (metadata.MaintenanceIndexState, error)
+	BeginNodeHealthAffectedProgress(ctx context.Context, node metadata.NodeMembershipRecord) (metadata.NodeHealthAffectedProgressRecord, error)
+	AdvanceNodeHealthAffectedProgress(ctx context.Context, before metadata.NodeHealthAffectedProgressRecord, sourceCursor string, completed bool) (metadata.NodeHealthAffectedProgressRecord, error)
+	ListPlacementByNodePage(ctx context.Context, nodeID, cursor string, limit int) (metadata.PlacementByNodePage, error)
+}
+
+type nodePlacementHealthReconciler interface {
+	ReconcileNodePlacementHealth(ctx context.Context, nodeID string, index metadata.PlacementByNodeRecord) (maintenance.NodePlacementHealthResult, error)
+}
+
 type Controller struct {
 	store   metadataStore
 	repairs repairScanner
@@ -49,6 +62,26 @@ type MetricsSnapshot struct {
 	Volumes map[string]int `json:"volumes"`
 	Nodes   map[string]int `json:"nodes"`
 	Backlog map[string]int `json:"backlog"`
+}
+
+type NodeHealthAffectedPageResult struct {
+	NodeID                  string `json:"node_id"`
+	MembershipRevision      uint64 `json:"membership_revision"`
+	RequestedLimit          int    `json:"requested_limit"`
+	InputCount              int    `json:"input_count"`
+	ProcessedCount          int    `json:"processed_count"`
+	PrimaryFailoverCount    int    `json:"primary_failover_count"`
+	RepairEnqueuedCount     int    `json:"repair_enqueued_count"`
+	ExistingTransitionCount int    `json:"existing_transition_count"`
+	NextCursor              string `json:"next_cursor"`
+	Completed               bool   `json:"completed"`
+	PointGetCount           int    `json:"point_get_count"`
+	BatchGetCount           int    `json:"batch_get_count"`
+	BatchGetKeyCount        int    `json:"batch_get_key_count"`
+	RangePageCount          int    `json:"range_page_count"`
+	BackendFullScanCount    int    `json:"backend_full_scan_count"`
+	FullCompletionCount     int    `json:"full_completion_count"`
+	NestedCompletionCount   int    `json:"nested_completion_count"`
 }
 
 func NewController(store metadataStore, repairs repairScanner) *Controller {
@@ -115,6 +148,17 @@ func (c *Controller) SetNodeHealth(ctx context.Context, nodeID string, next meta
 	if err != nil {
 		return metadata.NodeMembershipRecord{}, 0, 0, err
 	}
+	ready, err := c.nodeHealthAffectedReady(ctx)
+	if err != nil {
+		return rec, 0, 0, err
+	}
+	if ready {
+		if rec.HealthState == metadata.NodeHealthSuspect || rec.HealthState == metadata.NodeHealthDown {
+			result, err := c.ReconcileNodeHealthTransitionsForNode(ctx, rec.NodeID, metadata.MaintenanceIndexPageDefault)
+			return rec, result.PrimaryFailoverCount, result.RepairEnqueuedCount, err
+		}
+		return rec, 0, 0, nil
+	}
 	failovers, enqueued, err := c.ReconcileNodeHealthTransitions(ctx)
 	return rec, failovers, enqueued, err
 }
@@ -133,7 +177,92 @@ func (c *Controller) SetNodeHealthOnly(ctx context.Context, nodeID string, next 
 	if err := c.store.PutNodeMembership(ctx, rec); err != nil {
 		return metadata.NodeMembershipRecord{}, err
 	}
-	return rec, nil
+	return c.store.GetNodeMembership(ctx, nodeID)
+}
+
+func (c *Controller) nodeHealthAffectedReady(ctx context.Context) (bool, error) {
+	store, storeOK := c.store.(nodeHealthAffectedStore)
+	_, repairOK := c.repairs.(nodePlacementHealthReconciler)
+	if !storeOK || !repairOK {
+		return false, nil
+	}
+	state, err := store.GetMaintenanceIndexState(ctx)
+	if errors.Is(err, metadata.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return state.HealthProjectionReady, nil
+}
+
+// ReconcileNodeHealthTransitionsForNode processes at most one placement-index
+// page for one unhealthy membership revision. Progress advances only after all
+// placements in the page have been reconciled successfully.
+func (c *Controller) ReconcileNodeHealthTransitionsForNode(ctx context.Context, nodeID string, limit int) (NodeHealthAffectedPageResult, error) {
+	if limit == 0 {
+		limit = metadata.MaintenanceIndexPageDefault
+	}
+	result := NodeHealthAffectedPageResult{NodeID: nodeID, RequestedLimit: limit}
+	ready, err := c.nodeHealthAffectedReady(ctx)
+	if err != nil {
+		return result, err
+	}
+	if !ready {
+		return result, fmt.Errorf("%w: node health affected-set projection is not ready", metadata.ErrMaintenanceIndexInvalid)
+	}
+	store := c.store.(nodeHealthAffectedStore)
+	reconciler := c.repairs.(nodePlacementHealthReconciler)
+	node, err := c.store.GetNodeMembership(ctx, nodeID)
+	if err != nil {
+		return result, err
+	}
+	progress, err := store.BeginNodeHealthAffectedProgress(ctx, node)
+	if err != nil {
+		return result, err
+	}
+	result.MembershipRevision = progress.MembershipRevision
+	if progress.Completed {
+		result.Completed = true
+		return result, nil
+	}
+	page, err := store.ListPlacementByNodePage(ctx, node.NodeID, progress.SourceCursor, limit)
+	if err != nil {
+		return result, err
+	}
+	result.InputCount = len(page.Records)
+	result.NextCursor = page.NextCursor
+	result.PointGetCount = page.PointGetCount
+	result.BatchGetCount = page.BatchGetCount
+	result.BatchGetKeyCount = page.BatchGetKeyCount
+	result.RangePageCount = page.RangePageCount
+	result.BackendFullScanCount = page.BackendFullScanCount
+	result.FullCompletionCount = page.FullCompletionCount
+	result.NestedCompletionCount = page.NestedCompletionCount
+	for _, index := range page.Records {
+		placement, err := reconciler.ReconcileNodePlacementHealth(ctx, node.NodeID, index)
+		if err != nil {
+			return result, err
+		}
+		result.ProcessedCount++
+		if placement.PrimaryFailoverCommitted {
+			result.PrimaryFailoverCount++
+		}
+		if placement.RepairEnqueued {
+			result.RepairEnqueuedCount++
+		}
+		if placement.SkippedExistingTransition {
+			result.ExistingTransitionCount++
+		}
+	}
+	completed := page.NextCursor == ""
+	progress, err = store.AdvanceNodeHealthAffectedProgress(ctx, progress, page.NextCursor, completed)
+	if err != nil {
+		return result, err
+	}
+	result.NextCursor = progress.SourceCursor
+	result.Completed = progress.Completed
+	return result, nil
 }
 
 func (c *Controller) ReconcileNodeHealthTransitions(ctx context.Context) (int, int, error) {

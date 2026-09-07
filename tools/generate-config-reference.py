@@ -64,6 +64,12 @@ PROCESSES = (
     ProcessSpec("namrbd-mcp", "mcp", "MCPConfig", "namrbd-mcp.yaml", "cmd/namrbd-mcp/serviceconfig_adoption.go"),
 )
 PROCESS_BY_BINARY = {item.binary: item for item in PROCESSES}
+NON_DAEMON_CONFIG_FILES = {"sbs-cluster-160.example.yaml"}
+# Additional daemon configurations used by a named qualification harness are
+# not the single public example from which the reference table is generated.
+# Keep them explicit so a new YAML file cannot silently bypass inventory
+# review, while allowing the primary per-process example set to remain exact.
+QUALIFICATION_CONFIG_FILES = {"sbs-service-phase-ad-enforced.yaml"}
 PROCESS_CONSTANTS = {
     "ProcessGateway": "namrbd-gateway",
     "ProcessISCSIGateway": "namrbd-iscsi-gateway",
@@ -120,7 +126,8 @@ add_bindings("gateway", {
     "advertise_control_address": "advertise-control-address", "advertise_data_address": "advertise-data-address",
     "data_disable": "data-disable", "tls.enable": "tls-enable", "tls.cert_file": "tls-cert-file",
     "tls.key": "tls-key-file", "tls.server_name": "tls-server-name", "etcd.endpoints": "etcd-endpoints",
-    "etcd.root": "etcd-root", "sbs_admin_endpoint": "sbs-service-endpoint", "metadata_backend": "metadata-backend",
+    "etcd.root": "etcd-root", "sbs_admin_endpoint": "sbs-service-endpoint",
+    "sbs_authenticated_admin_endpoint": "sbs-authenticated-admin-endpoint", "metadata_backend": "metadata-backend",
     "data_backend_mode": "data-backend-mode", "cache.volume_ttl_seconds": "volume-cache-ttl",
     "cache.zero_evidence_ttl_seconds": "sbs-zero-evidence-cache-ttl", "cache.open_reuse_ttl_seconds": "sbs-open-reuse-ttl",
     "cache.chunk_id_allocation_cache_size": "sbs-chunk-id-allocation-cache-size",
@@ -155,6 +162,8 @@ add_bindings("sbs_service", {
     "leader.renew_interval_seconds": "leader-renew-interval", "health.shard_count": "",
     "health.concurrency_per_shard": "", "health.interval_seconds": "", "health.timeout_seconds": "",
     "health.suspect_threshold": "", "health.down_threshold": "", "health.recovery_cooldown_seconds": "",
+    "summary.state": "", "summary.freshness_degraded_seconds": "",
+    "summary.freshness_rebuild_required_seconds": "",
     "write_effects.service_owned": "service-owned-write-effects",
     "write_effects.native_allocation_fast_path": "native-allocation-fast-path",
     "write_effects.batch_max": "write-effects-batch-max", "write_effects.lane_bucket_count": "write-effects-lane-bucket-count",
@@ -364,6 +373,9 @@ BUILTIN_DEFAULTS: dict[str, str] = {
     "sbs_service.health.suspect_threshold": "3",
     "sbs_service.health.down_threshold": "6",
     "sbs_service.health.recovery_cooldown_seconds": "30 s",
+    "sbs_service.summary.state": "disabled",
+    "sbs_service.summary.freshness_degraded_seconds": "300 s",
+    "sbs_service.summary.freshness_rebuild_required_seconds": "900 s",
     "sbs_service.write_effects.service_owned": "true",
     "sbs_service.write_effects.native_allocation_fast_path": "true",
     "sbs_service.write_effects.batch_max": "16",
@@ -748,6 +760,9 @@ def validation_for(path: str) -> str:
         "sbs_service.health.suspect_threshold": "when positive with down threshold, must be lower; nonpositive values retain the current/built-in value",
         "sbs_service.health.down_threshold": "when positive with suspect threshold, must be higher; nonpositive values retain the current/built-in value",
         "sbs_service.health.recovery_cooldown_seconds": "only positive YAML applies; nonpositive values retain the current/built-in value",
+        "sbs_service.summary.state": "disabled, shadow, or enforced; enforced requires both positive freshness thresholds",
+        "sbs_service.summary.freshness_degraded_seconds": "must be nonnegative; enforced requires > 0",
+        "sbs_service.summary.freshness_rebuild_required_seconds": "must be nonnegative and exceed freshness_degraded_seconds; enforced requires > 0",
         "sbs_service.write_effects.batch_max": "only positive YAML applies; in large_scale, 2 * value must not exceed tikv.batch_get_size",
         "sbs_service.write_effects.lane_bucket_count": "only positive YAML applies; zero or negative retains the current/built-in value",
         "sbs_data.cluster_id": "required, non-blank in large_scale",
@@ -814,7 +829,7 @@ def parse_registry() -> dict[str, tuple[tuple[str, ...], tuple[str, ...]]]:
     for match in re.finditer(r'\{Field:\s*"([a-z0-9_.]+)",\s*Env:\s*"([A-Z0-9_]+)",\s*Flag:\s*"([a-z0-9-]+)"', text):
         field, env_name, flag_name = match.groups()
         out[field] = ((env_name,), (flag_name,))
-    expected_count = 22
+    expected_count = 23
     if len(out) != expected_count:
         raise ValueError(f"override registry inventory drift: got {len(out)} entries, expected {expected_count}")
     return out
@@ -1083,6 +1098,8 @@ def render_process(
             "The shipped example chooses write-effects batch 64 and lane buckets 8; current no-config defaults are 16 and 0 respectively.",
             "The shipped TiKV TLS/v2 example has no YAML CA-file key. The current TiKV startup still needs `NAMRBD_CA_FILE`; the example is not standalone-startable without that external value.",
             "TiKV scan-page and batch-get budgets validate but are not wired into the current daemon runtime.",
+            "Phase AD page/point APIs enforce their own runtime limits (default page 128, maximum page 512, and bounded BatchGet chunks). Those executable limits are not tuned by `tikv.scan_page_size` or `tikv.batch_get_size`.",
+            "`configs/sbs-service-phase-ad-enforced.yaml` is a 9-node Gate 0 qualification candidate, not the public production example. Its lab endpoint, TiKV API version, and TLS posture must not replace the stricter cluster-manifest production contract.",
             "Direct environment-backed values and some legacy CLI values are preserved after the YAML file is validated. Environment values can currently bypass large_scale metadata-backend, TiKV trace, leader-timing, and health bounds; allowed legacy CLI values can bypass their corresponding file-only checks. Explicit metadata-backend and TiKV-trace flags are separately rejected by the large_scale CLI gate. This is recorded behavior, not a supported override pattern.",
             "The seven `health.*` inputs are environment-derived local variables. The names used by adoption bookkeeping are not registered CLI flags.",
         ],
@@ -1121,7 +1138,11 @@ def render_process(
 
 
 def generated_pages() -> dict[Path, str]:
-    actual_configs = {path.name for path in (ROOT / "configs").glob("*.yaml")}
+    actual_configs = (
+        {path.name for path in (ROOT / "configs").glob("*.yaml")}
+        - NON_DAEMON_CONFIG_FILES
+        - QUALIFICATION_CONFIG_FILES
+    )
     expected_configs = {item.config_file for item in PROCESSES}
     if actual_configs != expected_configs:
         raise ValueError(f"daemon config file inventory drift: got {sorted(actual_configs)}, expected {sorted(expected_configs)}")

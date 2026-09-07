@@ -9,9 +9,9 @@ import (
 
 const membershipProjectionPageSize = 512
 
-// ListAllNodes follows bounded projection pages while pinning every page to
-// the same projection revision. A caller never receives a mixed or stale SBS
-// membership view.
+// ListAllNodes is the legacy expensive completion helper. It follows every
+// bounded projection page while pinning the projection revision. Interactive
+// and dashboard callers must use ListNodes directly and expose the next token.
 func ListAllNodes(ctx context.Context, client adminv1.AdminServiceClient, cluster *adminv1.ClusterRef, includeTombstones bool) (*adminv1.ListNodesResponse, error) {
 	if client == nil {
 		return nil, fmt.Errorf("admin client is required")

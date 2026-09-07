@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package sbs.admin.v1;
 
-option go_package = "github.com/nosway/namrbd/sbs/admin/v1;adminv1";
-
 import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/nosway/namrbd/sbs/admin/v1;adminv1";
 
 service AdminService {
   rpc ClusterInit(ClusterInitRequest) returns (ClusterInitResponse);
@@ -30,6 +30,7 @@ service AdminService {
   rpc DeleteTopologyZone(DeleteTopologyZoneRequest) returns (DeleteTopologyZoneResponse);
 
   rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse);
+  rpc ListVolumesPage(ListVolumesPageRequest) returns (ListVolumesPageResponse);
   rpc GetVolume(GetVolumeRequest) returns (GetVolumeResponse);
   rpc GetVolumePlacementView(GetVolumePlacementViewRequest) returns (GetVolumePlacementViewResponse);
   rpc GetVolumeAllocationPageView(GetVolumeAllocationPageViewRequest) returns (GetVolumeAllocationPageViewResponse);
@@ -110,6 +111,15 @@ service AdminService {
   rpc RevokeKeyAccessLease(RevokeKeyAccessLeaseRequest) returns (RevokeKeyAccessLeaseResponse);
   rpc ListSecurityAuditEvents(ListSecurityAuditEventsRequest) returns (ListSecurityAuditEventsResponse);
   rpc VerifySecurityAuditLog(VerifySecurityAuditLogRequest) returns (VerifySecurityAuditLogResponse);
+  rpc ListRBACRoles(ListRBACRolesRequest) returns (ListRBACRolesResponse);
+  rpc ListRBACPermissions(ListRBACPermissionsRequest) returns (ListRBACPermissionsResponse);
+  rpc PutRBACRoleBinding(PutRBACRoleBindingRequest) returns (PutRBACRoleBindingResponse);
+  rpc GetRBACRoleBinding(GetRBACRoleBindingRequest) returns (GetRBACRoleBindingResponse);
+  rpc ListRBACRoleBindings(ListRBACRoleBindingsRequest) returns (ListRBACRoleBindingsResponse);
+  rpc DeleteRBACRoleBinding(DeleteRBACRoleBindingRequest) returns (DeleteRBACRoleBindingResponse);
+  rpc ListRBACAuthorizationEvents(ListRBACAuthorizationEventsRequest) returns (ListRBACAuthorizationEventsResponse);
+  rpc VerifyRBACAuthorizationAuditLog(VerifyRBACAuthorizationAuditLogRequest) returns (VerifyRBACAuthorizationAuditLogResponse);
+  rpc AuthorizeRBACGatewayHTTPRequest(AuthorizeRBACGatewayHTTPRequestRequest) returns (AuthorizeRBACGatewayHTTPRequestResponse);
 
   rpc CreateECProfile(CreateECProfileRequest) returns (CreateECProfileResponse);
   rpc ListECProfiles(ListECProfilesRequest) returns (ListECProfilesResponse);
@@ -139,7 +149,9 @@ service AdminService {
   rpc ResumeMaintenance(ResumeMaintenanceRequest) returns (ResumeMaintenanceResponse);
 
   rpc ListRepairs(ListRepairsRequest) returns (ListRepairsResponse);
+  rpc ListRepairsPage(ListRepairsPageRequest) returns (ListRepairsPageResponse);
   rpc ListRebalances(ListRebalancesRequest) returns (ListRebalancesResponse);
+  rpc ListRebalancesPage(ListRebalancesPageRequest) returns (ListRebalancesPageResponse);
 
   rpc StartRestoreWarmup(StartRestoreWarmupRequest) returns (StartRestoreWarmupResponse);
   rpc RunRestoreWarmup(RunRestoreWarmupRequest) returns (RunRestoreWarmupResponse);
@@ -158,22 +170,34 @@ service AdminService {
   rpc CreateBackupTarget(CreateBackupTargetRequest) returns (CreateBackupTargetResponse);
   rpc GetBackupTarget(GetBackupTargetRequest) returns (GetBackupTargetResponse);
   rpc ListBackupTargets(ListBackupTargetsRequest) returns (ListBackupTargetsResponse);
+  rpc DeleteBackupTarget(DeleteBackupTargetRequest) returns (DeleteBackupTargetResponse);
   rpc CreateBackupPolicy(CreateBackupPolicyRequest) returns (CreateBackupPolicyResponse);
   rpc GetBackupPolicy(GetBackupPolicyRequest) returns (GetBackupPolicyResponse);
   rpc ListBackupPolicies(ListBackupPoliciesRequest) returns (ListBackupPoliciesResponse);
+  rpc DeleteBackupPolicy(DeleteBackupPolicyRequest) returns (DeleteBackupPolicyResponse);
   rpc StartBackupRun(StartBackupRunRequest) returns (StartBackupRunResponse);
+  rpc AdvanceBackupRun(AdvanceBackupRunRequest) returns (AdvanceBackupRunResponse);
+  rpc RunBackupArtifactCopy(RunBackupArtifactCopyRequest) returns (RunBackupArtifactCopyResponse);
+  rpc RunBackupRestoreDrill(RunBackupRestoreDrillRequest) returns (RunBackupRestoreDrillResponse);
+  rpc TickBackupScheduler(TickBackupSchedulerRequest) returns (TickBackupSchedulerResponse);
   rpc GetBackupRun(GetBackupRunRequest) returns (GetBackupRunResponse);
   rpc ListBackupRuns(ListBackupRunsRequest) returns (ListBackupRunsResponse);
+  rpc DeleteBackupRun(DeleteBackupRunRequest) returns (DeleteBackupRunResponse);
   rpc MarkBackupArtifactAvailable(MarkBackupArtifactAvailableRequest) returns (MarkBackupArtifactAvailableResponse);
   rpc GetBackupArtifact(GetBackupArtifactRequest) returns (GetBackupArtifactResponse);
   rpc ListBackupArtifacts(ListBackupArtifactsRequest) returns (ListBackupArtifactsResponse);
   rpc CreateBackupRetentionHold(CreateBackupRetentionHoldRequest) returns (CreateBackupRetentionHoldResponse);
+  rpc ReleaseBackupRetentionHold(ReleaseBackupRetentionHoldRequest) returns (ReleaseBackupRetentionHoldResponse);
   rpc PlanBackupPurge(PlanBackupPurgeRequest) returns (PlanBackupPurgeResponse);
+  rpc ExecuteBackupPurge(ExecuteBackupPurgeRequest) returns (ExecuteBackupPurgeResponse);
   rpc GetBackupStatus(GetBackupStatusRequest) returns (GetBackupStatusResponse);
 
   rpc CreateDRReplicationLink(CreateDRReplicationLinkRequest) returns (CreateDRReplicationLinkResponse);
   rpc GetDRReplicationLink(GetDRReplicationLinkRequest) returns (GetDRReplicationLinkResponse);
   rpc ListDRReplicationLinks(ListDRReplicationLinksRequest) returns (ListDRReplicationLinksResponse);
+  rpc FenceDRSourceVolume(FenceDRSourceVolumeRequest) returns (FenceDRSourceVolumeResponse);
+  rpc ExportDRSourceFenceEnvelope(ExportDRSourceFenceEnvelopeRequest) returns (ExportDRSourceFenceEnvelopeResponse);
+  rpc ImportDRSourceFenceEnvelope(ImportDRSourceFenceEnvelopeRequest) returns (ImportDRSourceFenceEnvelopeResponse);
   rpc CreateDRRecoveryPoint(CreateDRRecoveryPointRequest) returns (CreateDRRecoveryPointResponse);
   rpc GetDRRecoveryPoint(GetDRRecoveryPointRequest) returns (GetDRRecoveryPointResponse);
   rpc ListDRRecoveryPoints(ListDRRecoveryPointsRequest) returns (ListDRRecoveryPointsResponse);
@@ -182,9 +206,13 @@ service AdminService {
   rpc ListDRShippingManifests(ListDRShippingManifestsRequest) returns (ListDRShippingManifestsResponse);
   rpc AdmitDRShippingWorker(AdmitDRShippingWorkerRequest) returns (AdmitDRShippingWorkerResponse);
   rpc HeartbeatDRShippingWorker(HeartbeatDRShippingWorkerRequest) returns (HeartbeatDRShippingWorkerResponse);
+  rpc RunDRShippingWorker(RunDRShippingWorkerRequest) returns (RunDRShippingWorkerResponse);
   rpc GetDRShippingWorker(GetDRShippingWorkerRequest) returns (GetDRShippingWorkerResponse);
   rpc ListDRShippingWorkers(ListDRShippingWorkersRequest) returns (ListDRShippingWorkersResponse);
+  rpc ExportDRTargetEnvelope(ExportDRTargetEnvelopeRequest) returns (ExportDRTargetEnvelopeResponse);
+  rpc ImportDRTargetEnvelope(ImportDRTargetEnvelopeRequest) returns (ImportDRTargetEnvelopeResponse);
   rpc ImportDRStandbyVolume(ImportDRStandbyVolumeRequest) returns (ImportDRStandbyVolumeResponse);
+  rpc RunDRStandbyImport(RunDRStandbyImportRequest) returns (RunDRStandbyImportResponse);
   rpc GetDRStandbyVolume(GetDRStandbyVolumeRequest) returns (GetDRStandbyVolumeResponse);
   rpc ListDRStandbyVolumes(ListDRStandbyVolumesRequest) returns (ListDRStandbyVolumesResponse);
   rpc CheckDRStandbyVolumeWrite(CheckDRStandbyVolumeWriteRequest) returns (CheckDRStandbyVolumeWriteResponse);
@@ -192,9 +220,51 @@ service AdminService {
   rpc DemoteDRStandbyVolume(DemoteDRStandbyVolumeRequest) returns (DemoteDRStandbyVolumeResponse);
   rpc CheckDROldPrimaryWrite(CheckDROldPrimaryWriteRequest) returns (CheckDROldPrimaryWriteResponse);
   rpc DefineDROldPrimaryRejoinPolicy(DefineDROldPrimaryRejoinPolicyRequest) returns (DefineDROldPrimaryRejoinPolicyResponse);
+  rpc PrepareDROldPrimaryReseed(PrepareDROldPrimaryReseedRequest) returns (PrepareDROldPrimaryReseedResponse);
   rpc RunDRFailoverDrill(RunDRFailoverDrillRequest) returns (RunDRFailoverDrillResponse);
   rpc GetDRFailoverDrill(GetDRFailoverDrillRequest) returns (GetDRFailoverDrillResponse);
   rpc ListDRFailoverDrills(ListDRFailoverDrillsRequest) returns (ListDRFailoverDrillsResponse);
+
+  // Enterprise product-integration lifecycle APIs. Community servers retain
+  // the generated Unimplemented behavior and Community CLI builds do not
+  // register these command surfaces.
+  rpc CreateNVMeExport(CreateNVMeExportRequest) returns (CreateNVMeExportResponse);
+  rpc GetNVMeExport(GetNVMeExportRequest) returns (GetNVMeExportResponse);
+  rpc ListNVMeExports(ListNVMeExportsRequest) returns (ListNVMeExportsResponse);
+  rpc SetNVMeExportEnabled(SetNVMeExportEnabledRequest) returns (SetNVMeExportEnabledResponse);
+  rpc SetNVMeExportActiveTarget(SetNVMeExportActiveTargetRequest) returns (SetNVMeExportActiveTargetResponse);
+  rpc ReportNVMeExportStatus(ReportNVMeExportStatusRequest) returns (ReportNVMeExportStatusResponse);
+  rpc DeleteNVMeExport(DeleteNVMeExportRequest) returns (DeleteNVMeExportResponse);
+
+  rpc RegisterPersistentReservation(RegisterPersistentReservationRequest) returns (RegisterPersistentReservationResponse);
+  rpc ReservePersistentReservation(ReservePersistentReservationRequest) returns (ReservePersistentReservationResponse);
+  rpc ReleasePersistentReservation(ReleasePersistentReservationRequest) returns (ReleasePersistentReservationResponse);
+  rpc PreemptPersistentReservation(PreemptPersistentReservationRequest) returns (PreemptPersistentReservationResponse);
+  rpc ClearPersistentReservation(ClearPersistentReservationRequest) returns (ClearPersistentReservationResponse);
+  rpc GetPersistentReservation(GetPersistentReservationRequest) returns (GetPersistentReservationResponse);
+
+  rpc CreateTieringTarget(CreateTieringTargetRequest) returns (CreateTieringTargetResponse);
+  rpc GetTieringTarget(GetTieringTargetRequest) returns (GetTieringTargetResponse);
+  rpc ListTieringTargets(ListTieringTargetsRequest) returns (ListTieringTargetsResponse);
+  rpc CheckTieringTarget(CheckTieringTargetRequest) returns (CheckTieringTargetResponse);
+  rpc StartSnapshotTiering(StartSnapshotTieringRequest) returns (StartSnapshotTieringResponse);
+  rpc StartSnapshotHydration(StartSnapshotHydrationRequest) returns (StartSnapshotHydrationResponse);
+  rpc GetSnapshotTieringOperation(GetSnapshotTieringOperationRequest) returns (GetSnapshotTieringOperationResponse);
+  rpc ListSnapshotTieringOperations(ListSnapshotTieringOperationsRequest) returns (ListSnapshotTieringOperationsResponse);
+  rpc CancelSnapshotTiering(CancelSnapshotTieringRequest) returns (CancelSnapshotTieringResponse);
+
+  rpc CreateCompressionPolicy(CreateCompressionPolicyRequest) returns (CreateCompressionPolicyResponse);
+  rpc GetCompressionPolicy(GetCompressionPolicyRequest) returns (GetCompressionPolicyResponse);
+  rpc ListCompressionPolicies(ListCompressionPoliciesRequest) returns (ListCompressionPoliciesResponse);
+  rpc BindCompressionPolicy(BindCompressionPolicyRequest) returns (BindCompressionPolicyResponse);
+  rpc GetCompressionRolloutStatus(GetCompressionRolloutStatusRequest) returns (GetCompressionRolloutStatusResponse);
+
+  rpc RegisterWORMSubject(RegisterWORMSubjectRequest) returns (RegisterWORMSubjectResponse);
+  rpc GetWORMSubject(GetWORMSubjectRequest) returns (GetWORMSubjectResponse);
+  rpc ListWORMSubjects(ListWORMSubjectsRequest) returns (ListWORMSubjectsResponse);
+  rpc ApplyWORMLock(ApplyWORMLockRequest) returns (ApplyWORMLockResponse);
+  rpc SetWORMLegalHold(SetWORMLegalHoldRequest) returns (SetWORMLegalHoldResponse);
+  rpc ListWORMAuditEvents(ListWORMAuditEventsRequest) returns (ListWORMAuditEventsResponse);
 }
 
 message RequestMeta {
@@ -559,6 +629,20 @@ message GetClusterStatusResponse {
   uint64 health_probe_count = 43;
   uint64 health_transition_count = 44;
   uint64 health_volume_reconcile_count = 45;
+  ClusterSummaryHealth cluster_summary_health = 46;
+  string cluster_summary_reason = 47;
+  bool cluster_summary_partial = 48;
+  bool cluster_summary_stale = 49;
+  bool cluster_summary_rebuild_required = 50;
+  uint64 cluster_summary_source_revision = 51;
+  uint64 cluster_summary_baseline_source_revision = 52;
+  uint64 cluster_summary_freshness_age_millis = 53;
+  int64 cluster_summary_freshness_updated_unix = 54;
+  uint32 known_nodes = 55;
+  uint32 healthy_nodes = 56;
+  uint32 suspect_nodes = 57;
+  uint32 down_nodes = 58;
+  uint32 removed_nodes = 59;
 }
 
 message GetLeaderRequest {
@@ -788,11 +872,34 @@ message ForceRemoveNodeResponse {
 
 message ListVolumesRequest {
   ClusterRef cluster = 1;
+  ExpensiveCallAdmission admission = 2;
 }
 
 message ListVolumesResponse {
   ClusterRef cluster = 1;
   repeated VolumeSummary volumes = 2;
+}
+
+message ListVolumesPageRequest {
+  ClusterRef cluster = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+  VolumeHealth health = 4;
+  string redundancy_backend = 5;
+  string topology_mode = 6;
+}
+
+message ListVolumesPageResponse {
+  ClusterRef cluster = 1;
+  repeated VolumeSummary volumes = 2;
+  uint64 catalog_revision = 3;
+  string next_page_token = 4;
+  int64 freshness_age_millis = 5;
+  string projection_health = 6;
+  bool projection_stale = 7;
+  bool rebuild_required = 8;
+  uint32 scanned_records = 9;
+  google.protobuf.Timestamp generated_at = 10;
 }
 
 message GetVolumeRequest {
@@ -2037,6 +2144,7 @@ message MaintenanceThrottleSummary {
   bool pause_rebalances = 8;
   bool pause_drains = 9;
   bool pause_payload_gcs = 10;
+  uint32 max_total_concurrent_movements = 11;
 }
 
 message BackgroundWorkBudgetSummary {
@@ -2080,6 +2188,7 @@ message SetMaintenanceThrottleRequest {
   uint32 max_concurrent_repairs = 3;
   uint32 max_concurrent_rebalances = 4;
   uint32 max_concurrent_drains = 5;
+  uint32 max_total_concurrent_movements = 6;
 }
 
 message SetMaintenanceThrottleResponse {
@@ -2115,6 +2224,7 @@ message ResumeMaintenanceResponse {
 
 message ListRepairsRequest {
   ClusterRef cluster = 1;
+  ExpensiveCallAdmission admission = 2;
 }
 
 message ListRepairsResponse {
@@ -2124,6 +2234,7 @@ message ListRepairsResponse {
 
 message ListRebalancesRequest {
   ClusterRef cluster = 1;
+  ExpensiveCallAdmission admission = 2;
 }
 
 message ListRebalancesResponse {
@@ -2391,6 +2502,15 @@ message BackupTargetSummary {
   string last_error = 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
+  string endpoint = 9;
+  string region = 10;
+  string bucket = 11;
+  string prefix = 12;
+  string credential_ref = 13;
+  bool path_style = 14;
+  string transport_security = 15;
+  string compatibility_cell = 16;
+  string tls_ca_file = 17;
 }
 
 message BackupPolicySummary {
@@ -2423,6 +2543,23 @@ message BackupRunSummary {
   string last_error = 12;
   google.protobuf.Timestamp started_at = 13;
   google.protobuf.Timestamp updated_at = 14;
+  uint64 revision = 15;
+  google.protobuf.Timestamp scheduled_for = 16;
+  string missed_schedule_policy = 17;
+  uint64 missed_schedule_count = 18;
+  string lease_owner = 19;
+  google.protobuf.Timestamp lease_expires_at = 20;
+  uint32 attempt = 21;
+  string idempotency_key = 22;
+  string checkpoint = 23;
+  string retry_class = 24;
+  google.protobuf.Timestamp retry_after = 25;
+  bool cancel_requested = 26;
+  uint64 budget_generation = 27;
+  uint32 budget_max_concurrent = 28;
+  uint32 queue_depth = 29;
+  uint32 active_workers = 30;
+  uint32 throttle_count = 31;
 }
 
 message BackupArtifactSummary {
@@ -2448,6 +2585,19 @@ message BackupArtifactSummary {
   google.protobuf.Timestamp created_at = 20;
   google.protobuf.Timestamp updated_at = 21;
   BackupArtifactEncryptionSummary encryption = 22;
+  uint64 generation = 23;
+  uint64 completed_bytes = 24;
+  uint64 next_offset = 25;
+  uint32 completed_object_count = 26;
+  uint64 revision = 27;
+  string worker_lease_owner = 28;
+  string copy_checkpoint = 29;
+  string first_error = 30;
+  string last_error = 31;
+  string restore_drill_volume_id = 32;
+  uint64 restore_target_size_bytes = 33;
+  bool larger_target_tail_zero_matched = 34;
+  uint64 restore_completed_bytes = 35;
 }
 
 message BackupArtifactEncryptionSummary {
@@ -2495,6 +2645,11 @@ message BackupPurgePlanSummary {
   uint32 would_purge_count = 8;
   uint32 deleted_artifact_count = 9;
   uint32 deleted_object_count = 10;
+  uint64 protection_revision = 11;
+  bool purge_executed = 12;
+  bool replay = 13;
+  bool audit_recorded = 14;
+  string purge_id = 15;
 }
 
 message BackupStatusSummary {
@@ -2533,6 +2688,13 @@ message CreateBackupTargetRequest {
   string root = 5;
   string credential_identity = 6;
   string capacity_status = 7;
+  string endpoint = 8;
+  string region = 9;
+  string bucket = 10;
+  string prefix = 11;
+  string credential_ref = 12;
+  bool path_style = 13;
+  string tls_ca_file = 14;
 }
 
 message CreateBackupTargetResponse {
@@ -2606,12 +2768,85 @@ message StartBackupRunRequest {
   string source_snapshot_id = 5;
   string snapshot_root_id = 6;
   string base_snapshot_id = 7;
+  string idempotency_key = 8;
+  google.protobuf.Timestamp scheduled_for = 9;
+  string missed_schedule_policy = 10;
 }
 
 message StartBackupRunResponse {
   ClusterRef cluster = 1;
   OperationHandle operation = 2;
   BackupRunSummary run = 3;
+}
+
+message AdvanceBackupRunRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string run_id = 3;
+  uint64 expected_revision = 4;
+  string next_state = 5;
+  string lease_owner = 6;
+  uint32 lease_duration_seconds = 7;
+  string idempotency_key = 8;
+  string checkpoint = 9;
+  string retry_class = 10;
+  google.protobuf.Timestamp retry_after = 11;
+  string error_message = 12;
+  bool cancel_requested = 13;
+  string source_snapshot_id = 14;
+  string snapshot_root_id = 15;
+  string base_snapshot_id = 16;
+}
+
+message AdvanceBackupRunResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BackupRunSummary run = 3;
+  bool replay = 4;
+  bool lease_claimed = 5;
+  bool lease_taken_over = 6;
+}
+
+message RunBackupArtifactCopyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string run_id = 3;
+  string artifact_id = 4;
+  uint64 expected_run_revision = 5;
+  string lease_owner = 6;
+  uint32 lease_duration_seconds = 7;
+  string idempotency_key = 8;
+  uint64 generation = 9;
+  uint64 chunk_size_bytes = 10;
+}
+
+message RunBackupArtifactCopyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BackupRunSummary run = 3;
+  BackupArtifactSummary artifact = 4;
+  bool replay = 5;
+  bool resumed = 6;
+}
+
+message TickBackupSchedulerRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  google.protobuf.Timestamp now = 3;
+  string missed_schedule_policy = 4;
+  uint32 max_admissions = 5;
+}
+
+message TickBackupSchedulerResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  repeated BackupRunSummary admitted_runs = 3;
+  uint32 due_policy_count = 4;
+  uint32 skipped_occurrence_count = 5;
+  uint32 queue_depth = 6;
+  uint32 active_workers = 7;
+  uint32 retry_count = 8;
+  uint32 throttle_count = 9;
 }
 
 message GetBackupRunRequest {
@@ -3443,6 +3678,20 @@ message DRReplicationLinkSummary {
   bool failover_supported = 13;
   google.protobuf.Timestamp created_at = 14;
   google.protobuf.Timestamp updated_at = 15;
+  string fencing_authority_id = 16;
+  string fencing_authority_public_key_fingerprint = 17;
+  bool source_fenced = 18;
+  uint64 source_fence_generation = 19;
+  uint64 source_fencing_epoch = 20;
+  string source_fencing_decision_id = 21;
+  string source_fencing_receipt = 22;
+  string last_source_fence_idempotency_key = 23;
+  google.protobuf.Timestamp source_fenced_at = 24;
+  bool remote_source_fence_verified = 25;
+  string source_fence_envelope_digest = 26;
+  string source_fencing_decision_digest = 27;
+  string last_source_fence_import_idempotency_key = 28;
+  google.protobuf.Timestamp source_fence_imported_at = 29;
 }
 
 message CreateDRReplicationLinkRequest {
@@ -3455,6 +3704,8 @@ message CreateDRReplicationLinkRequest {
   string target_volume_id = 7;
   string recovery_point_policy = 8;
   string shipping_mode = 9;
+  string fencing_authority_id = 10;
+  bytes fencing_authority_public_key = 11;
 }
 
 message CreateDRReplicationLinkResponse {
@@ -3482,6 +3733,68 @@ message ListDRReplicationLinksRequest {
 message ListDRReplicationLinksResponse {
   ClusterRef cluster = 1;
   repeated DRReplicationLinkSummary links = 2;
+}
+
+message FenceDRSourceVolumeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string replication_link_id = 3;
+  uint64 expected_link_generation = 4;
+  string idempotency_key = 5;
+  string fencing_authority_id = 6;
+  string decision_id = 7;
+  uint64 fencing_epoch = 8;
+  string demoted_standby_volume_id = 9;
+}
+
+message FenceDRSourceVolumeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRReplicationLinkSummary link = 3;
+  bool source_fenced = 4;
+  uint64 source_fence_generation = 5;
+  uint64 fencing_epoch = 6;
+  string source_fencing_receipt = 7;
+  bool replay = 8;
+}
+
+message DRSourceFenceEnvelope {
+  string version = 1;
+  string source_authority_id = 2;
+  string target_authority_id = 3;
+  bytes document_json = 4;
+  string envelope_digest = 5;
+}
+
+message ExportDRSourceFenceEnvelopeRequest {
+  ClusterRef cluster = 1;
+  string replication_link_id = 2;
+}
+
+message ExportDRSourceFenceEnvelopeResponse {
+  ClusterRef cluster = 1;
+  DRSourceFenceEnvelope envelope = 2;
+  DRReplicationLinkSummary link = 3;
+}
+
+message ImportDRSourceFenceEnvelopeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string standby_volume_id = 3;
+  DRSourceFenceEnvelope envelope = 4;
+  DRFencingDecision fencing_decision = 5;
+  string idempotency_key = 6;
+}
+
+message ImportDRSourceFenceEnvelopeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRReplicationLinkSummary link = 3;
+  DRStandbyVolumeSummary standby = 4;
+  string envelope_digest = 5;
+  string fencing_decision_digest = 6;
+  bool source_fence_verified = 7;
+  bool replay = 8;
 }
 
 message DRRecoveryPointSummary {
@@ -3566,6 +3879,10 @@ message DRShippingManifestSummary {
   bool remote_transfer_worker_deployed = 23;
   google.protobuf.Timestamp created_at = 24;
   google.protobuf.Timestamp updated_at = 25;
+  uint64 expected_bytes = 26;
+  uint64 expected_objects = 27;
+  string geometry_digest = 28;
+  string compatibility_digest = 29;
 }
 
 message CreateDRShippingManifestRequest {
@@ -3583,6 +3900,10 @@ message CreateDRShippingManifestRequest {
   bool read_view_identity_bound = 12;
   bool key_policy_bound = 13;
   bool governance_metadata_bound = 14;
+  uint64 expected_bytes = 15;
+  uint64 expected_objects = 16;
+  string geometry_digest = 17;
+  string compatibility_digest = 18;
 }
 
 message CreateDRShippingManifestResponse {
@@ -3641,6 +3962,27 @@ message DRShippingWorkerSummary {
   google.protobuf.Timestamp last_heartbeat_at = 26;
   google.protobuf.Timestamp created_at = 27;
   google.protobuf.Timestamp updated_at = 28;
+  uint32 transfer_attempt = 29;
+  string object_checkpoint = 30;
+  uint64 expected_bytes = 31;
+  uint64 expected_objects = 32;
+  uint64 transferred_bytes = 33;
+  uint64 transferred_objects = 34;
+  uint64 verified_bytes = 35;
+  uint64 verified_objects = 36;
+  string target_verification_receipt = 37;
+  bool cancel_requested = 38;
+  string compatibility_digest = 39;
+  string retry_class = 40;
+  string first_error = 41;
+  string last_error = 42;
+  string transfer_target_id = 43;
+  uint64 transfer_generation = 44;
+  string shipping_manifest_digest = 45;
+  bool target_integrity_verified = 46;
+  string lease_owner = 47;
+  google.protobuf.Timestamp lease_expires_at = 48;
+  string last_idempotency_key = 49;
 }
 
 message AdmitDRShippingWorkerRequest {
@@ -3654,6 +3996,7 @@ message AdmitDRShippingWorkerRequest {
   string target_endpoint = 8;
   string credential_boundary_id = 9;
   string transfer_plan_digest = 10;
+  string transfer_target_id = 11;
 }
 
 message AdmitDRShippingWorkerResponse {
@@ -3672,7 +4015,17 @@ message HeartbeatDRShippingWorkerRequest {
   string observed_state = 4;
   string heartbeat_message = 5;
   bool remote_transfer_started = 6;
-  bool remote_transfer_completed = 7;
+  bool remote_transfer_completed = 7 [deprecated = true];
+  uint32 transfer_attempt = 8;
+  string object_checkpoint = 9;
+  uint64 transferred_bytes = 10;
+  uint64 transferred_objects = 11;
+  uint64 verified_bytes = 12;
+  uint64 verified_objects = 13;
+  string target_verification_receipt = 14;
+  bool cancel_requested = 15;
+  string retry_class = 16;
+  string error_message = 17;
 }
 
 message HeartbeatDRShippingWorkerResponse {
@@ -3700,6 +4053,49 @@ message ListDRShippingWorkersRequest {
 message ListDRShippingWorkersResponse {
   ClusterRef cluster = 1;
   repeated DRShippingWorkerSummary workers = 2;
+}
+
+message DRTargetEnvelope {
+  string version = 1;
+  string source_authority_id = 2;
+  string target_authority_id = 3;
+  bytes document_json = 4;
+  string envelope_digest = 5;
+}
+
+message ExportDRTargetEnvelopeRequest {
+  ClusterRef cluster = 1;
+  string shipped_manifest_id = 2;
+  string shipping_worker_id = 3;
+}
+
+message ExportDRTargetEnvelopeResponse {
+  ClusterRef cluster = 1;
+  DRTargetEnvelope envelope = 2;
+  DRReplicationLinkSummary link = 3;
+  DRRecoveryPointSummary recovery_point = 4;
+  DRShippingManifestSummary manifest = 5;
+  DRShippingWorkerSummary worker = 6;
+}
+
+message ImportDRTargetEnvelopeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  DRTargetEnvelope envelope = 3;
+  string idempotency_key = 4;
+  string expected_fencing_authority_id = 5;
+  string expected_fencing_authority_public_key_fingerprint = 6;
+}
+
+message ImportDRTargetEnvelopeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  string envelope_digest = 3;
+  bool replay = 4;
+  DRReplicationLinkSummary link = 5;
+  DRRecoveryPointSummary recovery_point = 6;
+  DRShippingManifestSummary manifest = 7;
+  DRShippingWorkerSummary worker = 8;
 }
 
 message DRStandbyVolumeSummary {
@@ -3753,6 +4149,32 @@ message DRStandbyVolumeSummary {
   google.protobuf.Timestamp last_demote_at = 48;
   google.protobuf.Timestamp last_old_primary_write_check_at = 49;
   google.protobuf.Timestamp last_old_primary_rejoin_policy_at = 50;
+  string geometry_digest = 51;
+  string compatibility_digest = 52;
+  string target_verification_receipt = 53;
+  uint64 verified_bytes = 54;
+  uint64 verified_objects = 55;
+  string transfer_target_id = 56;
+  uint64 transfer_generation = 57;
+  string shipping_manifest_digest = 58;
+  bool product_import_completed = 59;
+  uint64 imported_bytes = 60;
+  uint64 imported_objects = 61;
+  bool userspace_readback_matched = 62;
+  bool gateway_write_rejected = 63;
+  string import_lease_owner = 64;
+  google.protobuf.Timestamp import_lease_expires_at = 65;
+  string last_import_idempotency_key = 66;
+  string import_first_error = 67;
+  string import_last_error = 68;
+  string fencing_authority_id = 69;
+  string fencing_decision_id = 70;
+  string fencing_decision_digest = 71;
+  google.protobuf.Timestamp fencing_decision_expires_at = 72;
+  string last_promote_idempotency_key = 73;
+  string target_attachment_id = 74;
+  string snapshot_lineage_id = 75;
+  string last_demote_idempotency_key = 76;
 }
 
 message ImportDRStandbyVolumeRequest {
@@ -3819,6 +4241,32 @@ message PromoteDRStandbyVolumeRequest {
   string attachment_id = 4;
   string snapshot_lineage_id = 5;
   string fencing_reason = 6;
+  uint64 expected_standby_generation = 7;
+  string idempotency_key = 8;
+  DRFencingDecision fencing_decision = 9;
+}
+
+message DRFencingDecision {
+  string version = 1;
+  string authority_id = 2;
+  string decision_id = 3;
+  string action = 4;
+  string replication_link_id = 5;
+  string standby_volume_id = 6;
+  string source_cluster_id = 7;
+  string target_cluster_id = 8;
+  string source_volume_id = 9;
+  string target_volume_id = 10;
+  uint64 expected_promote_generation = 11;
+  uint64 fencing_epoch = 12;
+  bool source_fenced = 13;
+  bool dependency_authority_healthy = 14;
+  bool target_integrity_verified = 15;
+  bool key_access_verified = 16;
+  google.protobuf.Timestamp issued_at = 17;
+  google.protobuf.Timestamp expires_at = 18;
+  string signature_base64 = 19;
+  string source_fencing_receipt = 20;
 }
 
 message PromoteDRStandbyVolumeResponse {
@@ -3829,6 +4277,7 @@ message PromoteDRStandbyVolumeResponse {
   bool target_write_admitted = 5;
   uint64 promote_generation = 6;
   uint64 fencing_epoch = 7;
+  bool replay = 8;
 }
 
 message DemoteDRStandbyVolumeRequest {
@@ -3836,6 +4285,8 @@ message DemoteDRStandbyVolumeRequest {
   RequestMeta meta = 2;
   string standby_volume_id = 3;
   string fencing_reason = 4;
+  uint64 expected_standby_generation = 5;
+  string idempotency_key = 6;
 }
 
 message DemoteDRStandbyVolumeResponse {
@@ -3846,6 +4297,7 @@ message DemoteDRStandbyVolumeResponse {
   bool target_write_admitted = 5;
   uint64 demote_generation = 6;
   uint64 fencing_epoch = 7;
+  bool replay = 8;
 }
 
 message CheckDROldPrimaryWriteRequest {
@@ -3879,6 +4331,32 @@ message DefineDROldPrimaryRejoinPolicyResponse {
   bool old_primary_rejoin_policy_defined = 4;
   string old_primary_rejoin_policy = 5;
   bool automatic_old_primary_rejoin = 6;
+}
+
+message PrepareDROldPrimaryReseedRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string original_replication_link_id = 3;
+  uint64 expected_original_link_generation = 4;
+  string source_fencing_receipt = 5;
+  string reverse_replication_link_id = 6;
+  string reverse_source_cluster_id = 7;
+  string reverse_source_volume_id = 8;
+  string idempotency_key = 9;
+}
+
+message PrepareDROldPrimaryReseedResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRReplicationLinkSummary original_link = 3;
+  string original_source_volume_id = 4;
+  string reverse_replication_link_id = 5;
+  string reverse_source_cluster_id = 6;
+  string reverse_source_volume_id = 7;
+  string source_fencing_receipt = 8;
+  bool old_primary_reseed_required = 9;
+  bool old_primary_write_rejected = 10;
+  bool replay = 11;
 }
 
 message DRFailoverDrillSummary {
@@ -3957,4 +4435,1009 @@ message ListDRFailoverDrillsRequest {
 message ListDRFailoverDrillsResponse {
   ClusterRef cluster = 1;
   repeated DRFailoverDrillSummary drills = 2;
+}
+
+// EnterpriseLifecycleMetadata is shared by the next-architecture product
+// lifecycles. request_id is an idempotency/audit identity; credentials and
+// other secret values must never be placed in this record.
+message EnterpriseLifecycleMetadata {
+  uint64 revision = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  string created_by = 4;
+  string updated_by = 5;
+  string update_reason = 6;
+  string last_request_id = 7;
+}
+
+message NVMeExportSummary {
+  string export_id = 1;
+  string subsystem_nqn = 2;
+  string volume_id = 3;
+  uint32 namespace_id = 4;
+  repeated string allowed_host_nqns = 5;
+  bool enabled = 6;
+  uint64 export_epoch = 7;
+  string desired_state = 8;
+  string observed_state = 9;
+  string target_node_id = 10;
+  string listen_address = 11;
+  uint32 listen_port = 12;
+  EnterpriseLifecycleMetadata lifecycle = 13;
+  uint64 observed_export_epoch = 14;
+  string observed_target_node_id = 15;
+  google.protobuf.Timestamp last_heartbeat = 16;
+  uint64 observed_revision = 17;
+  string observed_error = 18;
+  repeated NVMeExportPathSummary paths = 19;
+  string active_target_node_id = 20;
+  uint64 ana_change_count = 21;
+}
+
+message CreateNVMeExportRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string export_id = 3;
+  string subsystem_nqn = 4;
+  string volume_id = 5;
+  uint32 namespace_id = 6;
+  repeated string allowed_host_nqns = 7;
+  string target_node_id = 8;
+  string listen_address = 9;
+  uint32 listen_port = 10;
+  bool enabled = 11;
+  string idempotency_key = 12;
+  repeated NVMeExportPathSpec paths = 13;
+  string active_target_node_id = 14;
+}
+
+message CreateNVMeExportResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  NVMeExportSummary export = 3;
+}
+
+message GetNVMeExportRequest {
+  ClusterRef cluster = 1;
+  string export_id = 2;
+}
+
+message GetNVMeExportResponse {
+  ClusterRef cluster = 1;
+  NVMeExportSummary export = 2;
+}
+
+message ListNVMeExportsRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+  string target_node_id = 3;
+}
+
+message ListNVMeExportsResponse {
+  ClusterRef cluster = 1;
+  repeated NVMeExportSummary exports = 2;
+}
+
+message SetNVMeExportEnabledRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string export_id = 3;
+  bool enabled = 4;
+  uint64 expected_revision = 5;
+  string idempotency_key = 6;
+}
+
+message SetNVMeExportEnabledResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  NVMeExportSummary export = 3;
+}
+
+message DeleteNVMeExportRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string export_id = 3;
+  uint64 expected_revision = 4;
+  string idempotency_key = 5;
+}
+
+message DeleteNVMeExportResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+}
+
+enum PersistentReservationType {
+  PERSISTENT_RESERVATION_TYPE_UNSPECIFIED = 0;
+  PERSISTENT_RESERVATION_TYPE_WRITE_EXCLUSIVE = 1;
+  PERSISTENT_RESERVATION_TYPE_EXCLUSIVE_ACCESS = 2;
+  PERSISTENT_RESERVATION_TYPE_WRITE_EXCLUSIVE_REGISTRANTS_ONLY = 3;
+  PERSISTENT_RESERVATION_TYPE_EXCLUSIVE_ACCESS_REGISTRANTS_ONLY = 4;
+  PERSISTENT_RESERVATION_TYPE_WRITE_EXCLUSIVE_ALL_REGISTRANTS = 5;
+  PERSISTENT_RESERVATION_TYPE_EXCLUSIVE_ACCESS_ALL_REGISTRANTS = 6;
+}
+
+message PersistentReservationRegistration {
+  string host_nqn = 1;
+  uint64 key = 2;
+  google.protobuf.Timestamp registered_at = 3;
+}
+
+message PersistentReservationSummary {
+  string volume_id = 1;
+  repeated PersistentReservationRegistration registrations = 2;
+  string holder_host_nqn = 3;
+  uint64 reservation_key = 4;
+  PersistentReservationType reservation_type = 5;
+  uint64 reservation_generation = 6;
+  EnterpriseLifecycleMetadata lifecycle = 7;
+}
+
+message RegisterPersistentReservationRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  string host_nqn = 4;
+  uint64 current_key = 5;
+  uint64 new_key = 6;
+  string idempotency_key = 7;
+  uint64 expected_reservation_generation = 8;
+  bool ignore_existing_key = 9;
+}
+
+message RegisterPersistentReservationResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  PersistentReservationSummary reservation = 3;
+}
+
+message ReservePersistentReservationRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  string host_nqn = 4;
+  uint64 key = 5;
+  PersistentReservationType reservation_type = 6;
+  string idempotency_key = 7;
+  uint64 expected_reservation_generation = 8;
+}
+
+message ReservePersistentReservationResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  PersistentReservationSummary reservation = 3;
+}
+
+message ReleasePersistentReservationRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  string host_nqn = 4;
+  uint64 key = 5;
+  PersistentReservationType reservation_type = 6;
+  string idempotency_key = 7;
+  uint64 expected_reservation_generation = 8;
+}
+
+message ReleasePersistentReservationResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  PersistentReservationSummary reservation = 3;
+}
+
+message PreemptPersistentReservationRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  string host_nqn = 4;
+  uint64 key = 5;
+  uint64 preempt_key = 6;
+  PersistentReservationType reservation_type = 7;
+  bool abort = 8;
+  string idempotency_key = 9;
+  uint64 expected_reservation_generation = 10;
+}
+
+message PreemptPersistentReservationResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  PersistentReservationSummary reservation = 3;
+}
+
+message ClearPersistentReservationRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  string host_nqn = 4;
+  uint64 key = 5;
+  string idempotency_key = 6;
+  uint64 expected_reservation_generation = 7;
+}
+
+message ClearPersistentReservationResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  PersistentReservationSummary reservation = 3;
+}
+
+message GetPersistentReservationRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+}
+
+message GetPersistentReservationResponse {
+  ClusterRef cluster = 1;
+  PersistentReservationSummary reservation = 2;
+}
+
+enum TieringOperationState {
+  TIERING_OPERATION_STATE_UNSPECIFIED = 0;
+  TIERING_OPERATION_STATE_PENDING = 1;
+  TIERING_OPERATION_STATE_RUNNING = 2;
+  TIERING_OPERATION_STATE_COMPLETED = 3;
+  TIERING_OPERATION_STATE_FAILED = 4;
+  TIERING_OPERATION_STATE_CANCELLED = 5;
+}
+
+message TieringTargetSummary {
+  string target_id = 1;
+  string endpoint = 2;
+  string region = 3;
+  string bucket = 4;
+  string prefix = 5;
+  string credential_ref = 6;
+  bool tls_enabled = 7;
+  bool path_style = 8;
+  string status = 9;
+  EnterpriseLifecycleMetadata lifecycle = 10;
+}
+
+message SnapshotTieringOperationSummary {
+  string operation_id = 1;
+  string operation_kind = 2;
+  string snapshot_id = 3;
+  string snapshot_root_id = 4;
+  string target_id = 5;
+  string object_prefix = 6;
+  TieringOperationState state = 7;
+  uint64 bytes_processed = 8;
+  uint64 object_count = 9;
+  string manifest_checksum = 10;
+  string error_message = 11;
+  EnterpriseLifecycleMetadata lifecycle = 12;
+}
+
+message CreateTieringTargetRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string target_id = 3;
+  string endpoint = 4;
+  string region = 5;
+  string bucket = 6;
+  string prefix = 7;
+  string credential_ref = 8;
+  bool tls_enabled = 9;
+  bool path_style = 10;
+  string idempotency_key = 11;
+}
+
+message CreateTieringTargetResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  TieringTargetSummary target = 3;
+}
+
+message GetTieringTargetRequest {
+  ClusterRef cluster = 1;
+  string target_id = 2;
+}
+
+message GetTieringTargetResponse {
+  ClusterRef cluster = 1;
+  TieringTargetSummary target = 2;
+}
+
+message ListTieringTargetsRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListTieringTargetsResponse {
+  ClusterRef cluster = 1;
+  repeated TieringTargetSummary targets = 2;
+}
+
+message CheckTieringTargetRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string target_id = 3;
+}
+
+message CheckTieringTargetResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  TieringTargetSummary target = 3;
+  bool reachable = 4;
+  string detail = 5;
+}
+
+message StartSnapshotTieringRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string snapshot_id = 3;
+  string target_id = 4;
+  string object_prefix = 5;
+  string idempotency_key = 6;
+}
+
+message StartSnapshotTieringResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SnapshotTieringOperationSummary tiering = 3;
+}
+
+message StartSnapshotHydrationRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string source_operation_id = 3;
+  string target_volume_id = 4;
+  string idempotency_key = 5;
+}
+
+message StartSnapshotHydrationResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SnapshotTieringOperationSummary hydration = 3;
+}
+
+message GetSnapshotTieringOperationRequest {
+  ClusterRef cluster = 1;
+  string operation_id = 2;
+}
+
+message GetSnapshotTieringOperationResponse {
+  ClusterRef cluster = 1;
+  SnapshotTieringOperationSummary tiering = 2;
+}
+
+message ListSnapshotTieringOperationsRequest {
+  ClusterRef cluster = 1;
+  string snapshot_id = 2;
+  string target_id = 3;
+}
+
+message ListSnapshotTieringOperationsResponse {
+  ClusterRef cluster = 1;
+  repeated SnapshotTieringOperationSummary operations = 2;
+}
+
+message CancelSnapshotTieringRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string operation_id = 3;
+  string idempotency_key = 4;
+}
+
+message CancelSnapshotTieringResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  SnapshotTieringOperationSummary tiering = 3;
+}
+
+message CompressionPolicySummary {
+  string policy_id = 1;
+  string codec = 2;
+  int32 level = 3;
+  uint32 minimum_input_bytes = 4;
+  bool checksum_enabled = 5;
+  bool enabled = 6;
+  EnterpriseLifecycleMetadata lifecycle = 7;
+}
+
+message CompressionRolloutStatus {
+  string volume_id = 1;
+  string policy_id = 2;
+  uint64 policy_revision = 3;
+  string rollout_state = 4;
+  uint64 compressed_bytes = 5;
+  uint64 uncompressed_bytes = 6;
+  uint64 legacy_decode_count = 7;
+  uint64 checksum_failure_count = 8;
+}
+
+message CreateCompressionPolicyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string policy_id = 3;
+  string codec = 4;
+  int32 level = 5;
+  uint32 minimum_input_bytes = 6;
+  bool checksum_enabled = 7;
+  bool enabled = 8;
+  string idempotency_key = 9;
+}
+
+message CreateCompressionPolicyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  CompressionPolicySummary policy = 3;
+}
+
+message GetCompressionPolicyRequest {
+  ClusterRef cluster = 1;
+  string policy_id = 2;
+}
+
+message GetCompressionPolicyResponse {
+  ClusterRef cluster = 1;
+  CompressionPolicySummary policy = 2;
+}
+
+message ListCompressionPoliciesRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListCompressionPoliciesResponse {
+  ClusterRef cluster = 1;
+  repeated CompressionPolicySummary policies = 2;
+}
+
+message BindCompressionPolicyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string volume_id = 3;
+  string policy_id = 4;
+  uint64 expected_revision = 5;
+  string idempotency_key = 6;
+}
+
+message BindCompressionPolicyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  CompressionRolloutStatus rollout = 3;
+}
+
+message GetCompressionRolloutStatusRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+}
+
+message GetCompressionRolloutStatusResponse {
+  ClusterRef cluster = 1;
+  CompressionRolloutStatus rollout = 2;
+}
+
+enum WORMProtectionMode {
+  WORM_PROTECTION_MODE_UNSPECIFIED = 0;
+  WORM_PROTECTION_MODE_GOVERNANCE = 1;
+  WORM_PROTECTION_MODE_COMPLIANCE = 2;
+}
+
+enum WORMLockState {
+  WORM_LOCK_STATE_UNSPECIFIED = 0;
+  WORM_LOCK_STATE_UNLOCKED = 1;
+  WORM_LOCK_STATE_LOCKED = 2;
+  WORM_LOCK_STATE_EXPIRED = 3;
+  WORM_LOCK_STATE_LEGAL_HOLD = 4;
+}
+
+message WORMSubjectRef {
+  string subject_type = 1;
+  string subject_id = 2;
+  string volume_id = 3;
+}
+
+message WORMSubjectSummary {
+  WORMSubjectRef subject = 1;
+  uint64 revision = 2;
+  WORMProtectionMode mode = 3;
+  WORMLockState state = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp locked_until = 6;
+  bool legal_hold = 7;
+  string hold_reason = 8;
+  string created_by = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  string updated_by = 11;
+  string update_reason = 12;
+  string last_request_id = 13;
+}
+
+message WORMAuditEvent {
+  WORMSubjectRef subject = 1;
+  uint64 subject_revision = 2;
+  string action = 3;
+  string result = 4;
+  string actor = 5;
+  string reason = 6;
+  string request_id = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message RegisterWORMSubjectRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  WORMSubjectRef subject = 3;
+  string idempotency_key = 4;
+}
+
+message RegisterWORMSubjectResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  WORMSubjectSummary subject = 3;
+}
+
+message GetWORMSubjectRequest {
+  ClusterRef cluster = 1;
+  WORMSubjectRef subject = 2;
+}
+
+message GetWORMSubjectResponse {
+  ClusterRef cluster = 1;
+  WORMSubjectSummary subject = 2;
+}
+
+message ListWORMSubjectsRequest {
+  ClusterRef cluster = 1;
+  string volume_id = 2;
+  string subject_type = 3;
+}
+
+message ListWORMSubjectsResponse {
+  ClusterRef cluster = 1;
+  repeated WORMSubjectSummary subjects = 2;
+}
+
+message ApplyWORMLockRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  WORMSubjectRef subject = 3;
+  WORMProtectionMode mode = 4;
+  google.protobuf.Timestamp locked_until = 5;
+  uint64 expected_revision = 6;
+  string idempotency_key = 7;
+}
+
+message ApplyWORMLockResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  WORMSubjectSummary subject = 3;
+}
+
+message SetWORMLegalHoldRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  WORMSubjectRef subject = 3;
+  bool enabled = 4;
+  string hold_reason = 5;
+  string caller_role = 6;
+  uint64 expected_revision = 7;
+  string idempotency_key = 8;
+}
+
+message SetWORMLegalHoldResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  WORMSubjectSummary subject = 3;
+}
+
+message ListWORMAuditEventsRequest {
+  ClusterRef cluster = 1;
+  WORMSubjectRef subject = 2;
+}
+
+message ListWORMAuditEventsResponse {
+  ClusterRef cluster = 1;
+  repeated WORMAuditEvent events = 2;
+}
+
+message ReportNVMeExportStatusRequest {
+  ClusterRef cluster = 1;
+  string export_id = 2;
+  string target_node_id = 3;
+  uint64 export_epoch = 4;
+  string observed_state = 5;
+  string observed_error = 6;
+  uint64 lifecycle_revision = 7;
+}
+
+message ReportNVMeExportStatusResponse {
+  ClusterRef cluster = 1;
+  NVMeExportSummary export = 2;
+}
+
+message NVMeExportPathSpec {
+  string target_node_id = 1;
+  string listen_address = 2;
+  uint32 listen_port = 3;
+  uint32 ana_group_id = 4;
+}
+
+message NVMeExportPathSummary {
+  string target_node_id = 1;
+  string listen_address = 2;
+  uint32 listen_port = 3;
+  uint32 ana_group_id = 4;
+  string ana_state = 5;
+  string observed_state = 6;
+  uint64 observed_export_epoch = 7;
+  google.protobuf.Timestamp last_heartbeat = 8;
+  uint64 observed_revision = 9;
+  string observed_error = 10;
+  uint64 observed_lifecycle_revision = 11;
+}
+
+message SetNVMeExportActiveTargetRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string export_id = 3;
+  string active_target_node_id = 4;
+  uint64 expected_revision = 5;
+  string idempotency_key = 6;
+}
+
+message SetNVMeExportActiveTargetResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  NVMeExportSummary export = 3;
+}
+
+message RunBackupRestoreDrillRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string run_id = 3;
+  string artifact_id = 4;
+  string restore_drill_id = 5;
+  string target_volume_id = 6;
+  uint64 expected_run_revision = 7;
+  string lease_owner = 8;
+  uint32 lease_duration_seconds = 9;
+  string idempotency_key = 10;
+}
+
+message RunBackupRestoreDrillResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BackupRunSummary run = 3;
+  BackupArtifactSummary artifact = 4;
+  string target_volume_id = 5;
+  uint64 restore_size_bytes = 6;
+  uint64 target_size_bytes = 7;
+  bool artifact_integrity_rechecked = 8;
+  bool userspace_readback_matched = 9;
+  bool larger_target_tail_zero_matched = 10;
+  bool replay = 11;
+}
+
+message DeleteBackupTargetRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string target_id = 3;
+  bool confirmed_deletion = 4;
+}
+
+message DeleteBackupTargetResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  string target_id = 3;
+  bool deleted = 4;
+}
+
+message DeleteBackupPolicyRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string policy_id = 3;
+  bool confirmed_deletion = 4;
+}
+
+message DeleteBackupPolicyResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  string policy_id = 3;
+  bool deleted = 4;
+}
+
+message DeleteBackupRunRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string run_id = 3;
+  uint64 expected_revision = 4;
+  bool confirmed_deletion = 5;
+}
+
+message DeleteBackupRunResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  string run_id = 3;
+  bool deleted = 4;
+}
+
+message ReleaseBackupRetentionHoldRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string hold_id = 3;
+}
+
+message ReleaseBackupRetentionHoldResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BackupRetentionHoldSummary hold = 3;
+  bool released = 4;
+}
+
+message ExecuteBackupPurgeRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string artifact_id = 3;
+  uint64 expected_revision = 4;
+  bool explicit_purge = 5;
+  bool unprotected_reachability_proof = 6;
+  bool confirmed_deletion = 7;
+  string idempotency_key = 8;
+}
+
+message ExecuteBackupPurgeResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  BackupPurgePlanSummary plan = 3;
+}
+
+message RunDRShippingWorkerRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string shipping_worker_id = 3;
+  uint64 expected_worker_generation = 4;
+  uint64 transfer_generation = 5;
+  uint64 chunk_size_bytes = 6;
+  string lease_owner = 7;
+  uint32 lease_duration_seconds = 8;
+  string idempotency_key = 9;
+}
+
+message RunDRShippingWorkerResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRShippingWorkerSummary worker = 3;
+  bool resumed = 4;
+  bool replay = 5;
+}
+
+message RunDRStandbyImportRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string standby_volume_id = 3;
+  uint64 expected_standby_generation = 4;
+  string lease_owner = 5;
+  uint32 lease_duration_seconds = 6;
+  string idempotency_key = 7;
+}
+
+message RunDRStandbyImportResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  DRStandbyVolumeSummary standby = 3;
+  bool replay = 4;
+}
+
+message RBACRoleSummary {
+  string role_id = 1;
+  repeated string permissions = 2;
+  bool builtin = 3;
+  bool mutation_allowed = 4;
+}
+
+message RBACPermissionSummary {
+  string full_method = 1;
+  string resource = 2;
+  string action = 3;
+  string permission = 4;
+  bool mutation = 5;
+  repeated string roles = 6;
+  string qa_case_id = 7;
+}
+
+message RBACRoleBindingSummary {
+  string identity = 1;
+  repeated string roles = 2;
+  uint64 generation = 3;
+  bool tombstoned = 4;
+  string last_idempotency_key = 5;
+  string created_by = 6;
+  string created_reason = 7;
+  google.protobuf.Timestamp created_at = 8;
+  string updated_by = 9;
+  string updated_reason = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+message ListRBACRolesRequest {
+  ClusterRef cluster = 1;
+}
+
+message ListRBACRolesResponse {
+  ClusterRef cluster = 1;
+  repeated RBACRoleSummary roles = 2;
+}
+
+message ListRBACPermissionsRequest {
+  ClusterRef cluster = 1;
+  string role_id = 2;
+  bool mutations_only = 3;
+}
+
+message ListRBACPermissionsResponse {
+  ClusterRef cluster = 1;
+  repeated RBACPermissionSummary permissions = 2;
+  uint64 uncovered_mutation_count = 3;
+  uint64 uncovered_endpoint_count = 4;
+}
+
+message PutRBACRoleBindingRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string identity = 3;
+  repeated string roles = 4;
+  uint64 expected_generation = 5;
+  string idempotency_key = 6;
+}
+
+message PutRBACRoleBindingResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  RBACRoleBindingSummary binding = 3;
+  bool replay = 4;
+}
+
+message GetRBACRoleBindingRequest {
+  ClusterRef cluster = 1;
+  string identity = 2;
+}
+
+message GetRBACRoleBindingResponse {
+  ClusterRef cluster = 1;
+  RBACRoleBindingSummary binding = 2;
+}
+
+message ListRBACRoleBindingsRequest {
+  ClusterRef cluster = 1;
+  string role_id = 2;
+  bool include_tombstoned = 3;
+}
+
+message ListRBACRoleBindingsResponse {
+  ClusterRef cluster = 1;
+  repeated RBACRoleBindingSummary bindings = 2;
+}
+
+message DeleteRBACRoleBindingRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string identity = 3;
+  uint64 expected_generation = 4;
+  string idempotency_key = 5;
+}
+
+message DeleteRBACRoleBindingResponse {
+  ClusterRef cluster = 1;
+  OperationHandle operation = 2;
+  RBACRoleBindingSummary binding = 3;
+  bool replay = 4;
+}
+
+message RBACAuthorizationEventSummary {
+  string event_id = 1;
+  uint64 sequence = 2;
+  string previous_digest = 3;
+  string decision_digest = 4;
+  string actor_identity = 5;
+  repeated string roles = 6;
+  string certificate_fingerprint = 7;
+  uint64 binding_generation = 8;
+  string full_method = 9;
+  string resource = 10;
+  string action = 11;
+  string permission = 12;
+  string qa_case_id = 13;
+  string request_id = 14;
+  string reason = 15;
+  string result = 16;
+  string denial_reason = 17;
+  google.protobuf.Timestamp created_at = 18;
+  uint64 requested_binding_generation = 19;
+  string delegated_by_identity = 20;
+}
+
+message ListRBACAuthorizationEventsRequest {
+  ClusterRef cluster = 1;
+  string actor_identity = 2;
+  string resource = 3;
+  string action = 4;
+  string result = 5;
+}
+
+message ListRBACAuthorizationEventsResponse {
+  ClusterRef cluster = 1;
+  repeated RBACAuthorizationEventSummary events = 2;
+}
+
+message VerifyRBACAuthorizationAuditLogRequest {
+  ClusterRef cluster = 1;
+}
+
+message VerifyRBACAuthorizationAuditLogResponse {
+  ClusterRef cluster = 1;
+  bool hash_chain_verified = 2;
+  bool redaction_checked = 3;
+  uint64 event_count = 4;
+  string last_event_id = 5;
+  uint64 last_sequence = 6;
+  string last_decision_digest = 7;
+  string error_message = 8;
+}
+
+message AuthorizeRBACGatewayHTTPRequestRequest {
+  ClusterRef cluster = 1;
+  RequestMeta meta = 2;
+  string route_id = 3;
+  string http_method = 4;
+  repeated bytes client_certificate_chain_der = 5;
+  uint64 requested_binding_generation = 6;
+  string client_request_id = 7;
+  string client_reason = 8;
+}
+
+message AuthorizeRBACGatewayHTTPRequestResponse {
+  ClusterRef cluster = 1;
+  bool allowed = 2;
+  string actor_identity = 3;
+  repeated string roles = 4;
+  string resource = 5;
+  string action = 6;
+  string permission = 7;
+  uint64 binding_generation = 8;
+  string request_id = 9;
+}
+
+enum ClusterSummaryHealth {
+  CLUSTER_SUMMARY_HEALTH_UNSPECIFIED = 0;
+  CLUSTER_SUMMARY_HEALTH_READY = 1;
+  CLUSTER_SUMMARY_HEALTH_DEGRADED = 2;
+  CLUSTER_SUMMARY_HEALTH_REBUILD_REQUIRED = 3;
+}
+
+message ExpensiveCallAdmission {
+  string reason = 1;
+  uint32 record_budget = 2;
+}
+
+message ListRepairsPageRequest {
+  ClusterRef cluster = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListRebalancesPageRequest {
+  ClusterRef cluster = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListRepairsPageResponse {
+  ClusterRef cluster = 1;
+  repeated RepairSummary repairs = 2;
+  string projection_revision = 3;
+  string next_page_token = 4;
+  int64 freshness_age_millis = 5;
+  string projection_health = 6;
+  uint32 scanned_records = 7;
+  google.protobuf.Timestamp generated_at = 8;
+}
+
+message ListRebalancesPageResponse {
+  ClusterRef cluster = 1;
+  repeated RebalanceSummary rebalances = 2;
+  string projection_revision = 3;
+  string next_page_token = 4;
+  int64 freshness_age_millis = 5;
+  string projection_health = 6;
+  uint32 scanned_records = 7;
+  google.protobuf.Timestamp generated_at = 8;
 }

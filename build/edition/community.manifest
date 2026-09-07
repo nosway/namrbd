@@ -56,6 +56,7 @@ include configs/namrbd-iscsi-gateway.yaml
 include configs/namrbd-mcp.yaml
 include configs/sbs-data.yaml
 include configs/sbs-service.yaml
+include configs/sbs-cluster-160.example.yaml
 include control
 include deploy/kubernetes/csi
 include deploy/observability
@@ -79,6 +80,8 @@ include web
 include packaging/docker/Dockerfile.sbs
 include build/edition/community.manifest
 include tools/generate-community-release-evidence.sh
+include tools/check-release-version.sh
+include tools/check-release-version-fixture.sh
 include tools/operations-dashboard-browser-qa.sh
 include tools/mcp-client-provider-integration.py
 
@@ -120,6 +123,7 @@ exclude docs/phase-k-slice-detailed-design.md
 exclude docs/phase-k-ec-rough-design-input.md
 exclude docs/phase-m-slice-detailed-design.md
 exclude cmd/namrbd-iscsictl
+exclude cmd/namrbd-nvme-tcp-gateway
 exclude cmd/namrbd-gateway/phase_p_repository_enterprise.go
 exclude cmd/namrbd-gateway/phase_p_repository_enterprise_test.go
 exclude cmd/sbsctl/backup_commands_enterprise.go
@@ -138,4 +142,13 @@ exclude cmd/sbsctl/security_commands_enterprise.go
 exclude cmd/sbsctl/security_commands_enterprise_test.go
 exclude gateway/service/chunk_payload_encryption.go
 exclude gateway/service/chunk_payload_encryption_test.go
+exclude gateway/nvme
+exclude sbs/cluster/pr
+exclude sbs/cluster/tiering
+exclude sbs/cluster/worm
+exclude sbs/cluster/payload/compress/compress.go
+exclude sbs/cluster/payload/compress/compress_test.go
+exclude sbs/cluster/payload/pebble_compress_enterprise_test.go
+exclude cmd/sbs-service/worm_guard_enterprise.go
 exclude iscsi/edition_enterprise.go
+exclude internal/csi/driver/edition_enterprise.go

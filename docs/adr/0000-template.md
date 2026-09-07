@@ -37,4 +37,3 @@ the future.
 
 State how the decision is enforced or observed and which evidence would justify
 a new ADR.
-

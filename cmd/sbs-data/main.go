@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -45,7 +47,7 @@ func main() {
 	}, os.Stderr)...)
 	os.Args = append(os.Args[:1], cliux.RewriteCommandArgs(os.Args[1:], false, false)...)
 	fs := flag.NewFlagSet("sbs-data", flag.ExitOnError)
-	configPath := fs.String("config", "", "service config file path (AA-IMPL-001G); store layout stays in --store-config")
+	configPath := fs.String("config", "", "service config file path; store layout stays in --store-config")
 	clusterID := fs.String("cluster-id", getenvOrDefault("NAMRBD_CLUSTER_ID", "namrbd-dev"), "NAMRBD cluster id")
 	sbsClusterID := fs.String("sbs-cluster-id", getenvOrDefault("NAMRBD_SBS_CLUSTER_ID", ""), "SBS cluster id; defaults to --cluster-id when omitted")
 	nodeID := fs.String("node-id", getenvOrDefault("NAMRBD_SBS_DATA_NODE_ID", "sbs-data-1"), "sbs-data node id")
@@ -56,6 +58,8 @@ func main() {
 	grpcListen := fs.String("sbs-data-listen", getenvCompatOrDefault(envcompat.SBSDataGRPCListen, "0.0.0.0:9444"), "listen address for sbs-data gRPC")
 	httpListen := fs.String("sbs-data-http-listen", getenvCompatOrDefault(envcompat.SBSDataHTTPListen, "0.0.0.0:9082"), "listen address for sbs-data HTTP health and observability")
 	enableLabStoreDebug := fs.Bool("enable-lab-store-debug", getenvBoolOrDefault("NAMRBD_SBS_ENABLE_LAB_STORE_DEBUG", false), "enable lab-only debug store mutation endpoints")
+	enableLabPhysicalInspection := fs.Bool("enable-lab-physical-inspection", getenvBoolOrDefault("NAMRBD_SBS_ENABLE_LAB_PHYSICAL_INSPECTION", false), "enable lab-only read-only physical chunk inspection endpoint")
+	enableLabPhysicalCleanup := fs.Bool("enable-lab-physical-cleanup", getenvBoolOrDefault("NAMRBD_SBS_ENABLE_LAB_PHYSICAL_CLEANUP", false), "enable lab-only approval-bound exact physical chunk cleanup endpoint")
 	disableIdempotencySync := fs.Bool("lab-disable-idempotency-sync", getenvBoolOrDefault("NAMRBD_SBS_LAB_DISABLE_IDEMPOTENCY_SYNC", false), "lab-only: write idempotency records without Pebble sync")
 	cacheOpenVolumeSpec := fs.Bool("lab-cache-open-volume-spec", getenvBoolOrDefault("NAMRBD_SBS_LAB_CACHE_OPEN_VOLUME_SPEC", false), "lab-only: reuse the opened volume spec on hot data-plane requests")
 	disablePhysicalWriteIdempotency := fs.Bool("lab-disable-physical-write-idempotency", getenvBoolOrDefault("NAMRBD_SBS_LAB_DISABLE_PHYSICAL_WRITE_IDEMPOTENCY", false), "lab-only: skip durable idempotency lookup/store for fresh physical chunk writes")
@@ -125,7 +129,7 @@ func main() {
 
 	httpSrv := &http.Server{
 		Addr: *httpListen,
-		Handler: observabilityMuxWithIdentity(*path, *storeConfigPath, client, *enableLabStoreDebug, sbsDataIdentity{
+		Handler: observabilityMuxWithIdentityAndPhysicalControls(*path, *storeConfigPath, client, *enableLabStoreDebug, *enableLabPhysicalInspection || *enableLabStoreDebug, *enableLabPhysicalCleanup, sbsDataIdentity{
 			ClusterID: *clusterID, SBSClusterID: *sbsClusterID, NodeID: *nodeID,
 		}),
 	}
@@ -158,12 +162,20 @@ func observabilityMux(path, storeConfigPath string, client *local.Client, enable
 }
 
 type sbsDataIdentity struct {
-	ClusterID    string
-	SBSClusterID string
-	NodeID       string
+	ClusterID    string `json:"cluster_id"`
+	SBSClusterID string `json:"sbs_cluster_id"`
+	NodeID       string `json:"node_id"`
 }
 
 func observabilityMuxWithIdentity(path, storeConfigPath string, client *local.Client, enableLabStoreDebug bool, identity sbsDataIdentity) http.Handler {
+	return observabilityMuxWithIdentityAndPhysicalInspection(path, storeConfigPath, client, enableLabStoreDebug, enableLabStoreDebug, identity)
+}
+
+func observabilityMuxWithIdentityAndPhysicalInspection(path, storeConfigPath string, client *local.Client, enableLabStoreDebug, enableLabPhysicalInspection bool, identity sbsDataIdentity) http.Handler {
+	return observabilityMuxWithIdentityAndPhysicalControls(path, storeConfigPath, client, enableLabStoreDebug, enableLabPhysicalInspection, false, identity)
+}
+
+func observabilityMuxWithIdentityAndPhysicalControls(path, storeConfigPath string, client *local.Client, enableLabStoreDebug, enableLabPhysicalInspection, enableLabPhysicalCleanup bool, identity sbsDataIdentity) http.Handler {
 	mux := http.NewServeMux()
 	// Tracks which store configuration this node is serving, so a fleet-wide
 	// rollout can be told apart from a node that never picked the change up.
@@ -171,6 +183,15 @@ func observabilityMuxWithIdentity(path, storeConfigPath string, client *local.Cl
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
+	})
+	mux.HandleFunc("/debug/identity", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"cluster_id": identity.ClusterID, "sbs_cluster_id": identity.SBSClusterID, "node_id": identity.NodeID,
+		})
 	})
 	// AA-IMPL-004B. sbs-data has no etcd/TiKV dependency today, so the tracker
 	// reports the healthy default. The JSON surface is still important: every
@@ -394,7 +415,9 @@ func observabilityMuxWithIdentity(path, storeConfigPath string, client *local.Cl
 			var payload struct {
 				VolumeID      string                     `json:"volume_id"`
 				Limit         int                        `json:"limit"`
+				CandidateRefs []service.PhysicalChunkRef `json:"candidate_refs"`
 				ProtectedRefs []service.PhysicalChunkRef `json:"protected_refs"`
+				InspectOnly   bool                       `json:"inspect_only"`
 			}
 			if r.Body != nil {
 				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
@@ -420,13 +443,19 @@ func observabilityMuxWithIdentity(path, storeConfigPath string, client *local.Cl
 				http.Error(w, "volume_id is required", http.StatusBadRequest)
 				return
 			}
-			for _, ref := range payload.ProtectedRefs {
+			for _, ref := range append(append([]service.PhysicalChunkRef(nil), payload.CandidateRefs...), payload.ProtectedRefs...) {
 				if ref.ChunkID == 0 {
-					http.Error(w, "protected_refs chunk_id must be positive", http.StatusBadRequest)
+					http.Error(w, "candidate_refs and protected_refs chunk_id must be positive", http.StatusBadRequest)
 					return
 				}
 			}
-			result, err := client.SweepChunkGarbage(r.Context(), payload.VolumeID, payload.Limit, payload.ProtectedRefs)
+			var result service.ChunkGarbageSweepResult
+			var err error
+			if payload.InspectOnly {
+				result, err = client.InspectChunkGarbageCandidates(r.Context(), payload.VolumeID, payload.Limit, payload.CandidateRefs, payload.ProtectedRefs)
+			} else {
+				result, err = client.SweepChunkGarbageCandidates(r.Context(), payload.VolumeID, payload.Limit, payload.CandidateRefs, payload.ProtectedRefs)
+			}
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -434,7 +463,9 @@ func observabilityMuxWithIdentity(path, storeConfigPath string, client *local.Cl
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok":             true,
 				"volume_id":      payload.VolumeID,
+				"candidate_refs": payload.CandidateRefs,
 				"protected_refs": payload.ProtectedRefs,
+				"inspect_only":   payload.InspectOnly,
 				"result":         result,
 			})
 		})
@@ -498,6 +529,109 @@ func observabilityMuxWithIdentity(path, storeConfigPath string, client *local.Cl
 				"store_config_revision": rev,
 				"store_config_digest":   digest,
 				"stores":                snapshot.Stores,
+			})
+		})
+	}
+	if enableLabPhysicalInspection {
+		mux.HandleFunc("/debug/physical-chunks", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var payload struct {
+				VolumeID      string                     `json:"volume_id"`
+				CandidateRefs []service.PhysicalChunkRef `json:"candidate_refs"`
+				InspectOnly   bool                       `json:"inspect_only"`
+			}
+			if r.Body == nil {
+				http.Error(w, "request body is required", http.StatusBadRequest)
+				return
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+				return
+			}
+			if !payload.InspectOnly {
+				http.Error(w, "physical chunk endpoint is inspect-only", http.StatusBadRequest)
+				return
+			}
+			result, err := client.InspectPhysicalChunks(r.Context(), payload.VolumeID, payload.CandidateRefs)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok":                             true,
+				"inspect_only":                   true,
+				"payload_storage_mutation_count": 0,
+				"result":                         result,
+			})
+		})
+	}
+	if enableLabPhysicalCleanup {
+		mux.HandleFunc("/debug/physical-chunks/delete", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var payload struct {
+				VolumeID           string                     `json:"volume_id"`
+				NodeID             string                     `json:"node_id"`
+				ApprovalPlanDigest string                     `json:"approval_plan_digest"`
+				BatchDigestSHA256  string                     `json:"batch_digest_sha256"`
+				Confirmation       string                     `json:"confirmation"`
+				CandidateRefs      []service.PhysicalChunkRef `json:"candidate_refs"`
+			}
+			if r.Body == nil {
+				http.Error(w, "request body is required", http.StatusBadRequest)
+				return
+			}
+			dec := json.NewDecoder(r.Body)
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&payload); err != nil {
+				http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+				return
+			}
+			if err := ensureJSONEOF(dec); err != nil {
+				http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+				return
+			}
+			if payload.Confirmation != phaseADPhysicalCleanupConfirmation {
+				http.Error(w, "exact physical cleanup confirmation is required", http.StatusBadRequest)
+				return
+			}
+			if identity.NodeID == "" || payload.NodeID != identity.NodeID {
+				http.Error(w, "node_id does not match the serving node", http.StatusBadRequest)
+				return
+			}
+			expectedDigest, err := phaseADPhysicalCleanupBatchDigest(payload.ApprovalPlanDigest, payload.NodeID, payload.VolumeID, payload.CandidateRefs)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if payload.BatchDigestSHA256 != expectedDigest {
+				http.Error(w, "batch_digest_sha256 does not match the exact request", http.StatusConflict)
+				return
+			}
+			result, err := client.DeletePhysicalChunks(r.Context(), payload.VolumeID, payload.CandidateRefs)
+			if err != nil {
+				status := http.StatusInternalServerError
+				if errors.Is(err, local.ErrPhysicalChunkDeletePrecondition) {
+					status = http.StatusConflict
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"ok": false, "error": err.Error(), "approval_plan_digest": payload.ApprovalPlanDigest,
+					"batch_digest_sha256": expectedDigest, "tikv_mutation_count": 0,
+					"payload_storage_mutation_count": result.PayloadStorageMutationCount, "result": result,
+				})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok": true, "approval_plan_digest": payload.ApprovalPlanDigest,
+				"batch_digest_sha256": expectedDigest, "tikv_mutation_count": 0,
+				"payload_storage_mutation_count": result.PayloadStorageMutationCount, "result": result,
 			})
 		})
 	}
@@ -656,6 +790,72 @@ func observabilityMuxWithIdentity(path, storeConfigPath string, client *local.Cl
 		}
 	})
 	return mux
+}
+
+const phaseADPhysicalCleanupConfirmation = "DELETE_EXACT_PHASE_AD_PHYSICAL_CHUNKS"
+
+func ensureJSONEOF(dec *json.Decoder) error {
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values are not allowed")
+		}
+		return err
+	}
+	return nil
+}
+
+func phaseADPhysicalCleanupBatchDigest(planDigest, nodeID, volumeID string, refs []service.PhysicalChunkRef) (string, error) {
+	if !isCanonicalSHA256(planDigest) {
+		return "", fmt.Errorf("approval_plan_digest must be a lowercase SHA-256 digest")
+	}
+	if nodeID == "" || nodeID != strings.TrimSpace(nodeID) {
+		return "", fmt.Errorf("node_id must be non-empty canonical text")
+	}
+	parsedVolumeID, err := service.ParseVolumeID(volumeID)
+	if err != nil {
+		return "", fmt.Errorf("parse volume_id: %w", err)
+	}
+	canonicalVolumeID := service.CanonicalVolumeID(parsedVolumeID)
+	if volumeID != canonicalVolumeID {
+		return "", fmt.Errorf("volume_id must use canonical form %s", canonicalVolumeID)
+	}
+	if len(refs) == 0 || len(refs) > 512 {
+		return "", fmt.Errorf("candidate_refs must contain 1..512 entries")
+	}
+	chunkIDs := make([]uint64, 0, len(refs))
+	var previous uint64
+	for i, ref := range refs {
+		if ref.ChunkID == 0 || ref.StoreID != "" || ref.ShardID != 0 {
+			return "", fmt.Errorf("candidate_refs require only a positive chunk_id")
+		}
+		if i > 0 && ref.ChunkID <= previous {
+			return "", fmt.Errorf("candidate_refs must be strictly increasing and unique")
+		}
+		previous = ref.ChunkID
+		chunkIDs = append(chunkIDs, ref.ChunkID)
+	}
+	digestInput := struct {
+		Domain             string   `json:"domain"`
+		ApprovalPlanDigest string   `json:"approval_plan_digest"`
+		NodeID             string   `json:"node_id"`
+		VolumeID           string   `json:"volume_id"`
+		ChunkIDs           []uint64 `json:"chunk_ids"`
+	}{"phase-ad-exact-physical-cleanup-v1", planDigest, nodeID, canonicalVolumeID, chunkIDs}
+	raw, err := json.Marshal(digestInput)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func isCanonicalSHA256(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	raw, err := hex.DecodeString(value)
+	return err == nil && hex.EncodeToString(raw) == value
 }
 
 func ensureDebugVolumeOpen(ctx context.Context, client *local.Client, volumeID string) (string, error) {

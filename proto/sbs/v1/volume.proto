@@ -21,6 +21,11 @@ service VolumeService {
   rpc Discard(DiscardRequest) returns (DiscardResponse);
   rpc Zero(ZeroRequest) returns (ZeroResponse);
   rpc ApplyISCSIWriterFence(ApplyISCSIWriterFenceRequest) returns (ApplyISCSIWriterFenceResponse);
+  rpc ApplyCompressionPolicy(ApplyCompressionPolicyRequest) returns (ApplyCompressionPolicyResponse);
+  rpc GetCompressionRuntimeStatus(GetCompressionRuntimeStatusRequest) returns (GetCompressionRuntimeStatusResponse);
+  // MaterializeVolume idempotently installs metadata that has already been
+  // admitted by the cluster control plane into one sbs-data node.
+  rpc MaterializeVolume(MaterializeVolumeRequest) returns (MaterializeVolumeResponse);
 }
 
 message RequestContext {
@@ -330,4 +335,64 @@ message ZeroRequest {
 message ZeroResponse {
   string status = 1;
   uint64 volume_revision = 2;
+}
+
+message CompressionPolicy {
+  string volume_id = 1;
+  string policy_id = 2;
+  uint64 policy_revision = 3;
+  string codec = 4;
+  int32 level = 5;
+  uint32 minimum_input_bytes = 6;
+  bool checksum_enabled = 7;
+  bool enabled = 8;
+}
+
+message CompressionRuntimeStatus {
+  string volume_id = 1;
+  string policy_id = 2;
+  uint64 policy_revision = 3;
+  bool applied = 4;
+  uint64 compressed_bytes = 5;
+  uint64 uncompressed_bytes = 6;
+  uint64 legacy_decode_count = 7;
+  uint64 checksum_failure_count = 8;
+}
+
+message ApplyCompressionPolicyRequest {
+  CompressionPolicy policy = 1;
+}
+
+message ApplyCompressionPolicyResponse {
+  string status = 1;
+  bool applied = 2;
+  CompressionRuntimeStatus runtime = 3;
+}
+
+message GetCompressionRuntimeStatusRequest {
+  string volume_id = 1;
+}
+
+message GetCompressionRuntimeStatusResponse {
+  CompressionRuntimeStatus runtime = 1;
+}
+
+message MaterializeVolumeRequest {
+  string volume_id = 1;
+  string name = 2;
+  string prefix = 3;
+  uint64 size_bytes = 4;
+  uint32 block_size = 5;
+  uint32 allocation_chunk_size_bytes = 6;
+  uint32 allocation_page_bytes = 7;
+  RequestContext context = 8;
+}
+
+message MaterializeVolumeResponse {
+  string status = 1;
+  string volume_id = 2;
+  uint64 size_bytes = 3;
+  uint32 block_size = 4;
+  uint32 allocation_chunk_size_bytes = 5;
+  uint32 allocation_page_bytes = 6;
 }

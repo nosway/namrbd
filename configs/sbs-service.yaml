@@ -51,6 +51,14 @@ sbs_service:
     down_threshold: 6
     recovery_cooldown_seconds: 30
 
+  # AD-IMPL-003. Keep disabled until all 64 aggregate shards have been rebuilt
+  # and the explicit shadow comparison gate passes. Enforced serving never
+  # falls back to legacy volume or transition completion.
+  summary:
+    state: disabled
+    freshness_degraded_seconds: 300
+    freshness_rebuild_required_seconds: 900
+
   # The profile Phase X accepted.
   write_effects:
     service_owned: true

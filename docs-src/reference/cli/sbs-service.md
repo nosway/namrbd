@@ -22,7 +22,7 @@ Flags:
   --cluster-id string
       cluster id (default namrbd-dev)
   --config string
-      service config file path (AA-IMPL-001F); when set it supplies stable settings, while environment variables and explicitly typed flags still win (default )
+      service config file path; when set it supplies stable settings, while environment variables and explicitly typed flags still win (default )
   --leader-lease-duration duration
       leader lease duration (default 10s)
   --leader-renew-interval duration

@@ -19,4 +19,3 @@ derive cluster placement by opening raw SBS metadata. Stale attachment or
 generation errors are fencing failures, not ordinary retryable concurrency.
 Test service semantics separately from HTTP/dataplane mapping, then add a
 cross-package test when a transport changes the call shape.
-

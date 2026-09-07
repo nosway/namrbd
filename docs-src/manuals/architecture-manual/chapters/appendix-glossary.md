@@ -1,7 +1,7 @@
 Appendix A
 
 Advanced feature note: Enterprise terms identify designs under development and
-validation, not public v1.0 support claims. See
+validation, not public v1.1 support claims. See
 [Feature Status](../../../feature-status.md).
 
 # Glossary
@@ -97,7 +97,7 @@ Performance Policy, Cap Scope, Budget Lease, Restore Warmup State, Diff Index, G
 | Retention Hold | Backup/DR control record that blocks purge planning for a protected artifact or snapshot reference. |
 | Backup Purge Plan | Dry-run plan that separates protected references, blocked destructive actions, recycle-bin state, and explicit purge candidates before any artifact, snapshot, or payload delete is allowed. |
 | Backup/DR Status | Product-state summary from `sbs-service` covering recovery point age, artifact availability, restore drill result, protected bytes, delete protection, and edition leakage status. |
-| DR Replication Link | remote DR product control-plane record that binds source cluster, target cluster, source volume, and target standby volume identity. U-CTRL-003A can mark shipping-worker admission while standby import, promote, and failover support remain false. |
+| DR Replication Link | remote DR product control-plane record that binds source cluster, target cluster, source volume, and target standby volume identity. The record can mark shipping-worker admission while standby import, promote, and failover support remain false. |
 | DR Shipping Worker | remote DR product control-plane record that admits a worker against a bound DR shipping manifest and records heartbeat, endpoint, credential boundary, and transfer-plan observables without claiming remote transfer completion. |
 | DR Shipping Manifest | remote DR product control-plane record that binds a recovery point to manifest integrity, payload roots, read-view identity, key policy, and governance metadata before remote transfer is claimed. |
 | Security Provider | Security/Compliance key-provider authority record. The current closed product boundary includes fixture/provider-backed metadata and redacted health evidence; live external KMS network credentials remain conditional follow-up evidence. |

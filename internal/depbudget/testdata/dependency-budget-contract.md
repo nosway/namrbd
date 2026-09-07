@@ -34,8 +34,11 @@ fields. A renamed field must update this contract in the same change:
 `registry_skipped_generation_count`, `registry_stale_reject_count`,
 `served_export_count`, `serving_continues_on_dependency_loss`,
 `stale_projection_count`, `tikv_availability`, `tikv_batch_get_chunk_count`,
-`tikv_batch_get_count`, `tikv_batch_get_key_count`, `tikv_full_scan_count`,
-`tikv_point_get_count`, `tikv_registry_reload_scan_count`,
+`tikv_batch_get_count`, `tikv_batch_get_duration_nanos`,
+`tikv_batch_get_key_count`, `tikv_full_scan_count`,
+`tikv_hot_region_candidate_count`, `tikv_point_get_count`,
+`tikv_point_get_duration_nanos`, `tikv_range_page_count`,
+`tikv_range_page_duration_nanos`, `tikv_registry_reload_scan_count`,
 `tikv_txn_retry_count`, and `tikv_unavailable_grace_seconds`.
 
 ## Thresholds

@@ -1,7 +1,7 @@
 Chapter 16
 
 Advanced feature note: Enterprise evidence fields describe development and
-validation work, not public v1.0 support claims. See
+validation work, not public v1.1 support claims. See
 [Feature Status](../../../feature-status.md).
 
 # Observability And Validation
@@ -28,6 +28,10 @@ A validation claim is useful only when the observable proves the intended mode w
 | CSI sanity | `upstream_csi_test_version`, capabilities, `ok_count`, `error_count`, first/last error. |
 | Discard | `operation`, `policy`, `discard_bytes`, `logical_zero_bytes`, `reclaimable_bytes`, alignment. |
 | Topology/EC | EC profile id, zone shard counts, degraded/rebuild state, blocked reason. |
+| Bounded aggregate | `request_class=aggregate`, projection health/reason, source and baseline revisions, revision lag, freshness age, `partial`, `stale`, and `rebuild_required`. |
+| Bounded page/point | Entity kind, page size, item count, server continuation token, source revision, filters, and `automatic_page_completion=false`; or exact point id/found state. |
+| Metadata pressure | Point/batch/range-page/full-scan/retry counts and durations, hot-region candidates, legacy expensive call outcomes, full/nested completion counts. |
+| Fleet management | Manifest digest/generation/source revision, apply state, stable fleet health codes, per-zone counts, capacity freshness, oldest queued work, and claim latency. |
 | Kernel/gateway | attachment id, generation, path-plan revision, device size, runtime path status. |
 | Backup/DR | `evidence_mode`, policy generation, target id, artifact id, recovery point age, restore drill result, artifact availability, integrity status, protected bytes, retained artifact count, delete-protection status, and community leakage status. |
 | Security/Compliance | `security_policy_id`, `key_provider_status`, `data_key_id`, `key_version`, `key_state`, lease purpose, unwrap evidence, rotation state/progress, crypto erase state, plaintext-leak flags, and audit hash-chain status. |
@@ -46,7 +50,27 @@ The operations query surface exposes stable JSON views for tools, reports, GUI s
 | `rbac_checked`, `tenant_scope_checked`, `redaction_applied` | Safety markers that must be present before the result is shown to operators or AI tools. |
 | `read_only_mode_enforced`, `unsupported_claim_visible` | Mutation blocking and unsupported-feature boundaries remain explicit in GUI and MCP views. |
 
-The current Community-safe `sbs-service` URLs include `/api/v1/sbs/cluster`, `/api/v1/sbs/nodes`, `/api/v1/sbs/volumes`, `/api/v1/sbs/maintenance`, `/api/v1/sbs/capacity`, `/api/v1/sbs/reclaim`, `/api/v1/membership/status`, `/api/v1/operations/summary`, `/api/v1/operations/warnings`, `/api/v1/query/views`, `/api/v1/mcp/tools`, `/api/v1/gui/summary`, and `/api/v1/workflow/hardening`. MCP and GUI rows are descriptors for read-only integration; they do not claim a standalone MCP server, a full GUI product surface, or mutation support.
+The current Community-safe `sbs-service` URLs include the aggregate
+`/api/v1/sbs/cluster`, paged `/api/v1/sbs/nodes` and
+`/api/v1/sbs/volumes`, point `/api/v1/sbs/node?id=...` and
+`/api/v1/sbs/volume?id=...`, plus `/api/v1/sbs/maintenance`,
+`/api/v1/sbs/capacity`, `/api/v1/sbs/reclaim`,
+`/api/v1/membership/status`, `/api/v1/operations/summary`,
+`/api/v1/operations/warnings`, `/api/v1/query/views`, `/api/v1/mcp/tools`,
+`/api/v1/gui/summary`, and `/api/v1/workflow/hardening`. Page tokens are
+server-issued and revision-pinned; invalid or revision-mismatched tokens are
+errors. MCP and GUI rows are descriptors for read-only integration; they do
+not claim a standalone MCP server, a full GUI product surface, or mutation
+support.
+
+Normal refresh uses the aggregate. Drill-down uses a page or point request.
+`partial`, `stale`, and `rebuild_required` remain visible, and
+`automatic_page_completion=false` prevents a dashboard or tool from silently
+turning one refresh into an all-cluster enumeration. Stable fleet health codes
+are bounded to `SBS_APPLY_PAUSED`, `SBS_HOST_CHECK_FAILED`,
+`SBS_CONFIG_DRIFT`, `SBS_STRAY_NODE`, `SBS_STORAGE_CLAIM_MISMATCH`, and
+`SBS_FLEET_CHECK_STALE`; free-form errors and entity ids belong in logs or
+detail responses, not metric labels.
 
 The read-only operations console at `/console/` is a static dashboard served by the same `sbs-service` administration endpoint. It consumes the operations query envelope, uses `/api/v1/sbs/cluster` as its primary snapshot, and visualizes status, topology, capacity, maintenance, warnings, membership authority, and reclaim evidence. It must not read raw storage metadata, scrape logs, or bypass the source authority fields exposed by the API.
 

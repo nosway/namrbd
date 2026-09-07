@@ -302,6 +302,20 @@ func validateSBSService(r *Result, s *SBSServiceConfig, large bool) {
 	validateTLS(r, "sbs_service.tikv.tls", s.TiKV.TLS, large)
 	validateObservability(r, "sbs_service.observability", s.Observability, large)
 	validateDependency(r, "sbs_service.dependency", s.Dependency)
+	switch strings.TrimSpace(s.Summary.State) {
+	case "", "disabled", "shadow", "enforced":
+	default:
+		r.errf("sbs_service.summary.state must be disabled, shadow, or enforced")
+	}
+	if s.Summary.FreshnessDegradedSeconds < 0 || s.Summary.FreshnessRebuildRequiredSeconds < 0 {
+		r.errf("sbs_service.summary freshness thresholds cannot be negative")
+	}
+	if s.Summary.FreshnessDegradedSeconds > 0 && s.Summary.FreshnessRebuildRequiredSeconds <= s.Summary.FreshnessDegradedSeconds {
+		r.errf("sbs_service.summary.freshness_rebuild_required_seconds must exceed freshness_degraded_seconds")
+	}
+	if strings.TrimSpace(s.Summary.State) == "enforced" && (s.Summary.FreshnessDegradedSeconds <= 0 || s.Summary.FreshnessRebuildRequiredSeconds <= 0) {
+		r.errf("sbs_service.summary enforced state requires positive freshness thresholds")
+	}
 
 	if len(s.TiKV.PDEndpoints) == 0 {
 		r.errf("sbs_service.tikv.pd_endpoints is required")

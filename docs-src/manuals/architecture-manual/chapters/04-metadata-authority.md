@@ -1,7 +1,7 @@
 Chapter 5
 
 Advanced feature note: Enterprise metadata records describe designs under
-development and validation, not public v1.0 support claims. See
+development and validation, not public v1.1 support claims. See
 [Feature Status](../../../feature-status.md).
 
 # Metadata Authority
@@ -51,6 +51,26 @@ A component may cache or observe state it does not own, but it must not mutate t
 | etcd | Gateway/control-plane metadata, attachments, generation, gateway registry, published summary cache. | Gateway control-plane path and `sbs-service` for published summary cache. | `/namrbd/volumes/<id>/spec`, `/attachments/current`, `/generations/current`. |
 | TiKV | SBS cluster metadata: volumes, allocation pages, placement, replica sets, topology, operations. | `sbs-service` leader. | `sbs/cluster/volumes/<id>/allocation/pages/`, node membership, operation records. |
 | local Pebble | Node-local volume materialization, local idempotency, local store metadata, payload chunks or shards. | `sbs-data` node. | `volumes/<id>/state`, `volumes/<prefix>/chunks/`. |
+
+## Bounded Derived Metadata
+
+Derived access paths let routine fleet polling and background work avoid
+repeatedly enumerating every authoritative TiKV record. These records are
+rebuildable and never replace their source authority.
+
+| Derived family | Write and consistency rule | Read or work rule |
+|----|----|----|
+| Cluster summary projection | A source writer commits a canonical before/after delta with the authoritative mutation, or places the same delta in a durable outbox in that transaction. The subject id hashes into one of 64 virtual shards; no global counter key is serialized on every mutation. | `/api/v1/sbs/cluster` reads the bounded shard set. It exposes source revision, baseline revision, freshness, partial state, and rebuild-required state and never falls back to a raw full-cluster scan. |
+| Summary outbox | Processing is idempotent by event id and delta digest. Each call consumes at most one page, with a maximum page size of 512. | Pending entries stay observable. Completion of an unbounded outbox walk is not hidden inside a request. |
+| Rebuild shadow | A rebuild reads revision-pinned source pages, writes epoch-scoped shadow shards and a cursor checkpoint, then promotes only after the complete source revision is represented. A source revision change, duplicate subject, invalid digest, or incomplete epoch fails closed. | Rebuild work advances one bounded page at a time. Until promotion, callers continue to see explicit degraded or rebuild-required projection health. |
+| Maintenance work-ready index | The owning mutation updates the source work record and its reason/state/priority access path together. Queue entries are rebuildable derived records. | Workers page candidates, validate source authority, then acquire a bounded lease with generation, expiry, and digest checks. They do not scan every volume, replica set, or transition to discover work. |
+| Placement-by-node affected set | Placement changes maintain the node-to-affected-volume/extent relationship beside authoritative placement state. | Drain and repair planning scopes reads to records affected by the selected node instead of expanding into a cluster-wide nested enumeration. |
+
+The safety rule is asymmetric: source records can recreate projections and
+indexes, but projections and indexes cannot recreate or override source truth
+without the explicit, revision-checked rebuild protocol. Counter underflow,
+overflow, checksum mismatch, or source revision movement is an integrity error,
+not a prompt to serve a best-effort full scan.
 
 <div class="diagram" markdown="1">
 
@@ -102,7 +122,7 @@ This chapter uses the following NAMRBD terms consistently. The important boundar
 | Backend Descriptor | The replicated or EC-specific layout attached to a PhysicalObjectRef, such as physical chunk start/count or EC stripe and shard references. | Opaque above backend dispatch. It is not the logical allocation truth. |
 | Read View | The identity resolved by reads: live volume, snapshot root, clone overlay, or materialized clone. It is separate from a raw VolumeRevision. | The resolver returns AllocationEntry spans. It does not open replica connections, decode EC, or delete payload objects. |
 | Operation Record | A durable mutation, placement, snapshot, clone, delete, or maintenance progress record with idempotency and replay state. | Used by `sbs-service` to finish or classify partially completed work after retries or leader changes. |
-| Backup/DR Control Record | Enterprise Backup/DR state for backup targets, policies, run records, restore-drilled artifact availability, retention holds, purge plans, status summaries, plus remote DR replication links, recovery points, and shipping manifests. | Persisted by `sbs-service`. U-CTRL-003A state is control-plane identity, manifest binding, and shipping-worker admission only, not a gateway, data-node, kernel, remote transfer completion, promote, or failover authority. |
+| Backup/DR Control Record | Enterprise Backup/DR state for backup targets, policies, run records, restore-drilled artifact availability, retention holds, purge plans, status summaries, plus remote DR replication links, recovery points, and shipping manifests. | Persisted by `sbs-service`. Shipping-worker admission state covers control-plane identity and manifest binding only; it is not a gateway, data-node, kernel, remote transfer completion, promote, or failover authority. |
 | Security/Compliance Control Record | Enterprise security state for security providers, policies, volume bindings, data keys, key-access leases, rotation plans, audit events, crypto erase plans, and encrypted backup-artifact evidence. | Persisted by `sbs-service`. Gateways consume the resulting admission, lease, and unwrap authority; kernels apply gateway admission results and do not own key material or KMS state. |
 
 ## Common Mapping Shape

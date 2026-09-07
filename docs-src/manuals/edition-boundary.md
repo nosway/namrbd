@@ -130,4 +130,3 @@ replicated format must be verified before the Enterprise state is retired.
 - Are prerequisites, authority, observability, rollback, and known limitations
   stated?
 - Is every support or performance statement bound to release evidence?
-

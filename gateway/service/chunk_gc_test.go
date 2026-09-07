@@ -101,6 +101,48 @@ func TestChunkGarbageCollectorRetainsExternallyProtectedChunk(t *testing.T) {
 	}
 }
 
+func TestChunkGarbageCollectorInspectionUsesSweepClassificationWithoutMutation(t *testing.T) {
+	meta := NewInMemoryMetadataRepository([]VolumeSpec{{
+		ID: 101, Name: "devA", Prefix: "devA", SizeBytes: 4 << 20,
+		BlockSize: DefaultBlockSize, ChunkSizeBytes: DefaultAllocationChunkSize, ExtentPageBytes: DefaultAllocationPageSize,
+	}})
+	objects := store.NewMemoryStore()
+	ctx := context.Background()
+	protected := PhysicalChunkRef{StoreID: "bulk", ShardID: 1, ChunkID: 2}
+	deletable := PhysicalChunkRef{StoreID: "bulk", ShardID: 1, ChunkID: 3}
+	for _, ref := range []PhysicalChunkRef{protected, deletable} {
+		if err := objects.Put(ctx, buildPhysicalChunkKey("devA", ref), make([]byte, DefaultAllocationChunkSize)); err != nil {
+			t.Fatal(err)
+		}
+		if err := meta.PutChunkGarbage(ctx, AllocationChunkGarbageRecord{VolumeID: 101, StoreID: ref.StoreID, ShardID: ref.ShardID, ChunkID: ref.ChunkID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	collector := NewChunkGarbageCollector(meta, objects)
+	result, err := collector.InspectVolumeCandidatesWithProtectedRefs(ctx, 101, 16, []PhysicalChunkRef{{ChunkID: deletable.ChunkID}}, []PhysicalChunkRef{protected})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.InspectionOnly || result.ScannedCount != 2 || result.CandidateCount != 1 || result.DeletableCount != 1 || result.DeletedCount != 0 || result.RetainedCount != 0 {
+		t.Fatalf("inspection result=%+v", result)
+	}
+	for _, ref := range []PhysicalChunkRef{protected, deletable} {
+		if _, found, err := objects.Get(ctx, buildPhysicalChunkKey("devA", ref)); err != nil || !found {
+			t.Fatalf("inspection mutated ref=%+v found=%t err=%v", ref, found, err)
+		}
+	}
+	result, err = collector.SweepVolumeCandidatesWithProtectedRefs(ctx, 101, 16, []PhysicalChunkRef{{ChunkID: deletable.ChunkID}}, []PhysicalChunkRef{protected})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.InspectionOnly || result.ScannedCount != 2 || result.CandidateCount != 1 || result.DeletableCount != 1 || result.DeletedCount != 1 || result.RetainedCount != 0 {
+		t.Fatalf("sweep result=%+v", result)
+	}
+	if _, found, err := objects.Get(ctx, buildPhysicalChunkKey("devA", protected)); err != nil || !found {
+		t.Fatalf("candidate restriction removed an unplanned chunk found=%t err=%v", found, err)
+	}
+}
+
 func TestChunkGarbageCollectorRetainsChunkIDWildcardProtectedChunk(t *testing.T) {
 	meta := NewInMemoryMetadataRepository([]VolumeSpec{{
 		ID:              101,

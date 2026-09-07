@@ -2,7 +2,7 @@ Chapter 17
 
 Advanced feature note: Enterprise EC restore shapes describe work under
 development and validation. CSI is available in public source but is not a
-supported v1.0 release claim. See [Feature Status](../../../feature-status.md).
+supported v1.1 release claim. See [Feature Status](../../../feature-status.md).
 
 # Kubernetes/CSI Integration Case
 

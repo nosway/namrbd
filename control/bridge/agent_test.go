@@ -103,6 +103,7 @@ func TestPrepareAttachManifest(t *testing.T) {
 		"volume_id":"00000065",
 		"generation":3,
 		"attachment_generation":3,
+		"path_plan_revision":7,
 		"size_bytes":8388608,
 		"block_size":4096,
 		"attachment_id":"att-00000065-0003",
@@ -167,7 +168,7 @@ func TestPrepareAttachManifest(t *testing.T) {
 	if doc.DataplaneEndpoints[1].PathID != 1 || doc.DataplaneEndpoints[1].Priority != 90 {
 		t.Fatalf("unexpected dataplane ordering: %+v", doc.DataplaneEndpoints)
 	}
-	if doc.Generation != 3 || doc.AttachmentGeneration != 3 || doc.SizeBytes != 8388608 || doc.BlockSize != 4096 {
+	if doc.Generation != 3 || doc.AttachmentGeneration != 3 || doc.PathPlanRevision != 7 || doc.SizeBytes != 8388608 || doc.BlockSize != 4096 {
 		t.Fatalf("unexpected core fields after normalization: %+v", doc)
 	}
 	if doc.AttachmentID != "att-00000065-0003" || doc.AttachedHostID != "host-a" || doc.AttachedDeviceID != 0 {

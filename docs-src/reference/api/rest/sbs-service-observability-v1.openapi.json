@@ -4,7 +4,7 @@
   "info": {
     "title": "SBS Service Observability API",
     "version": "1.0.0",
-    "description": "Reviewed Community read-only Phase-Y views and operational health surfaces served by sbs-service. Collection failures are normally represented inside the versioned view envelope rather than as a non-2xx transport status."
+    "description": "Reviewed Community read-only operations views and operational health surfaces served by sbs-service. Collection failures are normally represented inside the versioned view envelope rather than as a non-2xx transport status."
   },
   "servers": [
     {
@@ -126,15 +126,15 @@
     "/api/v1/sbs/cluster": {
       "get": {
         "operationId": "getSBSClusterView",
-        "summary": "Read the complete SBS observability snapshot",
-        "description": "Unlike the other Phase-Y routes, this route returns the Snapshot directly rather than wrapping it in View.data.",
+        "summary": "Read the bounded SBS fleet aggregate",
+        "description": "The normal polling route returns a shard-derived aggregate directly rather than wrapping it in View.data. It does not enumerate node, volume, placement, transition, or operation records, and stale or partial projections never trigger legacy full completion.",
         "tags": [
           "SBS views"
         ],
         "x-namrbd-stability": "operational",
         "x-namrbd-edition": "community",
-        "x-namrbd-authority": "sbs-service AdminService, cluster metadata, and sbs-data health detail",
-        "x-namrbd-feature-gate": "always; bounded collectors may report a partial or degraded snapshot",
+        "x-namrbd-authority": "sbs-service cluster-summary, membership-health, and signed fleet-control projections",
+        "x-namrbd-feature-gate": "always; missing, stale, partial, or rebuild-required projections remain typed and fail closed without a legacy scan fallback",
         "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/sbs/cluster\"",
         "responses": {
           "200": {
@@ -156,18 +156,56 @@
     "/api/v1/sbs/nodes": {
       "get": {
         "operationId": "getSBSNodesView",
-        "summary": "Read SBS node and store observations",
+        "summary": "Read one revision-pinned SBS node page",
+        "description": "Returns one bounded membership-projection page. The server never follows next_page_token automatically.",
         "tags": [
           "SBS views"
         ],
         "x-namrbd-stability": "operational",
         "x-namrbd-edition": "community",
-        "x-namrbd-authority": "sbs-service membership and sbs-data store health",
+        "x-namrbd-authority": "sbs-service membership projection",
         "x-namrbd-feature-gate": "always; bounded collectors may report a partial or degraded view",
         "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/sbs/nodes\"",
+        "parameters": [
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 512,
+              "default": 128
+            }
+          },
+          {
+            "name": "page_token",
+            "in": "query",
+            "description": "Opaque token binding the cursor, projection revision, and include_tombstones filter.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "include_tombstones",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
         "responses": {
           "200": {
             "$ref": "#/components/responses/NodesView"
+          },
+          "400": {
+            "$ref": "#/components/responses/PhaseADViewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/PhaseADViewError"
+          },
+          "503": {
+            "$ref": "#/components/responses/PhaseADViewError"
           },
           "405": {
             "$ref": "#/components/responses/MethodNotAllowed"
@@ -175,10 +213,53 @@
         }
       }
     },
+    "/api/v1/sbs/node": {
+      "get": {
+        "operationId": "getSBSNodeView",
+        "summary": "Read one SBS node and its bounded store-health detail",
+        "tags": [
+          "SBS views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service membership and node-health point records",
+        "x-namrbd-feature-gate": "always; point lookup only",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/sbs/node\"",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/NodeView"
+          },
+          "400": {
+            "$ref": "#/components/responses/PhaseADViewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PhaseADViewError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/PhaseADViewError"
+          }
+        }
+      }
+    },
     "/api/v1/sbs/volumes": {
       "get": {
         "operationId": "getSBSVolumesView",
-        "summary": "Read SBS volume observations",
+        "summary": "Read one revision-pinned SBS volume page",
+        "description": "Returns one bounded volume-catalog page. Filters are bound into the opaque token and the server never follows next_page_token automatically.",
         "tags": [
           "SBS views"
         ],
@@ -187,12 +268,109 @@
         "x-namrbd-authority": "sbs-service volume metadata",
         "x-namrbd-feature-gate": "always; bounded collectors may report a partial or degraded view",
         "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/sbs/volumes\"",
+        "parameters": [
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 512,
+              "default": 128
+            }
+          },
+          {
+            "name": "page_token",
+            "in": "query",
+            "description": "Opaque token binding the cursor, catalog revision, and filters.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "health",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "",
+                "healthy",
+                "degraded",
+                "repairing",
+                "rebalancing",
+                "blocked"
+              ]
+            }
+          },
+          {
+            "name": "redundancy_backend",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "topology_mode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "$ref": "#/components/responses/VolumesView"
           },
+          "400": {
+            "$ref": "#/components/responses/PhaseADViewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/PhaseADViewError"
+          },
           "405": {
             "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/api/v1/sbs/volume": {
+      "get": {
+        "operationId": "getSBSVolumeView",
+        "summary": "Read one SBS volume state/spec detail",
+        "tags": [
+          "SBS views"
+        ],
+        "x-namrbd-stability": "operational",
+        "x-namrbd-edition": "community",
+        "x-namrbd-authority": "sbs-service volume state and specification point records",
+        "x-namrbd-feature-gate": "always; point lookup only",
+        "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/sbs/volume\"",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/VolumeView"
+          },
+          "400": {
+            "$ref": "#/components/responses/PhaseADViewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PhaseADViewError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/PhaseADViewError"
           }
         }
       }
@@ -338,7 +516,7 @@
         ],
         "x-namrbd-stability": "operational",
         "x-namrbd-edition": "community",
-        "x-namrbd-authority": "sbs-service Phase-Y observability contract",
+        "x-namrbd-authority": "sbs-service observability contract",
         "x-namrbd-feature-gate": "always",
         "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/query/views\"",
         "responses": {
@@ -360,7 +538,7 @@
         ],
         "x-namrbd-stability": "operational",
         "x-namrbd-edition": "community",
-        "x-namrbd-authority": "sbs-service Phase-Y MCP capability view",
+        "x-namrbd-authority": "sbs-service MCP capability view",
         "x-namrbd-feature-gate": "always",
         "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/mcp/tools\"",
         "responses": {
@@ -382,7 +560,7 @@
         ],
         "x-namrbd-stability": "operational",
         "x-namrbd-edition": "community",
-        "x-namrbd-authority": "sbs-service Phase-Y observability snapshot",
+        "x-namrbd-authority": "sbs-service observability snapshot",
         "x-namrbd-feature-gate": "always; the response describes GUI capability and does not claim a public GUI",
         "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/gui/summary\"",
         "responses": {
@@ -404,7 +582,7 @@
         ],
         "x-namrbd-stability": "operational",
         "x-namrbd-edition": "community",
-        "x-namrbd-authority": "sbs-service Phase-Y workflow evidence",
+        "x-namrbd-authority": "sbs-service workflow evidence",
         "x-namrbd-feature-gate": "always",
         "x-namrbd-source": "cmd/sbs-service/main_phase_y_observability.go:mux.HandleFunc(\"/api/v1/workflow/hardening\"",
         "responses": {
@@ -519,6 +697,72 @@
                   "properties": {
                     "data": {
                       "$ref": "#/components/schemas/VolumesData"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "NodeView": {
+        "description": "Versioned point view for one node and its available store-health record.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/NodePointData"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "VolumeView": {
+        "description": "Versioned point view for one volume state/spec record.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/VolumePointData"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "PhaseADViewError": {
+        "description": "Versioned fail-closed error view. data.error explains the rejected page, token, filter, or point lookup and automatic_page_completion remains false.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ViewEnvelope"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PhaseADViewErrorData"
                     }
                   }
                 }
@@ -855,6 +1099,12 @@
           "reclaim",
           "membership",
           "operations",
+          "fleet",
+          "projection",
+          "request_class",
+          "detail",
+          "fleet_control",
+          "metadata_pressure",
           "query",
           "mcp",
           "gui",
@@ -984,6 +1234,30 @@
           "operations": {
             "$ref": "#/components/schemas/Operations"
           },
+          "fleet": {
+            "$ref": "#/components/schemas/FleetSummary"
+          },
+          "projection": {
+            "$ref": "#/components/schemas/Projection"
+          },
+          "request_class": {
+            "$ref": "#/components/schemas/RequestClass"
+          },
+          "detail": {
+            "$ref": "#/components/schemas/DetailScope"
+          },
+          "fleet_health": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetHealth"
+            }
+          },
+          "fleet_control": {
+            "$ref": "#/components/schemas/FleetControl"
+          },
+          "metadata_pressure": {
+            "$ref": "#/components/schemas/MetadataPressure"
+          },
           "query": {
             "$ref": "#/components/schemas/QuerySurface"
           },
@@ -1012,7 +1286,16 @@
         "additionalProperties": true,
         "required": [
           "nodes",
-          "stores"
+          "next_page_token",
+          "automatic_page_completion",
+          "page_size",
+          "record_count",
+          "membership_revision",
+          "projection_revision",
+          "projection_health",
+          "projection_stale",
+          "detail",
+          "request_class"
         ],
         "properties": {
           "nodes": {
@@ -1024,14 +1307,46 @@
               "$ref": "#/components/schemas/Node"
             }
           },
-          "stores": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "$ref": "#/components/schemas/Store"
-            }
+          "next_page_token": {
+            "type": "string"
+          },
+          "automatic_page_completion": {
+            "type": "boolean",
+            "const": false
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 512
+          },
+          "record_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 512
+          },
+          "membership_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "projection_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "projection_lag_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "projection_health": {
+            "type": "string"
+          },
+          "projection_stale": {
+            "type": "boolean"
+          },
+          "detail": {
+            "$ref": "#/components/schemas/DetailScope"
+          },
+          "request_class": {
+            "$ref": "#/components/schemas/RequestClass"
           }
         }
       },
@@ -1039,7 +1354,17 @@
         "type": "object",
         "additionalProperties": true,
         "required": [
-          "volumes"
+          "volumes",
+          "next_page_token",
+          "automatic_page_completion",
+          "page_size",
+          "record_count",
+          "scanned_records",
+          "catalog_revision",
+          "projection_health",
+          "freshness_age_millis",
+          "detail",
+          "request_class"
         ],
         "properties": {
           "volumes": {
@@ -1050,6 +1375,109 @@
             "items": {
               "$ref": "#/components/schemas/Volume"
             }
+          },
+          "next_page_token": {
+            "type": "string"
+          },
+          "automatic_page_completion": {
+            "type": "boolean",
+            "const": false
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 512
+          },
+          "record_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 512
+          },
+          "scanned_records": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 512
+          },
+          "catalog_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "projection_health": {
+            "type": "string"
+          },
+          "freshness_age_millis": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "detail": {
+            "$ref": "#/components/schemas/DetailScope"
+          },
+          "request_class": {
+            "$ref": "#/components/schemas/RequestClass"
+          }
+        }
+      },
+      "NodePointData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "node",
+          "stores",
+          "detail",
+          "request_class"
+        ],
+        "properties": {
+          "node": {
+            "$ref": "#/components/schemas/Node"
+          },
+          "stores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Store"
+            }
+          },
+          "detail": {
+            "$ref": "#/components/schemas/DetailScope"
+          },
+          "request_class": {
+            "$ref": "#/components/schemas/RequestClass"
+          }
+        }
+      },
+      "VolumePointData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "volume",
+          "detail",
+          "request_class"
+        ],
+        "properties": {
+          "volume": {
+            "$ref": "#/components/schemas/Volume"
+          },
+          "detail": {
+            "$ref": "#/components/schemas/DetailScope"
+          },
+          "request_class": {
+            "$ref": "#/components/schemas/RequestClass"
+          }
+        }
+      },
+      "PhaseADViewErrorData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error",
+          "automatic_page_completion"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "automatic_page_completion": {
+            "type": "boolean",
+            "const": false
           }
         }
       },
@@ -1659,6 +2087,192 @@
           "canceled": {
             "type": "integer"
           }
+        }
+      },
+      "FleetSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Identifier-free fleet counts suitable for the normal polling path.",
+        "required": [
+          "known_nodes",
+          "active_nodes",
+          "draining_nodes",
+          "removed_nodes",
+          "healthy_nodes",
+          "suspect_nodes",
+          "down_nodes",
+          "volume_count",
+          "healthy_volumes",
+          "degraded_volumes",
+          "blocked_volumes"
+        ],
+        "properties": {
+          "known_nodes": { "type": "integer", "minimum": 0 },
+          "active_nodes": { "type": "integer", "minimum": 0 },
+          "draining_nodes": { "type": "integer", "minimum": 0 },
+          "removed_nodes": { "type": "integer", "minimum": 0 },
+          "healthy_nodes": { "type": "integer", "minimum": 0 },
+          "suspect_nodes": { "type": "integer", "minimum": 0 },
+          "down_nodes": { "type": "integer", "minimum": 0 },
+          "volume_count": { "type": "integer", "minimum": 0 },
+          "healthy_volumes": { "type": "integer", "minimum": 0 },
+          "degraded_volumes": { "type": "integer", "minimum": 0 },
+          "blocked_volumes": { "type": "integer", "minimum": 0 },
+          "zones": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["zone", "active_nodes", "draining_nodes", "suspect_nodes", "down_nodes"],
+              "properties": {
+                "zone": { "type": "string" },
+                "active_nodes": { "type": "integer", "minimum": 0 },
+                "draining_nodes": { "type": "integer", "minimum": 0 },
+                "suspect_nodes": { "type": "integer", "minimum": 0 },
+                "down_nodes": { "type": "integer", "minimum": 0 }
+              }
+            }
+          }
+        }
+      },
+      "Projection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "health",
+          "reason",
+          "partial",
+          "stale",
+          "rebuild_required",
+          "source_revision",
+          "baseline_source_revision",
+          "revision_lag",
+          "updated_at_unix",
+          "freshness_age_millis",
+          "mismatch_count"
+        ],
+        "properties": {
+          "health": { "type": "string" },
+          "reason": { "type": "string" },
+          "partial": { "type": "boolean" },
+          "stale": { "type": "boolean" },
+          "rebuild_required": { "type": "boolean" },
+          "source_revision": { "type": "integer", "minimum": 0 },
+          "baseline_source_revision": { "type": "integer", "minimum": 0 },
+          "revision_lag": { "type": "integer", "minimum": 0 },
+          "rebuild_epoch": { "type": "string" },
+          "updated_at_unix": { "type": "integer" },
+          "freshness_age_millis": { "type": "integer", "minimum": 0 },
+          "mismatch_count": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "RequestClass": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "point_get_count",
+          "batch_get_count",
+          "batch_get_key_count",
+          "range_page_count",
+          "backend_full_scan_count",
+          "full_completion_count",
+          "nested_completion_count"
+        ],
+        "properties": {
+          "point_get_count": { "type": "integer", "minimum": 0 },
+          "batch_get_count": { "type": "integer", "minimum": 0 },
+          "batch_get_key_count": { "type": "integer", "minimum": 0 },
+          "range_page_count": { "type": "integer", "minimum": 0 },
+          "backend_full_scan_count": { "type": "integer", "minimum": 0 },
+          "full_completion_count": { "type": "integer", "minimum": 0 },
+          "nested_completion_count": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "DetailScope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "default_poll",
+          "node_detail_included",
+          "store_detail_included",
+          "volume_detail_included"
+        ],
+        "properties": {
+          "default_poll": { "type": "boolean" },
+          "node_detail_included": { "type": "boolean" },
+          "store_detail_included": { "type": "boolean" },
+          "volume_detail_included": { "type": "boolean" }
+        }
+      },
+      "FleetHealth": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "severity", "count", "source_revision", "freshness"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "SBS_APPLY_PAUSED",
+              "SBS_HOST_CHECK_FAILED",
+              "SBS_CONFIG_DRIFT",
+              "SBS_STRAY_NODE",
+              "SBS_STORAGE_CLAIM_MISMATCH",
+              "SBS_FLEET_CHECK_STALE"
+            ]
+          },
+          "severity": { "type": "string" },
+          "count": { "type": "integer", "minimum": 0 },
+          "source_revision": { "type": "integer", "minimum": 0 },
+          "freshness": { "type": "string" }
+        }
+      },
+      "FleetControl": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "manifest_revision": { "type": "string" },
+          "manifest_digest": { "type": "string" },
+          "binary_digest": { "type": "string" },
+          "config_digest": { "type": "string" },
+          "store_digest": { "type": "string" },
+          "apply_operation_id": { "type": "string" },
+          "apply_state": { "type": "string" },
+          "source_revision": { "type": "integer", "minimum": 0 },
+          "observation_age_seconds": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "MetadataPressure": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "point_get_count",
+          "batch_get_count",
+          "batch_get_key_count",
+          "batch_get_chunk_count",
+          "range_page_count",
+          "backend_full_scan_count",
+          "full_completion_count",
+          "nested_completion_count",
+          "txn_retry_count",
+          "point_get_duration_seconds",
+          "batch_get_duration_seconds",
+          "range_page_duration_seconds",
+          "hot_region_candidate_count"
+        ],
+        "properties": {
+          "point_get_count": { "type": "integer", "minimum": 0 },
+          "batch_get_count": { "type": "integer", "minimum": 0 },
+          "batch_get_key_count": { "type": "integer", "minimum": 0 },
+          "batch_get_chunk_count": { "type": "integer", "minimum": 0 },
+          "range_page_count": { "type": "integer", "minimum": 0 },
+          "backend_full_scan_count": { "type": "integer", "minimum": 0 },
+          "full_completion_count": { "type": "integer", "minimum": 0 },
+          "nested_completion_count": { "type": "integer", "minimum": 0 },
+          "txn_retry_count": { "type": "integer", "minimum": 0 },
+          "point_get_duration_seconds": { "type": "number", "minimum": 0 },
+          "batch_get_duration_seconds": { "type": "number", "minimum": 0 },
+          "range_page_duration_seconds": { "type": "number", "minimum": 0 },
+          "hot_region_candidate_count": { "type": "integer", "minimum": 0 }
         }
       },
       "QuerySurface": {

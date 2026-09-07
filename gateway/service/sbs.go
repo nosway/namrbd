@@ -101,6 +101,36 @@ type SBSVolumeProfile struct {
 	ConsistencyMode string `json:"consistency_mode"`
 }
 
+// MaterializeVolumeRequest carries a cluster-control-plane-approved immutable
+// volume shape to one sbs-data node. It is separate from SBSClient so ordinary
+// data-plane fakes and adapters do not implicitly gain provisioning authority.
+type MaterializeVolumeRequest struct {
+	Spec    VolumeSpec        `json:"spec"`
+	Context SBSRequestContext `json:"context"`
+}
+
+func (r MaterializeVolumeRequest) Validate() error {
+	if uint64(r.Spec.ID) == 0 {
+		return ErrSBSVolumeIDRequired
+	}
+	if r.Spec.SizeBytes == 0 {
+		return fmt.Errorf("sbs materialize size_bytes must be > 0")
+	}
+	if r.Spec.BlockSize == 0 {
+		return fmt.Errorf("sbs materialize block_size must be > 0")
+	}
+	return r.Context.Validate(false, false)
+}
+
+type MaterializeVolumeResponse struct {
+	Status string     `json:"status"`
+	Spec   VolumeSpec `json:"spec"`
+}
+
+type VolumeMaterializerSBSClient interface {
+	MaterializeVolume(context.Context, *MaterializeVolumeRequest) (*MaterializeVolumeResponse, error)
+}
+
 type SBSError struct {
 	Code      SBSErrorCode `json:"code"`
 	Message   string       `json:"message"`
@@ -577,6 +607,75 @@ type ApplyISCSIWriterFenceResponse struct {
 
 type ISCSIWriterFenceClient interface {
 	ApplyISCSIWriterFence(context.Context, *ApplyISCSIWriterFenceRequest) (*ApplyISCSIWriterFenceResponse, error)
+}
+
+// CompressionPolicy is the revisioned write policy projected by sbs-service
+// to each sbs-data receiver. Reads remain envelope-driven so a rolling policy
+// change never requires a metadata lookup on the payload hot path.
+type CompressionPolicy struct {
+	VolumeID          string `json:"volume_id"`
+	PolicyID          string `json:"policy_id"`
+	PolicyRevision    uint64 `json:"policy_revision"`
+	Codec             string `json:"codec"`
+	Level             int32  `json:"level"`
+	MinimumInputBytes uint32 `json:"minimum_input_bytes"`
+	ChecksumEnabled   bool   `json:"checksum_enabled"`
+	Enabled           bool   `json:"enabled"`
+}
+
+func (p CompressionPolicy) Validate() error {
+	if err := validateSBSVolumeID(p.VolumeID); err != nil {
+		return err
+	}
+	if p.PolicyID == "" {
+		return fmt.Errorf("compression policy_id is required")
+	}
+	if p.PolicyRevision == 0 {
+		return fmt.Errorf("compression policy_revision must be >= 1")
+	}
+	switch p.Codec {
+	case "NONE", "LZ4", "ZSTD":
+	default:
+		return fmt.Errorf("compression codec must be NONE, LZ4, or ZSTD")
+	}
+	if p.Enabled && !p.ChecksumEnabled {
+		return fmt.Errorf("compression checksum must be enabled")
+	}
+	return nil
+}
+
+type CompressionRuntimeStatus struct {
+	VolumeID             string `json:"volume_id"`
+	PolicyID             string `json:"policy_id"`
+	PolicyRevision       uint64 `json:"policy_revision"`
+	Applied              bool   `json:"applied"`
+	CompressedBytes      uint64 `json:"compressed_bytes"`
+	UncompressedBytes    uint64 `json:"uncompressed_bytes"`
+	LegacyDecodeCount    uint64 `json:"legacy_decode_count"`
+	ChecksumFailureCount uint64 `json:"checksum_failure_count"`
+}
+
+type ApplyCompressionPolicyRequest struct {
+	Policy CompressionPolicy `json:"policy"`
+}
+
+type ApplyCompressionPolicyResponse struct {
+	Status  string                   `json:"status"`
+	Applied bool                     `json:"applied"`
+	Runtime CompressionRuntimeStatus `json:"runtime"`
+}
+
+type GetCompressionRuntimeStatusRequest struct {
+	VolumeID string `json:"volume_id"`
+}
+
+type GetCompressionRuntimeStatusResponse struct {
+	Runtime CompressionRuntimeStatus `json:"runtime"`
+}
+
+type CompressionPolicySBSClient interface {
+	ApplyCompressionPolicy(context.Context, *ApplyCompressionPolicyRequest) (*ApplyCompressionPolicyResponse, error)
+	GetCompressionRuntimeStatus(context.Context, *GetCompressionRuntimeStatusRequest) (*GetCompressionRuntimeStatusResponse, error)
 }
 
 type PhysicalChunkSBSClient interface {

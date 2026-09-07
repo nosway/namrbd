@@ -1,7 +1,7 @@
 Operations Manual
 
 Advanced feature note: Enterprise sections summarize designs under development
-and validation. They are not public v1.0 administration or support claims. See
+and validation. They are not public v1.1 administration or support claims. See
 [Feature Status](../feature-status.md).
 
 # NAMRBD Administrator Guide
@@ -59,6 +59,30 @@ Keep environment boundaries explicit:
 Gateway, iSCSI, and SBS membership changes use the same operator envelope: plan, preflight, apply, synchronize, verify, rollback, and audit. Gateway membership and liveness are gateway/control-plane state; SBS node, topology, store tuning, drain, remove, and force-remove state are `sbs-service` AdminService authority. `sbs-data` contributes node-local health and capacity evidence, but it is not cluster membership authority.
 
 Use read-only status first. Confirm `source_authority`, `collector_freshness_seconds`, `warning_count`, `first_error`, `last_error`, `rbac_checked`, `redaction_applied`, and `unsupported_claim_visible` before interpreting a membership or capacity view. Mutation-style membership workflows remain blocked unless an existing CLI/API path, RBAC rule, audit record, rollback behavior, and human approval gate are present.
+
+For a large reviewed fleet, make the strict cluster manifest the desired-state
+authority for the change package. Run `cluster manifest validate|export|render|plan`,
+collect one signed `host check` report per node, and run `cluster manifest admit`
+before creating a rollout operation. These stages are deliberately pure or
+observation-only: live TiKV mutation, storage action, and daemon action remain
+zero. Unexpected current nodes are `blocked`; removal is a separate reviewed
+operation rather than an implicit plan side effect.
+
+The rollout operation is immutable and file-backed. `rollout issue` emits an
+instruction for an external transport; `rollout record` persists the observed
+result. It does not perform the instruction itself. One failed node pauses the
+wave and prevents later waves from starting. Preserve first/last error,
+idempotency key, wave checkpoint, per-node result, and every operation revision.
+Retry only failed work and require an operator reason for resume.
+
+Standby activation uses `cluster manifest standby plan|issue|verify|status` and
+admits exactly one candidate after proving that the failed active instance is
+stopped and isolated. Host maintenance uses `host maintenance
+plan|enter|exit|status`; its snapshot must cover quorum/leader, replica and
+capacity safety, affected-set drain, current operations, and work-ready queue
+state. An unsafe override must name the exact failed check, caller,
+incident/change ID, reason, and expiry. There is no automatic rollback; follow
+the operation's recorded recovery instructions.
 
 ## 3. Observability
 
@@ -217,7 +241,10 @@ iSCSI watchpoints:
 
 ``` bash
 curl -fsS http://service-01.example.com:9081/api/v1/sbs/cluster
-curl -fsS http://service-01.example.com:9081/api/v1/sbs/nodes
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/nodes?page_size=128'
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/node?id=node1'
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/volumes?page_size=128&health=degraded'
+curl -fsS 'http://service-01.example.com:9081/api/v1/sbs/volume?id=00a1b2c3'
 curl -fsS http://service-01.example.com:9081/api/v1/sbs/capacity
 curl -fsS http://service-01.example.com:9081/api/v1/sbs/reclaim
 curl -fsS http://service-01.example.com:9081/api/v1/membership/status
@@ -229,7 +256,25 @@ curl -fsS http://service-01.example.com:9081/api/v1/gui/summary
 curl -fsS http://service-01.example.com:9081/api/v1/workflow/hardening
 ```
 
-These URLs are views, not mutation authority. Capacity separates logical bytes, physical used/free bytes, reclaimable bytes, protected bytes, and unknown bytes. Reclaim views do not claim completion until protected-reference checks and before/after `sbs-data` free-byte evidence exist. MCP and GUI descriptors remain read-only; mutating tools and controls are disabled until separately reviewed.
+These URLs are views, not mutation authority. `/api/v1/sbs/cluster` is the
+normal bounded aggregate poll and excludes per-node, store, and volume detail.
+The plural node and volume routes return one revision-pinned page and set
+`automatic_page_completion:false`; use `next_page_token` explicitly. Invalid
+tokens and filter mismatches return 400, while a projection/catalog revision
+change returns 409. The singular routes are point lookups. Never replace a
+stale/partial/rebuild-required projection with a client-side all-page scan.
+
+The response `request_class` identifies point, BatchGet, and range-page work;
+`metadata_pressure` additionally records backend-full, full-completion,
+nested-completion, retry, duration, and hot-region-candidate observations.
+`fleet_health` uses stable codes such as `SBS_APPLY_PAUSED`,
+`SBS_HOST_CHECK_FAILED`, `SBS_CONFIG_DRIFT`, `SBS_STRAY_NODE`,
+`SBS_STORAGE_CLAIM_MISMATCH`, and `SBS_FLEET_CHECK_STALE`. Capacity separates
+logical bytes, physical used/free bytes, reclaimable bytes, protected bytes,
+and unknown bytes. Reclaim views do not claim completion until protected-reference
+checks and before/after `sbs-data` free-byte evidence exist. MCP and GUI
+descriptors remain read-only; mutating tools and controls are disabled until
+separately reviewed.
 
 The read-only operations console is served from the same `sbs-service` administration endpoint at `/console/`. It consumes the same operations views, with `/api/v1/sbs/cluster` as the primary snapshot, and presents status, topology, capacity, maintenance backlog, warnings, membership source authority, and reclaim evidence without adding a new source of truth. The console must show stale, partial, and failed collection states rather than hiding them, and packaged chart assets should work without a public CDN dependency.
 
@@ -513,6 +558,13 @@ Generated public/community export artifact validation remains a separate release
 ## 8. Closure And Validation
 
 Closure means the deployed product path has fresh evidence for the exact source revision, binaries, images, service restarts, and kernel module state under review. Do not reuse private validation paths, historical hostnames, or cached artifacts as public support claims.
+
+Current software validation covers an exact logical 160-node manifest,
+high-cardinality metadata fixtures, 9-node maintenance I/O, and a live run of
+160 `sbs-data` processes distributed across 18 physical hosts. It does not
+qualify 160 independent physical servers, production capacity/throughput, or a
+physical-160 support boundary. A dedicated physical-scale qualification must
+define the hardware inventory, acceptance thresholds, evidence, and cleanup.
 
 Basic iSCSI target access uses Linux open-iscsi as the required compatibility baseline. The validation package should include fixture startup, SBS-backed Linux initiator discovery/login, guarded LUN selection, write/readback, flush or UNMAP observation when applicable, logout, cleanup, Community edition-boundary status, and unsupported initiator exclusions.
 

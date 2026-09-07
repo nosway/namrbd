@@ -94,6 +94,8 @@ func main() {
 	switch args[0] {
 	case "cluster":
 		runCluster(args[1:])
+	case "host":
+		runHost(args[1:])
 	case "node":
 		runNode(args[1:])
 	case "topology":
@@ -135,6 +137,8 @@ func runCluster(args []string) {
 		runClusterStatus(args[1:])
 	case "init":
 		runClusterInit(args[1:])
+	case "manifest":
+		runClusterManifest(args[1:])
 	default:
 		clusterUsage()
 		os.Exit(2)
@@ -195,26 +199,45 @@ func runNodeList(args []string) {
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
 	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	includeTombstones := fs.Bool("include-tombstones", false, "include removed membership tombstones")
+	pageSize := fs.Uint("page-size", nodeListDefaultPageSize, "maximum nodes in one page (1..512)")
+	pageToken := fs.String("page-token", "", "opaque token returned by a previous node list page")
+	all := fs.Bool("all", false, "explicitly follow node pages within --budget")
+	reason := fs.String("reason", "", "operator reason required with --all")
+	budget := fs.Uint64("budget", 0, "maximum node records to retrieve with --all")
 	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
 	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
 	}
+	if *pageSize == 0 || *pageSize > nodeListMaximumPageSize {
+		fatalf("node list: --page-size must be between 1 and %d", nodeListMaximumPageSize)
+	}
+	options := nodeListOptions{
+		PageSize: uint32(*pageSize), PageToken: *pageToken, IncludeTombstones: *includeTombstones,
+		All: *all, Reason: *reason, Budget: *budget,
+	}
+	if err := options.validate(); err != nil {
+		fatalf("node list: %v", err)
+	}
 	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
 	defer cancel()
 	defer client.Close()
-	resp, err := adminclient.ListAllNodes(ctx, client.Admin, clusterRef(*clusterID, *sbsClusterID), *includeTombstones)
+	result, err := listNodePages(ctx, client.Admin, clusterRef(*clusterID, *sbsClusterID), options)
 	if err != nil {
 		fatalf("node list failed: %v", err)
 	}
+	resp := result.Response
 	if *output == "json" {
-		writeJSON(resp)
+		writeJSON(nodeListJSON(result, options))
 		return
 	}
 	fmt.Printf("membership_revision: %d\n", resp.GetMembershipRevision())
 	fmt.Printf("membership_projection_revision: %d\n", resp.GetMembershipProjectionRevision())
 	fmt.Printf("projection_health: %s\n", resp.GetProjectionHealth())
+	fmt.Printf("pages_read: %d\n", result.PagesRead)
+	fmt.Printf("automatic_page_completion: %t\n", result.AutomaticCompletion)
+	fmt.Printf("next_page_token: %s\n", resp.GetNextPageToken())
 	for _, node := range resp.GetNodes() {
 		fmt.Printf("%s\t%s\t%s\t%s\tgeneration=%d\trevision=%d\ttombstone=%t\n", node.GetNodeId(), node.GetLifecycle().String(), node.GetHealth().String(), node.GetGrpcEndpoint(), node.GetGeneration(), node.GetMembershipRevision(), node.GetTombstone())
 	}
@@ -388,6 +411,8 @@ func runOperations(args []string) {
 		os.Exit(2)
 	}
 	switch args[0] {
+	case "find":
+		runOperationFind(args[1:])
 	case "list":
 		runOperationList(args[1:])
 	case "show":
@@ -395,6 +420,69 @@ func runOperations(args []string) {
 	default:
 		operationsUsage()
 		os.Exit(2)
+	}
+}
+
+type operationFindJSONResponse struct {
+	Cluster   *adminv1.ClusterRef      `json:"cluster,omitempty"`
+	Found     bool                     `json:"found"`
+	Operation *adminv1.OperationStatus `json:"operation,omitempty"`
+}
+
+func runOperationFind(args []string) {
+	defaults := mustResolveCLIDefaults(args)
+	fs := flag.NewFlagSet("operations find", flag.ExitOnError)
+	registerContextFlags(fs, defaults)
+	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
+	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
+	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	kind := fs.String("kind", "", "operation kind; currently node.drain")
+	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "target node id")
+	requestID := fs.String("request-id", "", "durable request identity")
+	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
+	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
+	parseCommandFlags(fs, args)
+	if *output == "" {
+		*output = "table"
+	}
+	if strings.TrimSpace(*kind) != "node.drain" || strings.TrimSpace(*nodeID) == "" || strings.TrimSpace(*requestID) == "" {
+		fatalf("operations find requires --kind node.drain, --node-id, and --request-id")
+	}
+
+	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
+	defer cancel()
+	defer client.Close()
+	resp, err := client.Operations.GetOperationByRequestIdentity(ctx, &adminv1.GetOperationByRequestIdentityRequest{
+		Cluster:      clusterRef(*clusterID, *sbsClusterID),
+		Kind:         "node.drain",
+		TargetNodeId: strings.TrimSpace(*nodeID),
+		RequestId:    strings.TrimSpace(*requestID),
+	})
+	if err != nil {
+		fatalf("operations find failed: %v", err)
+	}
+
+	switch strings.ToLower(strings.TrimSpace(*output)) {
+	case "json":
+		writeJSON(operationFindJSONResponse{
+			Cluster:   resp.GetCluster(),
+			Found:     resp.GetFound(),
+			Operation: resp.GetOperation(),
+		})
+	case "", "table":
+		if !resp.GetFound() || resp.GetOperation() == nil {
+			fmt.Println("no operation found")
+			return
+		}
+		op := resp.GetOperation()
+		fmt.Printf("operation_id: %s\n", op.GetOperationId())
+		fmt.Printf("kind: %s\n", op.GetKind())
+		fmt.Printf("node_id: %s\n", op.GetTargetNodeId())
+		fmt.Printf("request_id: %s\n", op.GetRequestId())
+		fmt.Printf("state: %s\n", op.GetState().String())
+		fmt.Fprintln(os.Stderr, "note: this is an identity read; use operations show for current progress")
+	default:
+		fatalf("unsupported output format %q", *output)
 	}
 }
 
@@ -499,25 +587,28 @@ func runClusterStatus(args []string) {
 	if err != nil {
 		fatalf("cluster status failed: %v", err)
 	}
-	nodesResp, err := adminclient.ListAllNodes(ctx, client.Admin, clusterRef(*clusterID, *sbsClusterID), false)
-	if err != nil {
-		fatalf("list nodes for cluster status failed: %v", err)
-	}
-	summary := summarizeNodeHealth(nodesResp.GetNodes())
-
 	switch *output {
 	case "json":
-		writeJSON(clusterStatusJSON(resp, nodesResp.GetNodes(), summary))
+		writeJSON(clusterStatusJSON(resp))
 	default:
 		fmt.Printf("cluster_id: %s\n", resp.GetCluster().GetClusterId())
 		fmt.Printf("sbs_cluster_id: %s\n", resp.GetCluster().GetSbsClusterId())
 		fmt.Printf("leader_node_id: %s\n", resp.GetLeaderNodeId())
 		fmt.Printf("quorum_health: %s\n", resp.GetQuorumHealth().String())
+		fmt.Printf("cluster_summary_health: %s\n", resp.GetClusterSummaryHealth().String())
+		fmt.Printf("cluster_summary_reason: %s\n", resp.GetClusterSummaryReason())
+		fmt.Printf("cluster_summary_partial: %t\n", resp.GetClusterSummaryPartial())
+		fmt.Printf("cluster_summary_stale: %t\n", resp.GetClusterSummaryStale())
+		fmt.Printf("cluster_summary_rebuild_required: %t\n", resp.GetClusterSummaryRebuildRequired())
+		fmt.Printf("cluster_summary_source_revision: %d\n", resp.GetClusterSummarySourceRevision())
+		fmt.Printf("cluster_summary_freshness_age_millis: %d\n", resp.GetClusterSummaryFreshnessAgeMillis())
+		fmt.Printf("known_nodes: %d\n", resp.GetKnownNodes())
 		fmt.Printf("active_nodes: %d\n", resp.GetActiveNodes())
-		fmt.Printf("active_healthy_nodes: %d\n", summary.ActiveHealthyNodes)
-		fmt.Printf("active_suspect_nodes: %d\n", summary.ActiveSuspectNodes)
-		fmt.Printf("active_down_nodes: %d\n", summary.ActiveDownNodes)
 		fmt.Printf("draining_nodes: %d\n", resp.GetDrainingNodes())
+		fmt.Printf("removed_nodes: %d\n", resp.GetRemovedNodes())
+		fmt.Printf("healthy_nodes: %d\n", resp.GetHealthyNodes())
+		fmt.Printf("suspect_nodes: %d\n", resp.GetSuspectNodes())
+		fmt.Printf("down_nodes: %d\n", resp.GetDownNodes())
 		fmt.Printf("repair_backlog: %d\n", resp.GetRepairBacklog())
 		fmt.Printf("rebalance_backlog: %d\n", resp.GetRebalanceBacklog())
 		fmt.Printf("drain_backlog: %d\n", resp.GetDrainBacklog())
@@ -531,10 +622,6 @@ func runClusterStatus(args []string) {
 		fmt.Printf("health_probe_queue_depth: %d\n", resp.GetHealthProbeQueueDepth())
 		fmt.Printf("health_probe_max_concurrency: %d\n", resp.GetHealthProbeMaxConcurrency())
 		fmt.Printf("health_probe_thresholds: suspect=%d down=%d recovery_cooldown=%ds\n", resp.GetHealthProbeSuspectAfter(), resp.GetHealthProbeDownAfter(), resp.GetHealthProbeRecoveryCooldownSeconds())
-		fmt.Printf("nodes:\n")
-		for _, n := range nodesResp.GetNodes() {
-			fmt.Printf("  %s: %s\n", n.GetNodeId(), compactNodeHealthName(n.GetHealth()))
-		}
 	}
 }
 
@@ -691,32 +778,33 @@ func nodeStatusJSON(resp *adminv1.GetNodeResponse) map[string]any {
 	}
 }
 
-type clusterNodeHealthSummary struct {
-	ActiveHealthyNodes uint32
-	ActiveSuspectNodes uint32
-	ActiveDownNodes    uint32
-	DrainingNodes      uint32
-	InactiveNodes      uint32
-	UnhealthyNodes     []string
-}
-
-func clusterStatusJSON(resp *adminv1.GetClusterStatusResponse, nodes []*adminv1.NodeSummary, summary clusterNodeHealthSummary) map[string]any {
+func clusterStatusJSON(resp *adminv1.GetClusterStatusResponse) map[string]any {
 	clusterMap := map[string]any{}
 	if resp.GetCluster() != nil {
 		clusterMap["cluster_id"] = resp.GetCluster().GetClusterId()
 		clusterMap["sbs_cluster_id"] = resp.GetCluster().GetSbsClusterId()
 	}
-	nodeMaps := make([]map[string]any, 0, len(nodes))
-	for _, n := range nodes {
-		nodeMaps = append(nodeMaps, clusterNodeSummaryJSON(n))
-	}
 	return map[string]any{
-		"cluster":                      clusterMap,
-		"leader_node_id":               resp.GetLeaderNodeId(),
-		"quorum_health":                int32(resp.GetQuorumHealth()),
-		"quorum_health_name":           resp.GetQuorumHealth().String(),
+		"cluster":            clusterMap,
+		"leader_node_id":     resp.GetLeaderNodeId(),
+		"quorum_health":      int32(resp.GetQuorumHealth()),
+		"quorum_health_name": resp.GetQuorumHealth().String(),
+		"cluster_summary": map[string]any{
+			"health":                   int32(resp.GetClusterSummaryHealth()),
+			"health_name":              resp.GetClusterSummaryHealth().String(),
+			"reason":                   resp.GetClusterSummaryReason(),
+			"partial":                  resp.GetClusterSummaryPartial(),
+			"stale":                    resp.GetClusterSummaryStale(),
+			"rebuild_required":         resp.GetClusterSummaryRebuildRequired(),
+			"source_revision":          resp.GetClusterSummarySourceRevision(),
+			"baseline_source_revision": resp.GetClusterSummaryBaselineSourceRevision(),
+			"freshness_age_millis":     resp.GetClusterSummaryFreshnessAgeMillis(),
+			"freshness_updated_unix":   resp.GetClusterSummaryFreshnessUpdatedUnix(),
+		},
+		"known_nodes":                  resp.GetKnownNodes(),
 		"active_nodes":                 resp.GetActiveNodes(),
 		"draining_nodes":               resp.GetDrainingNodes(),
+		"removed_nodes":                resp.GetRemovedNodes(),
 		"degraded_extents":             resp.GetDegradedExtents(),
 		"repair_backlog":               resp.GetRepairBacklog(),
 		"rebalance_backlog":            resp.GetRebalanceBacklog(),
@@ -741,14 +829,11 @@ func clusterStatusJSON(resp *adminv1.GetClusterStatusResponse, nodes []*adminv1.
 			"last_error":                resp.GetHealthProbeLastError(),
 		},
 		"node_health_summary": map[string]any{
-			"active_healthy_nodes": summary.ActiveHealthyNodes,
-			"active_suspect_nodes": summary.ActiveSuspectNodes,
-			"active_down_nodes":    summary.ActiveDownNodes,
-			"draining_nodes":       summary.DrainingNodes,
-			"inactive_nodes":       summary.InactiveNodes,
-			"unhealthy_nodes":      summary.UnhealthyNodes,
+			"healthy_nodes": resp.GetHealthyNodes(),
+			"suspect_nodes": resp.GetSuspectNodes(),
+			"down_nodes":    resp.GetDownNodes(),
 		},
-		"nodes": nodeMaps,
+		"node_detail_included": false,
 	}
 }
 
@@ -818,37 +903,6 @@ func compactNodeHealthName(health adminv1.NodeHealth) string {
 
 func compactReplicaTargetReason(reason adminv1.ReplicaTargetReasonCode) string {
 	return strings.ToLower(strings.TrimPrefix(reason.String(), "REPLICA_TARGET_REASON_CODE_"))
-}
-
-func summarizeNodeHealth(nodes []*adminv1.NodeSummary) clusterNodeHealthSummary {
-	summary := clusterNodeHealthSummary{}
-	for _, n := range nodes {
-		switch n.GetLifecycle() {
-		case adminv1.NodeLifecycle_NODE_LIFECYCLE_ACTIVE:
-			switch n.GetHealth() {
-			case adminv1.NodeHealth_NODE_HEALTH_HEALTHY:
-				summary.ActiveHealthyNodes++
-			case adminv1.NodeHealth_NODE_HEALTH_SUSPECT:
-				summary.ActiveSuspectNodes++
-				summary.UnhealthyNodes = append(summary.UnhealthyNodes, n.GetNodeId())
-			default:
-				summary.ActiveDownNodes++
-				summary.UnhealthyNodes = append(summary.UnhealthyNodes, n.GetNodeId())
-			}
-		case adminv1.NodeLifecycle_NODE_LIFECYCLE_DRAINING:
-			summary.DrainingNodes++
-			if n.GetHealth() != adminv1.NodeHealth_NODE_HEALTH_HEALTHY {
-				summary.UnhealthyNodes = append(summary.UnhealthyNodes, n.GetNodeId())
-			}
-		default:
-			summary.InactiveNodes++
-			if n.GetHealth() != adminv1.NodeHealth_NODE_HEALTH_HEALTHY {
-				summary.UnhealthyNodes = append(summary.UnhealthyNodes, n.GetNodeId())
-			}
-		}
-	}
-	sort.Strings(summary.UnhealthyNodes)
-	return summary
 }
 
 func runStoreStatus(args []string) {
@@ -1417,6 +1471,7 @@ func runNodeDrain(args []string) {
 	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "node id")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "drain", "reason")
+	requestID := fs.String("request-id", "", "durable request identity; enables safe response-loss recovery")
 	yes := fs.Bool("yes", false, "confirm drain")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
 	parseCommandFlags(fs, args)
@@ -1439,7 +1494,7 @@ func runNodeDrain(args []string) {
 	defer client.Close()
 	resp, err := client.Admin.DrainNode(ctx, &adminv1.DrainNodeRequest{
 		Cluster: clusterRef(*clusterID, *sbsClusterID),
-		Meta:    &adminv1.RequestMeta{Actor: *actor, Reason: *reason},
+		Meta:    &adminv1.RequestMeta{RequestId: strings.TrimSpace(*requestID), Actor: *actor, Reason: *reason},
 		NodeId:  *nodeID,
 	})
 	if err != nil {
@@ -1533,6 +1588,7 @@ func runNodeDrainStatus(args []string) {
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
 	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	nodeID := fs.String("node-id", defaults.fieldValue("node_id", "NAMRBD_SBS_NODE_ID"), "node id")
+	operationID := fs.String("operation-id", "", "node drain operation id")
 	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
 	parseCommandFlags(fs, args)
@@ -1547,28 +1603,25 @@ func runNodeDrainStatus(args []string) {
 		defaults.fieldSetting("output", "output", "table", "NAMRBD_SBSCTL_OUTPUT"),
 		defaults.timeoutSetting(10*time.Second),
 	)
-	if *nodeID == "" {
-		fatalf("--node-id is required")
+	if strings.TrimSpace(*operationID) == "" {
+		fatalf("--operation-id is required; use the id returned by node drain or operations find")
 	}
 
 	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
 	defer cancel()
 	defer client.Close()
-	resp, err := client.Operations.ListOperations(ctx, &adminv1.ListOperationsRequest{
-		Cluster: clusterRef(*clusterID, *sbsClusterID),
-		Kind:    "node.drain",
+	resp, err := client.Operations.GetOperation(ctx, &adminv1.GetOperationRequest{
+		Cluster: clusterRef(*clusterID, *sbsClusterID), OperationId: strings.TrimSpace(*operationID),
 	})
 	if err != nil {
 		fatalf("node drain status failed: %v", err)
 	}
-	var selected *adminv1.OperationStatus
-	for _, op := range resp.GetOperations() {
-		if op.GetTargetNodeId() == *nodeID {
-			selected = op
-		}
+	selected := resp.GetOperation()
+	if selected == nil || selected.GetKind() != "node.drain" {
+		fatalf("operation %s is not a node drain", *operationID)
 	}
-	if selected == nil {
-		fatalf("no drain operation found for node %s", *nodeID)
+	if strings.TrimSpace(*nodeID) != "" && selected.GetTargetNodeId() != strings.TrimSpace(*nodeID) {
+		fatalf("operation %s targets node %s, not %s", *operationID, selected.GetTargetNodeId(), *nodeID)
 	}
 	switch *output {
 	case "json":
@@ -2339,13 +2392,13 @@ func runVolumePlacement(args []string) {
 	defer client.Close()
 
 	repairs, err := client.Admin.ListRepairs(ctx, &adminv1.ListRepairsRequest{
-		Cluster: clusterRef(*clusterID, *sbsClusterID),
+		Cluster: clusterRef(*clusterID, *sbsClusterID), Admission: &adminv1.ExpensiveCallAdmission{Reason: "sbsctl volume placement", RecordBudget: 1_000_000},
 	})
 	if err != nil {
 		fatalf("list repairs: %v", err)
 	}
 	rebalances, err := client.Admin.ListRebalances(ctx, &adminv1.ListRebalancesRequest{
-		Cluster: clusterRef(*clusterID, *sbsClusterID),
+		Cluster: clusterRef(*clusterID, *sbsClusterID), Admission: &adminv1.ExpensiveCallAdmission{Reason: "sbsctl volume placement", RecordBudget: 1_000_000},
 	})
 	if err != nil {
 		fatalf("list rebalances: %v", err)
@@ -2695,11 +2748,23 @@ func runVolumeList(args []string) {
 	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
 	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	pageSize := fs.Uint("page-size", volumeListDefaultPageSize, "maximum catalog records scanned in one page (1..512)")
+	pageToken := fs.String("page-token", "", "opaque token returned by a previous volume list page")
+	health := fs.String("health", "", "volume health filter: healthy|degraded|repairing|rebalancing|blocked")
+	redundancyBackend := fs.String("redundancy-backend", "", "redundancy backend filter")
+	topologyMode := fs.String("topology-mode", "", "topology mode filter")
 	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
 	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
+	}
+	if *pageSize == 0 || *pageSize > volumeListMaximumPageSize {
+		fatalf("volume list: --page-size must be between 1 and %d", volumeListMaximumPageSize)
+	}
+	healthFilter, err := parseVolumeHealthFilter(*health)
+	if err != nil {
+		fatalf("volume list: %v", err)
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
@@ -2712,19 +2777,25 @@ func runVolumeList(args []string) {
 	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
 	defer cancel()
 	defer client.Close()
-	resp, err := client.Admin.ListVolumes(ctx, &adminv1.ListVolumesRequest{
-		Cluster: clusterRef(*clusterID, *sbsClusterID),
+	resp, err := client.Admin.ListVolumesPage(ctx, &adminv1.ListVolumesPageRequest{
+		Cluster: clusterRef(*clusterID, *sbsClusterID), PageSize: uint32(*pageSize), PageToken: strings.TrimSpace(*pageToken),
+		Health: healthFilter, RedundancyBackend: strings.TrimSpace(*redundancyBackend), TopologyMode: strings.TrimSpace(*topologyMode),
 	})
 	if err != nil {
 		fatalf("volume list failed: %v", err)
 	}
 	switch *output {
 	case "json":
-		writeJSON(resp)
+		writeJSON(volumeListPageJSON(resp))
 	default:
+		fmt.Printf("catalog_revision: %d\n", resp.GetCatalogRevision())
+		fmt.Printf("projection_health: %s\n", resp.GetProjectionHealth())
+		fmt.Printf("freshness_age_millis: %d\n", resp.GetFreshnessAgeMillis())
+		fmt.Printf("scanned_records: %d\n", resp.GetScannedRecords())
+		fmt.Printf("next_page_token: %s\n", resp.GetNextPageToken())
 		for _, vol := range resp.GetVolumes() {
-			fmt.Printf("volume_id: %s size_bytes: %d block_size: %d health: %s revision: %d\n",
-				vol.GetVolumeId(), vol.GetSizeBytes(), vol.GetBlockSize(), vol.GetHealth().String(), vol.GetVolumeRevision())
+			fmt.Printf("volume_id: %s size_bytes: %d block_size: %d health: %s\n",
+				vol.GetVolumeId(), vol.GetSizeBytes(), vol.GetBlockSize(), vol.GetHealth().String())
 		}
 		if len(resp.GetVolumes()) == 0 {
 			fmt.Println("no volumes")
@@ -2805,6 +2876,10 @@ func runOperationList(args []string) {
 	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
 	kind := fs.String("kind", "", "optional operation kind filter")
 	state := fs.String("state", "", "optional state filter: queued|running|completed|failed|canceled")
+	updatedAfter := fs.String("updated-after", "", "only operations updated after RFC3339 time")
+	updatedBefore := fs.String("updated-before", "", "only operations updated before RFC3339 time")
+	pageSize := fs.Uint("page-size", operationListDefaultPageSize, "maximum operation records scanned in one page (1..512)")
+	pageToken := fs.String("page-token", "", "opaque token returned by a previous operations list page")
 	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
 	parseCommandFlags(fs, args)
@@ -2823,15 +2898,25 @@ func runOperationList(args []string) {
 	if err != nil {
 		fatalf("operations list failed: %v", err)
 	}
+	if *pageSize == 0 || *pageSize > operationListMaximumPageSize {
+		fatalf("operations list failed: --page-size must be between 1 and %d", operationListMaximumPageSize)
+	}
+	after, err := parseOperationListTime(*updatedAfter, "--updated-after")
+	if err != nil {
+		fatalf("operations list failed: %v", err)
+	}
+	before, err := parseOperationListTime(*updatedBefore, "--updated-before")
+	if err != nil {
+		fatalf("operations list failed: %v", err)
+	}
 
 	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
 	defer cancel()
 	defer client.Close()
 
-	resp, err := client.Operations.ListOperations(ctx, &adminv1.ListOperationsRequest{
-		Cluster: clusterRef(*clusterID, *sbsClusterID),
-		Kind:    strings.TrimSpace(*kind),
-		State:   parsedState,
+	resp, err := client.Operations.ListOperationsPage(ctx, &adminv1.ListOperationsPageRequest{
+		Cluster: clusterRef(*clusterID, *sbsClusterID), PageSize: uint32(*pageSize), PageToken: strings.TrimSpace(*pageToken),
+		Kind: strings.TrimSpace(*kind), State: parsedState, UpdatedAfter: after, UpdatedBefore: before,
 	})
 	if err != nil {
 		fatalf("operations list failed: %v", err)
@@ -2839,8 +2924,13 @@ func runOperationList(args []string) {
 
 	switch strings.ToLower(strings.TrimSpace(*output)) {
 	case "json":
-		writeJSON(resp)
+		writeJSON(operationListPageJSON(resp))
 	case "", "table":
+		fmt.Printf("projection_revision: %s\n", resp.GetProjectionRevision())
+		fmt.Printf("projection_health: %s\n", resp.GetProjectionHealth())
+		fmt.Printf("freshness_age_millis: %d\n", resp.GetFreshnessAgeMillis())
+		fmt.Printf("scanned_records: %d\n", resp.GetScannedRecords())
+		fmt.Printf("next_page_token: %s\n", resp.GetNextPageToken())
 		fmt.Println("OPERATION\tKIND\tSTATE\tVOLUME\tNODE\tACTOR\tPHASE")
 		for _, op := range resp.GetOperations() {
 			fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
@@ -2887,11 +2977,16 @@ func runRepairList(args []string) {
 	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
 	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	pageSize := fs.Uint("page-size", 128, "maximum active repair records scanned in one page (1..512)")
+	pageToken := fs.String("page-token", "", "opaque token returned by a previous repair list page")
 	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
 	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
+	}
+	if *pageSize == 0 || *pageSize > 512 {
+		fatalf("repair list failed: --page-size must be between 1 and 512")
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
@@ -2904,16 +2999,26 @@ func runRepairList(args []string) {
 	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
 	defer cancel()
 	defer client.Close()
-	resp, err := client.Admin.ListRepairs(ctx, &adminv1.ListRepairsRequest{
-		Cluster: clusterRef(*clusterID, *sbsClusterID),
+	resp, err := client.Admin.ListRepairsPage(ctx, &adminv1.ListRepairsPageRequest{
+		Cluster: clusterRef(*clusterID, *sbsClusterID), PageSize: uint32(*pageSize), PageToken: strings.TrimSpace(*pageToken),
 	})
 	if err != nil {
 		fatalf("repair list failed: %v", err)
 	}
 	switch *output {
 	case "json":
-		writeJSON(resp)
+		writeJSON(map[string]any{
+			"cluster": resp.GetCluster(), "repairs": resp.GetRepairs(), "projection_revision": resp.GetProjectionRevision(),
+			"next_page_token": resp.GetNextPageToken(), "freshness_age_millis": resp.GetFreshnessAgeMillis(),
+			"projection_health": resp.GetProjectionHealth(), "scanned_records": resp.GetScannedRecords(),
+			"pages_read": 1, "automatic_page_completion": false, "generated_at": resp.GetGeneratedAt(),
+		})
 	default:
+		fmt.Printf("projection_revision: %s\n", resp.GetProjectionRevision())
+		fmt.Printf("projection_health: %s\n", resp.GetProjectionHealth())
+		fmt.Printf("freshness_age_millis: %d\n", resp.GetFreshnessAgeMillis())
+		fmt.Printf("scanned_records: %d\n", resp.GetScannedRecords())
+		fmt.Printf("next_page_token: %s\n", resp.GetNextPageToken())
 		for _, item := range resp.GetRepairs() {
 			fmt.Printf("volume_id: %s placement_ref: %s state: %s current: %s target: %s\n",
 				item.GetVolumeId(), item.GetPlacementRef(), item.GetState(), item.GetCurrentReplicaSetId(), item.GetTargetReplicaSetId())
@@ -2954,7 +3059,7 @@ func runRepairShow(args []string) {
 	defer cancel()
 	defer client.Close()
 	resp, err := client.Admin.ListRepairs(ctx, &adminv1.ListRepairsRequest{
-		Cluster: clusterRef(*clusterID, *sbsClusterID),
+		Cluster: clusterRef(*clusterID, *sbsClusterID), Admission: &adminv1.ExpensiveCallAdmission{Reason: "sbsctl repair show", RecordBudget: 1_000_000},
 	})
 	if err != nil {
 		fatalf("repair show failed: %v", err)
@@ -2991,11 +3096,16 @@ func runRebalanceList(args []string) {
 	adminEndpoint := fs.String("sbs-service-endpoint", defaults.adminEndpoint(), "cluster-wide sbs-admin gRPC endpoint")
 	clusterID := fs.String("cluster-id", defaults.fieldValue("cluster_id", "NAMRBD_CLUSTER_ID"), "cluster id")
 	sbsClusterID := fs.String("sbs-cluster-id", defaults.fieldValue("sbs_cluster_id", "NAMRBD_SBS_CLUSTER_ID"), "sbs cluster id")
+	pageSize := fs.Uint("page-size", 128, "maximum active rebalance records scanned in one page (1..512)")
+	pageToken := fs.String("page-token", "", "opaque token returned by a previous rebalance list page")
 	output := fs.String("output", defaults.fieldValue("output", "NAMRBD_SBSCTL_OUTPUT"), "output format: table|json")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
 	parseCommandFlags(fs, args)
 	if *output == "" {
 		*output = "table"
+	}
+	if *pageSize == 0 || *pageSize > 512 {
+		fatalf("rebalance list failed: --page-size must be between 1 and 512")
 	}
 	printResolvedSettings(fs,
 		defaults.adminEndpointSetting(),
@@ -3008,16 +3118,26 @@ func runRebalanceList(args []string) {
 	client, ctx, cancel := dialAdmin(*adminEndpoint, *timeout)
 	defer cancel()
 	defer client.Close()
-	resp, err := client.Admin.ListRebalances(ctx, &adminv1.ListRebalancesRequest{
-		Cluster: clusterRef(*clusterID, *sbsClusterID),
+	resp, err := client.Admin.ListRebalancesPage(ctx, &adminv1.ListRebalancesPageRequest{
+		Cluster: clusterRef(*clusterID, *sbsClusterID), PageSize: uint32(*pageSize), PageToken: strings.TrimSpace(*pageToken),
 	})
 	if err != nil {
 		fatalf("rebalance list failed: %v", err)
 	}
 	switch *output {
 	case "json":
-		writeJSON(resp)
+		writeJSON(map[string]any{
+			"cluster": resp.GetCluster(), "rebalances": resp.GetRebalances(), "projection_revision": resp.GetProjectionRevision(),
+			"next_page_token": resp.GetNextPageToken(), "freshness_age_millis": resp.GetFreshnessAgeMillis(),
+			"projection_health": resp.GetProjectionHealth(), "scanned_records": resp.GetScannedRecords(),
+			"pages_read": 1, "automatic_page_completion": false, "generated_at": resp.GetGeneratedAt(),
+		})
 	default:
+		fmt.Printf("projection_revision: %s\n", resp.GetProjectionRevision())
+		fmt.Printf("projection_health: %s\n", resp.GetProjectionHealth())
+		fmt.Printf("freshness_age_millis: %d\n", resp.GetFreshnessAgeMillis())
+		fmt.Printf("scanned_records: %d\n", resp.GetScannedRecords())
+		fmt.Printf("next_page_token: %s\n", resp.GetNextPageToken())
 		for _, item := range resp.GetRebalances() {
 			fmt.Printf("volume_id: %s placement_ref: %s state: %s current: %s target: %s\n",
 				item.GetVolumeId(), item.GetPlacementRef(), item.GetState(), item.GetCurrentReplicaSetId(), item.GetTargetReplicaSetId())
@@ -3038,6 +3158,7 @@ func runMaintenanceThrottle(args []string) {
 	repairs := fs.Uint("repairs", 0, "max concurrent repairs")
 	rebalances := fs.Uint("rebalances", 0, "max concurrent rebalances")
 	drains := fs.Uint("drains", 0, "max concurrent drains")
+	totalMovements := fs.Uint("total-movements", 0, "max total concurrent repair, rebalance, and drain movements")
 	actor := fs.String("actor", getenvOrDefault("USER", "unknown"), "actor")
 	reason := fs.String("reason", "maintenance-throttle", "reason")
 	timeout := fs.Duration("timeout", defaults.timeout(10*time.Second), "request timeout")
@@ -3053,11 +3174,12 @@ func runMaintenanceThrottle(args []string) {
 	defer cancel()
 	defer client.Close()
 	resp, err := client.Admin.SetMaintenanceThrottle(ctx, &adminv1.SetMaintenanceThrottleRequest{
-		Cluster:                 clusterRef(*clusterID, *sbsClusterID),
-		Meta:                    &adminv1.RequestMeta{Actor: *actor, Reason: *reason},
-		MaxConcurrentRepairs:    uint32(*repairs),
-		MaxConcurrentRebalances: uint32(*rebalances),
-		MaxConcurrentDrains:     uint32(*drains),
+		Cluster:                     clusterRef(*clusterID, *sbsClusterID),
+		Meta:                        &adminv1.RequestMeta{Actor: *actor, Reason: *reason},
+		MaxConcurrentRepairs:        uint32(*repairs),
+		MaxConcurrentRebalances:     uint32(*rebalances),
+		MaxConcurrentDrains:         uint32(*drains),
+		MaxTotalConcurrentMovements: uint32(*totalMovements),
 	})
 	if err != nil {
 		fatalf("maintenance throttle failed: %v", err)
@@ -3315,12 +3437,14 @@ func runTestIOFlush(args []string) {
 	writeJSON(resp)
 }
 
+var dialAdminClient = adminclient.Dial
+
 func dialAdmin(endpoint string, timeout time.Duration) (*adminclient.Client, context.Context, context.CancelFunc) {
 	if endpoint == "" {
 		fatalf("admin endpoint is required (use --sbs-service-endpoint or NAMRBD_SBS_SERVICE_ENDPOINTS)")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	client, err := adminclient.Dial(ctx, endpoint)
+	client, err := dialAdminClient(ctx, endpoint)
 	if err != nil {
 		cancel()
 		fatalf("%v", err)
@@ -3422,7 +3546,8 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "usage: %s [--json] <command> [args]\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "       %s help <command> [subcommand]\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "commands:")
-	fmt.Fprintln(os.Stderr, "  cluster init|status")
+	fmt.Fprintln(os.Stderr, "  cluster init|status|manifest validate|manifest render|manifest plan|manifest export|manifest admit|manifest rollout|manifest standby")
+	fmt.Fprintln(os.Stderr, "  host check|maintenance")
 	fmt.Fprintln(os.Stderr, "  node join|update-topology|status|drain|drain status|remove")
 	fmt.Fprintln(os.Stderr, "  topology zone create|list|get|update|delete")
 	fmt.Fprintln(os.Stderr, "  store status|tuning")
@@ -3432,7 +3557,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  repair list|show")
 	fmt.Fprintln(os.Stderr, "  rebalance list")
 	fmt.Fprintln(os.Stderr, "  maintenance throttle|pause|resume")
-	fmt.Fprintln(os.Stderr, "  operations list|show")
+	fmt.Fprintln(os.Stderr, "  operations find|list|show")
 	fmt.Fprintln(os.Stderr, "  testio open|read|write|flush")
 	for _, line := range enterpriseUsageLines() {
 		fmt.Fprintln(os.Stderr, line)
@@ -3444,6 +3569,8 @@ func printGroupUsage(group string) bool {
 	switch group {
 	case "cluster":
 		clusterUsage()
+	case "host":
+		hostUsage()
 	case "node":
 		nodeUsage()
 	case "topology":
@@ -3480,7 +3607,11 @@ func printGroupUsage(group string) bool {
 }
 
 func clusterUsage() {
-	fmt.Fprintln(os.Stderr, "usage: sbsctl cluster init|status ...")
+	fmt.Fprintln(os.Stderr, "usage: sbsctl cluster init|status|manifest ...")
+}
+
+func hostUsage() {
+	fmt.Fprintln(os.Stderr, "usage: sbsctl host check|maintenance ...")
 }
 
 func nodeUsage() {
@@ -3500,7 +3631,7 @@ func volumeUsage() {
 }
 
 func operationsUsage() {
-	fmt.Fprintln(os.Stderr, "usage: sbsctl operations list|show ...")
+	fmt.Fprintln(os.Stderr, "usage: sbsctl operations find|list|show ...")
 }
 
 func repairUsage() {

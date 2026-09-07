@@ -46,6 +46,7 @@ const state = {
   lastRefreshCompletedAt: "",
   lastRefreshDurationMs: 0,
   selectedNodeID: "",
+  detailPages: {},
   timer: null
 };
 
@@ -57,6 +58,7 @@ function init() {
   window.addEventListener("hashchange", () => {
     state.view = currentView();
     render();
+    refreshDetailPage();
   });
   render();
   refreshDashboard();
@@ -105,6 +107,7 @@ async function refreshDashboard() {
     state.lastGoodCluster = result.json;
     state.lastRefreshDurationMs = result.durationMs;
     state.lastRefreshCompletedAt = new Date().toISOString();
+    await refreshDetailPage(false);
   } catch (err) {
     state.error = err instanceof Error ? err.message : String(err);
     if (state.lastGoodCluster) {
@@ -113,6 +116,23 @@ async function refreshDashboard() {
   } finally {
     state.loading = false;
     render();
+  }
+}
+
+async function refreshDetailPage(renderWhenDone = true) {
+  const endpointKey = ({ sbs: "sbs_nodes", volumes: "sbs_volumes" })[state.view];
+  if (!endpointKey) {
+    return;
+  }
+  try {
+    const result = await requestJSON(endpointKey);
+    state.detailPages[state.view] = result.json?.data || {};
+  } catch (err) {
+    state.error = err instanceof Error ? err.message : String(err);
+  } finally {
+    if (renderWhenDone) {
+      render();
+    }
   }
 }
 
@@ -139,7 +159,9 @@ async function requestJSON(endpointKey) {
 }
 
 function render() {
-  const snapshot = state.cluster || state.lastGoodCluster;
+  const baseSnapshot = state.cluster || state.lastGoodCluster;
+  const detailPage = state.detailPages[state.view];
+  const snapshot = baseSnapshot && detailPage ? { ...baseSnapshot, ...detailPage } : baseSnapshot;
   document.body.classList.toggle("compact", state.settings.density === "compact");
   app.innerHTML = [
     renderTopbar(snapshot),
@@ -245,6 +267,9 @@ function renderGlobalBanner(snapshot) {
   if (snapshot.last_error && snapshot.last_error !== snapshot.first_error) {
     messages.push(`last error: ${snapshot.last_error}`);
   }
+  if ((snapshot.fleet_health || []).length) {
+    messages.push(`fleet health: ${snapshot.fleet_health.map((item) => `${item.code}=${item.count}`).join(", ")}`);
+  }
   if (!messages.length) {
     return "";
   }
@@ -258,8 +283,8 @@ function renderOverview(snapshot) {
     ${pageTitle("Overview", `primary snapshot ${ENDPOINTS.sbs_cluster}`)}
     <section class="status-strip">
       ${statusTile("Cluster", statusValue(snapshot), snapshot.ready ? "ready" : "not ready")}
-      ${statusTile("SBS Nodes", nodeHealthStatus(snapshot), `${count(snapshot.nodes)} nodes`)}
-      ${statusTile("Volumes", volumeStatus(snapshot), `${count(snapshot.volumes)} volumes`)}
+      ${statusTile("SBS Nodes", nodeHealthStatus(snapshot), `${snapshot.fleet?.known_nodes ?? count(snapshot.nodes)} nodes`)}
+      ${statusTile("Volumes", volumeStatus(snapshot), `${snapshot.fleet?.volume_count ?? count(snapshot.volumes)} volumes`)}
       ${statusTile("Capacity", capacityStatus(capacity), bytes(capacity.physical_free_bytes) + " free")}
       ${statusTile("Reclaim", reclaimStatus(snapshot.reclaim), bytes(snapshot.reclaim?.pending_bytes || 0) + " pending")}
       ${statusTile("Membership", membershipStatus(snapshot.membership), `${snapshot.membership?.healthy_nodes || 0} healthy`)}
@@ -285,7 +310,7 @@ function renderOverview(snapshot) {
       `)}
     </section>
     <section class="grid two" style="margin-top:12px">
-      ${panel("SBS Node Topology", nodeGrid(snapshot.nodes || []))}
+      ${panel("SBS Fleet Aggregate", fleetNodeSummary(snapshot))}
       ${panel("Maintenance Backlog", `
         <div class="bb-chart" data-bb-chart="maintenance">
           ${barList([
@@ -309,7 +334,8 @@ function renderSBS(snapshot) {
   const stores = snapshot.stores || [];
   const selected = nodes.find((node) => node.node_id === state.selectedNodeID) || nodes[0];
   return `
-    ${pageTitle("SBS", "node and store evidence")}
+    ${pageTitle("SBS", `one bounded page from ${ENDPOINTS.sbs_nodes}`)}
+    ${pageContinuationNotice(snapshot)}
     <section class="grid two">
       ${panel("Nodes", nodeGrid(nodes))}
       ${panel("Selected Node", selected ? nodeDetail(selected) : `<span class="muted">No node records</span>`)}
@@ -333,6 +359,19 @@ function renderCapacity(snapshot) {
       ${panel("Reclaim Evidence", reclaimDetail(snapshot.reclaim || {}))}
     </section>
     <section class="panel" style="margin-top:12px">
+      <h2>Fleet Capacity Freshness</h2>
+      ${descriptorTable({
+        usable_bytes: bytes(capacity.usable_bytes || 0),
+        free_bytes: bytes(capacity.physical_free_bytes || 0),
+        reserved_bytes: bytes(capacity.reserved_bytes || 0),
+        missing_nodes: capacity.missing_node_count || 0,
+        stale_nodes: capacity.stale_node_count || 0,
+        observation_age_seconds: capacity.observation_age_seconds || 0,
+        source_revision: capacity.source_revision || 0,
+        freshness: capacity.freshness || "missing"
+      })}
+    </section>
+    <section class="panel" style="margin-top:12px">
       <h2>Node Pressure</h2>
       ${nodeCapacityTable(snapshot.nodes || [])}
     </section>
@@ -341,7 +380,8 @@ function renderCapacity(snapshot) {
 
 function renderVolumes(snapshot) {
   return `
-    ${pageTitle("Volumes", "volume status and protocol boundary")}
+    ${pageTitle("Volumes", `one bounded page from ${ENDPOINTS.sbs_volumes}`)}
+    ${pageContinuationNotice(snapshot)}
     <section class="grid two">
       ${panel("Backend Distribution", backendDistribution(snapshot.volumes || []))}
       ${panel("Protocol Boundary", protocolBoundary(snapshot.volumes || []))}
@@ -351,6 +391,14 @@ function renderVolumes(snapshot) {
       ${volumeTable(snapshot.volumes || [])}
     </section>
   `;
+}
+
+function pageContinuationNotice(snapshot) {
+  if (snapshot.automatic_page_completion !== false) {
+    return "";
+  }
+  const suffix = snapshot.next_page_token ? "; more records require an explicit continuation" : "; final page";
+  return `<div class="banner">Showing ${snapshot.record_count || 0} records from one revision-pinned page${suffix}.</div>`;
 }
 
 function renderMaintenance(snapshot) {
@@ -410,6 +458,8 @@ function renderEvidence(snapshot) {
   const mcp = snapshot.mcp || {};
   const gui = snapshot.gui || {};
   const workflow = snapshot.workflow || {};
+  const control = snapshot.fleet_control || {};
+  const pressure = snapshot.metadata_pressure || {};
   return `
     ${pageTitle("Evidence", "query, MCP, GUI, and workflow descriptors")}
     <section class="grid two">
@@ -439,6 +489,28 @@ function renderEvidence(snapshot) {
         evidence_bundle_ready: workflow.evidence_bundle_ready,
         dangerous_actions_blocked: workflow.dangerous_actions_blocked,
         ai_context_redacted: workflow.ai_context_redacted
+      }))}
+      ${panel("Fleet Control", descriptorTable({
+        manifest_revision: control.manifest_revision || "unavailable",
+        manifest_digest: control.manifest_digest || "unavailable",
+        binary_digest: control.binary_digest || "unavailable",
+        config_digest: control.config_digest || "unavailable",
+        store_digest: control.store_digest || "unavailable",
+        apply_operation_id: control.apply_operation_id || "none",
+        apply_state: control.apply_state || "unavailable",
+        source_revision: control.source_revision || 0,
+        observation_age_seconds: control.observation_age_seconds || 0
+      }))}
+      ${panel("Metadata Pressure", descriptorTable({
+        point_get: pressure.point_get_count || 0,
+        batch_get: pressure.batch_get_count || 0,
+        batch_get_keys: pressure.batch_get_key_count || 0,
+        range_page: pressure.range_page_count || 0,
+        backend_full_scan: pressure.backend_full_scan_count || 0,
+        full_completion: pressure.full_completion_count || 0,
+        nested_completion: pressure.nested_completion_count || 0,
+        txn_retry: pressure.txn_retry_count || 0,
+        hot_region_candidates: pressure.hot_region_candidate_count || 0
       }))}
     </section>
   `;
@@ -936,7 +1008,7 @@ function statusClass(status) {
 function nodeHealthStatus(snapshot) {
   const nodes = snapshot.nodes || [];
   if (!nodes.length) {
-    return "partial";
+    return membershipStatus(snapshot.membership);
   }
   if (nodes.some((node) => node.health === "down")) {
     return "error";
@@ -950,9 +1022,26 @@ function nodeHealthStatus(snapshot) {
 function volumeStatus(snapshot) {
   const volumes = snapshot.volumes || [];
   if (!volumes.length) {
-    return "partial";
+    const fleet = snapshot.fleet || {};
+    if ((fleet.blocked_volumes || 0) > 0 || (fleet.degraded_volumes || 0) > 0) {
+      return "degraded";
+    }
+    return (fleet.volume_count || 0) > 0 ? "ok" : "partial";
   }
   return volumes.some((volume) => volume.status && volume.status !== "healthy") ? "degraded" : "ok";
+}
+
+function fleetNodeSummary(snapshot) {
+  const membership = snapshot.membership || {};
+  const projection = snapshot.projection || {};
+  return `<dl class="kv">
+    ${kv("Known", snapshot.fleet?.known_nodes || 0)}
+    ${kv("Active / draining", `${membership.active_nodes || 0} / ${membership.draining_nodes || 0}`)}
+    ${kv("Healthy / suspect / down", `${membership.healthy_nodes || 0} / ${membership.suspect_nodes || 0} / ${membership.down_nodes || 0}`)}
+    ${kv("Projection", `${projection.health || "unknown"} (${projection.reason || "unknown"})`)}
+    ${kv("Source revision", projection.source_revision || 0)}
+    ${kv("Freshness", `${projection.freshness_age_millis || 0}ms`)}
+  </dl>`;
 }
 
 function capacityStatus(capacity) {

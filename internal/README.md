@@ -21,4 +21,3 @@ consumers.
 Avoid turning `internal/` into a generic utility bucket. Put ownership-specific
 logic with its owning product package, keep secrets out of logs and errors, and
 add package tests for configuration precedence, retries, and transport mapping.
-

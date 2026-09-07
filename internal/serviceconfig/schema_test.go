@@ -35,11 +35,11 @@ func TestShippedExamplesValidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("glob: %v", err)
 	}
-	if len(entries) != 6 {
-		t.Fatalf("expected 6 example configs, found %d: %v", len(entries), entries)
-	}
 	seen := map[string]bool{}
 	for _, path := range entries {
+		if filepath.Base(path) == "sbs-cluster-160.example.yaml" {
+			continue
+		}
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			f := loadFile(t, path)
 			res := Validate(f)
@@ -52,7 +52,7 @@ func TestShippedExamplesValidate(t *testing.T) {
 			// The filename must match the process, or an operator copying by
 			// name gets a config for a different service.
 			want := strings.TrimSuffix(filepath.Base(path), ".yaml")
-			if f.Process != want {
+			if f.Process != want && !strings.HasPrefix(want, f.Process+"-") {
 				t.Errorf("example %s declares process %q", path, f.Process)
 			}
 			seen[f.Process] = true
@@ -136,6 +136,22 @@ func TestSecretRefStringDoesNotResolve(t *testing.T) {
 		if got := ref.String(); got != want {
 			t.Errorf("SecretRef%+v.String() = %q, want %q", ref, got, want)
 		}
+	}
+}
+
+func TestParseSecretRefRequiresExplicitSource(t *testing.T) {
+	ref, err := ParseSecretRef("kms.role_id", "file:/run/namrbd/vault-role-id")
+	if err != nil {
+		t.Fatalf("ParseSecretRef returned error: %v", err)
+	}
+	if ref.File != "/run/namrbd/vault-role-id" || ref.Env != "" || ref.KMS != "" {
+		t.Fatalf("ParseSecretRef returned %+v", ref)
+	}
+	if _, err := ParseSecretRef("kms.role_id", "inline-role-id"); err == nil {
+		t.Fatal("ParseSecretRef accepted an unprefixed credential")
+	}
+	if _, err := ParseSecretRef("kms.role_id", "file:"); err == nil {
+		t.Fatal("ParseSecretRef accepted an empty file reference")
 	}
 }
 

@@ -16,7 +16,7 @@ two projects is shown below.
 
 The public repository is intended to work as a normal open-source checkout for
 building, testing, inspecting, and packaging the platform. Source availability
-does not by itself mean that every integration is a supported v1.0 release
+does not by itself mean that every integration is a supported v1.1 release
 surface; [Feature Status](docs-src/feature-status.md) records that distinction.
 
 ## Contents
@@ -51,7 +51,7 @@ The open-source platform includes:
   exported volumes.
 
 Some integrations are available in source but have not yet been validated as
-supported v1.0 release surfaces. See [Feature Status](docs-src/feature-status.md)
+supported v1.1 release surfaces. See [Feature Status](docs-src/feature-status.md)
 before making deployment or compatibility assumptions.
 
 ## Advanced Features
@@ -247,8 +247,9 @@ Delve examples. Each top-level implementation directory also has a local
 `README.md` describing its role and interfaces. Durable technical decisions are
 indexed in [Architecture Decision Records](docs/adr/README.md).
 
-Release artifact expectations and the source-only status of `v1.0.0` are
-documented in [`RELEASE.md`](RELEASE.md). For issue and support boundaries, see
+Release artifact expectations for `v1.1.0` and the historical source-only
+status of `v1.0.0` are documented in [`RELEASE.md`](RELEASE.md). For issue and
+support boundaries, see
 [`SUPPORT.md`](SUPPORT.md).
 
 ## License

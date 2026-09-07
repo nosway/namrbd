@@ -10,7 +10,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -63,7 +62,6 @@ var buildVersion = namrbdversion.ProductVersion()
 
 var openClusterMetadataPebble = clustermeta.OpenPebbleKV
 var newSBSClusterClient = sbscluster.NewClient
-var gatewayMaterializeHTTPDo = http.DefaultClient.Do
 
 func main() {
 	for _, arg := range os.Args[1:] {
@@ -77,8 +75,8 @@ func main() {
 		{Legacy: "sbs-admin-endpoint", Canonical: "sbs-service-endpoint", DeprecatedIn: "post-1.0"},
 	}, os.Stderr)...)
 	os.Args = append(os.Args[:1], cliux.RewriteCommandArgs(os.Args[1:], false, false)...)
-	printConfig := flag.Bool("print-config", false, "emit an equivalent service config for this invocation on stdout and exit (AA-IMPL-002)")
-	configPath := flag.String("config", "", "service config file path (AA-IMPL-001D); when set, it supplies stable settings and explicitly typed flags still win")
+	printConfig := flag.Bool("print-config", false, "emit an equivalent service config for this invocation on stdout and exit")
+	configPath := flag.String("config", "", "service config file path; when set, it supplies stable settings and explicitly typed flags still win")
 	listenAddr := flag.String("control-http-listen", getenvCompatOrDefault(envcompat.GatewayControlListen, "0.0.0.0:9701"), "HTTP control-plane listen address")
 	dataListenAddr := flag.String("data-listen", ":9700", "binary dataplane listen address")
 	advertiseControlAddr := flag.String("advertise-control-address", "", "control-plane address advertised in metadata/discovery (defaults to host from --control-http-listen in dev)")
@@ -101,6 +99,7 @@ func main() {
 	sbsClusterMetadataPath := flag.String("sbs-cluster-metadata-path", "", "legacy/dev pebble SBS cluster metadata path; primary admin mode must not set this")
 	sbsClusterMetadataRoot := flag.String("sbs-cluster-metadata-root", "sbs/cluster", "legacy/dev raw SBS cluster metadata root prefix")
 	sbsAdminEndpoint := flag.String("sbs-service-endpoint", getenvCompatOrDefault(envcompat.GatewaySBSServiceEndpoint, ""), "sbs-service admin/internal gRPC endpoint for SBS target, volume, placement, and write authority")
+	sbsAuthenticatedAdminEndpoint := flag.String("sbs-authenticated-admin-endpoint", getenvCompatOrDefault(envcompat.GatewaySBSAuthenticatedAdminEndpoint, ""), "optional Enterprise mTLS AdminService endpoint; internal authority remains on --sbs-service-endpoint")
 	sbsClusterBootstrapMetadata := flag.Bool("sbs-cluster-bootstrap-metadata", false, "legacy/dev only: bootstrap SBS cluster metadata from gateway metadata and --sbs-cluster-replicas")
 	redisAddr := flag.String("redis-addr", "127.0.0.1:6379", "redis address (requires -tags legacy_redis)")
 	volumeSpec := flag.String("volumes", "", "volume specs: volume_id,prefix,size_bytes;...")
@@ -141,6 +140,7 @@ func main() {
 	phaseOPerformanceBurstIOPS := flag.Uint64("phase-o-performance-burst-iops", 0, "Phase O lab admission additional IOPS burst tokens")
 	phaseOPerformanceBurstBytes := flag.Uint64("phase-o-performance-burst-bytes", 0, "Phase O lab admission additional byte burst tokens")
 	phasePRepositoryFlags := registerPhasePRepositoryFlags(flag.CommandLine)
+	gatewayAdminOptions := registerGatewayAdminFlags(flag.CommandLine)
 	gatewayLeaseTTL := flag.Duration("gateway-lease-ttl", 15*time.Second, "TTL for gateway liveness lease in etcd")
 	gatewayStatusRefreshInterval := flag.Duration("gateway-status-refresh-interval", 5*time.Second, "gateway status refresh interval in etcd; jittered by +/-20%")
 	pathPlanReconcileInterval := flag.Duration("path-plan-reconcile-interval", 5*time.Second, "background desired/observed gateway path-plan reconcile interval; <=0 disables the worker")
@@ -179,9 +179,10 @@ func main() {
 		EtcdEndpoints: etcdEndpoints,
 		EtcdRoot:      etcdRoot,
 
-		SBSAdminEndpoint: sbsAdminEndpoint,
-		MetadataBackend:  metadataBackend,
-		DataBackendMode:  dataBackendMode,
+		SBSAdminEndpoint:              sbsAdminEndpoint,
+		SBSAuthenticatedAdminEndpoint: sbsAuthenticatedAdminEndpoint,
+		MetadataBackend:               metadataBackend,
+		DataBackendMode:               dataBackendMode,
 
 		VolumeCacheTTL:             volumeCacheTTL,
 		ZeroEvidenceCacheTTL:       sbsZeroEvidenceCacheTTL,
@@ -264,7 +265,7 @@ func main() {
 		BurstIOPS:                         *phaseOPerformanceBurstIOPS,
 		BurstBytes:                        *phaseOPerformanceBurstBytes,
 		GatewayID:                         *gatewayID,
-		SharedBudgetLeaseClientConfigured: strings.TrimSpace(*sbsAdminEndpoint) != "",
+		SharedBudgetLeaseClientConfigured: strings.TrimSpace(*sbsAuthenticatedAdminEndpoint) != "" || strings.TrimSpace(*sbsAdminEndpoint) != "",
 	})
 	if err != nil {
 		log.Fatalf("invalid Phase O performance admission options: %v", err)
@@ -290,6 +291,7 @@ func main() {
 		SBSClusterMetadataPath:              strings.TrimSpace(*sbsClusterMetadataPath),
 		SBSClusterMetadataRoot:              strings.TrimSpace(*sbsClusterMetadataRoot),
 		SBSAdminEndpoint:                    strings.TrimSpace(*sbsAdminEndpoint),
+		SBSAuthenticatedAdminEndpoint:       strings.TrimSpace(*sbsAuthenticatedAdminEndpoint),
 		SBSClusterBootstrapMetadata:         *sbsClusterBootstrapMetadata,
 		RedisAddr:                           *redisAddr,
 		VolumeCacheTTL:                      *volumeCacheTTL,
@@ -371,7 +373,7 @@ func main() {
 	var performanceBudgetLeaseClient httpapi.PerformanceBudgetLeaseClient
 	if performanceAdmissionCfg.Enabled && performanceAdmissionCfg.CapScope == phaseperformance.CapScopeClusterVolume {
 		var leaseCleanup func()
-		performanceBudgetLeaseClient, leaseCleanup, err = newAdminEndpointPerformanceBudgetLeaseClient(strings.TrimSpace(*sbsAdminEndpoint))
+		performanceBudgetLeaseClient, leaseCleanup, err = newAdminEndpointPerformanceBudgetLeaseClient(effectiveSBSAuthenticatedAdminEndpoint(repoCfg))
 		if err != nil {
 			log.Fatalf("initialize Phase O shared budget lease client: %v", err)
 		}
@@ -394,6 +396,19 @@ func main() {
 			prevCleanup()
 		}
 	}
+	gatewayRecord := gatewayRecordFromConfig(repoCfg)
+	gatewayAdminAuthorization, gatewayAdminAuthorizationCleanup, err := newGatewayAdminAuthorization(
+		gatewayAdminOptions, effectiveSBSAuthenticatedAdminEndpoint(repoCfg),
+		gatewayRecord.ClusterID, gatewayRecord.SBSClusterID, repoCfg.GatewayID,
+	)
+	if err != nil {
+		log.Fatalf("initialize gateway admin authorization: %v", err)
+	}
+	prevCleanup := cleanup
+	cleanup = func() {
+		gatewayAdminAuthorizationCleanup()
+		prevCleanup()
+	}
 	httpSrv := httpapi.New(svc, httpapi.Config{
 		ControlAddress:    effectiveAdvertisedAddress(*advertiseControlAddr, *listenAddr),
 		ControlPort:       uint16(controlPort),
@@ -412,7 +427,7 @@ func main() {
 			return ""
 		}(),
 		BackendDescription:             backendDesc,
-		AdminEndpointConfigured:        strings.TrimSpace(*sbsAdminEndpoint) != "",
+		AdminEndpointConfigured:        strings.TrimSpace(*sbsAuthenticatedAdminEndpoint) != "" || strings.TrimSpace(*sbsAdminEndpoint) != "",
 		StaticReplicaTargetsConfigured: len(parseReplicaTargets(*sbsClusterReplicas)) > 0,
 		LegacyRawFallbackAllowed:       *sbsClusterBootstrapMetadata,
 		MaxInflightRequests:            uint32(*maxInflightRequests),
@@ -449,6 +464,7 @@ func main() {
 			}
 		},
 		AttachAdmission:              attachAdmission,
+		GatewayAdminAuthorization:    gatewayAdminAuthorization,
 		PerformanceAdmission:         performanceAdmissionCfg,
 		PerformanceBudgetLeaseClient: performanceBudgetLeaseClient,
 		HTTPZeroBase64WriteFastPath:  *httpZeroBase64WriteFastPath,
@@ -462,6 +478,23 @@ func main() {
 		},
 	})
 	httpSrv.SetDependencyTracker(dependencyTracker)
+	gatewayAdminRuntime, err := newGatewayAdminHTTPRuntime(gatewayAdminOptions, httpSrv.AdminHandler())
+	if err != nil {
+		log.Fatalf("initialize authenticated gateway admin HTTP listener: %v", err)
+	}
+	if gatewayAdminRuntime != nil {
+		prevCleanup := cleanup
+		cleanup = func() {
+			_ = gatewayAdminRuntime.close()
+			prevCleanup()
+		}
+		go func() {
+			log.Printf("starting authenticated NAMRBD gateway admin HTTP on %s", gatewayAdminRuntime.address)
+			if serveErr := gatewayAdminRuntime.serve(); serveErr != nil && serveErr != http.ErrServerClosed {
+				log.Fatalf("gateway admin HTTP server stopped: %v", serveErr)
+			}
+		}()
+	}
 	if gcCollector != nil && *chunkGCInterval > 0 {
 		gcCtx, cancelGC := context.WithCancel(context.Background())
 		prevCleanup := cleanup
@@ -579,8 +612,12 @@ func main() {
 		log.Printf("dataplane listener disabled; advertising endpoint %s", *dataListenAddr)
 	}
 
+	productHandler := httpSrv.Handler()
+	if gatewayAdminOptions.enabled() {
+		productHandler = httpSrv.HandlerWithoutAdminRoutes()
+	}
 	log.Printf("starting NAMRBD gateway on %s (%s)", *listenAddr, backendDesc)
-	if err := serveHTTP(*listenAddr, httpSrv.Handler(), *controlTLSEnable, *controlTLSCertFile, *controlTLSKeyFile); err != nil {
+	if err := serveHTTP(*listenAddr, productHandler, *controlTLSEnable, *controlTLSCertFile, *controlTLSKeyFile); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -676,6 +713,7 @@ type repositoryConfig struct {
 	SBSClusterMetadataPath              string
 	SBSClusterMetadataRoot              string
 	SBSAdminEndpoint                    string
+	SBSAuthenticatedAdminEndpoint       string
 	SBSClusterBootstrapMetadata         bool
 	RedisAddr                           string
 	VolumeCacheTTL                      time.Duration
@@ -743,6 +781,13 @@ func validatePrimaryClusterRuntimeConfig(cfg repositoryConfig) error {
 		return fmt.Errorf("primary SBS runtime must not set --sbs-cluster-metadata-path; local pebble metadata paths are legacy/dev bootstrap only")
 	}
 	return nil
+}
+
+func effectiveSBSAuthenticatedAdminEndpoint(cfg repositoryConfig) string {
+	if endpoint := strings.TrimSpace(cfg.SBSAuthenticatedAdminEndpoint); endpoint != "" {
+		return endpoint
+	}
+	return strings.TrimSpace(cfg.SBSAdminEndpoint)
 }
 
 func newRepositories(cfg repositoryConfig) (service.MetadataRepository, service.DataRepository, *service.ChunkGarbageCollector, *clustercontrol.Controller, string, func(), error) {
@@ -948,7 +993,7 @@ func newDataRepository(ctx context.Context, meta service.MetadataRepository, cfg
 				return nil, nil, nil, nil, "", nil, err
 			}
 			if target.Kind == replicaTargetGRPC {
-				client = newGatewayMaterializingSBSClient(client, targetAdminHTTPEndpoint(target), volumeLookup)
+				client = newGatewayMaterializingSBSClient(client, volumeLookup)
 			}
 			replicaClients[replicaID] = client
 			cleanupFns = append(cleanupFns, closeFn)
@@ -1085,6 +1130,9 @@ func newDataRepository(ctx context.Context, meta service.MetadataRepository, cfg
 			desc += " bootstrap_metadata=legacy-dev"
 		} else {
 			desc += " admin_endpoint=" + cfg.SBSAdminEndpoint
+			if adminEndpoint := strings.TrimSpace(cfg.SBSAuthenticatedAdminEndpoint); adminEndpoint != "" {
+				desc += " authenticated_admin_endpoint=" + adminEndpoint
+			}
 		}
 		if cfg.PhaseP.SBSClusterReplicatedPayloadEncryption {
 			desc += " phase_p_sbs_cluster_replicated_payload_encryption=local_fixture"
@@ -1438,7 +1486,7 @@ func newClusterVolumeLookup(repo rawClusterVolumeSpecReader, ttl time.Duration) 
 
 func newPublishedClusterVolumeLookup(cfg repositoryConfig, fallback sbscluster.VolumeLookup, ttl time.Duration) sbscluster.VolumeLookup {
 	return sbscluster.NewPublishedVolumeLookup(sbscluster.PublishedVolumeLookupOptions{
-		Endpoint:         cfg.SBSAdminEndpoint,
+		Endpoint:         effectiveSBSAuthenticatedAdminEndpoint(cfg),
 		ClusterID:        gatewayClusterIdentityFromConfig(cfg),
 		SBSClusterID:     sbsClusterIdentityFromConfig(cfg),
 		Fallback:         fallback,
@@ -1449,7 +1497,7 @@ func newPublishedClusterVolumeLookup(cfg repositoryConfig, fallback sbscluster.V
 
 func newPublishedVolumePlacementResolvers(cfg repositoryConfig, fallbackMappings runtimeExtentMappingMetadataResolver, fallbackSets runtimeReplicaSetMetadataResolver) (runtimeExtentMappingMetadataResolver, runtimeReplicaSetMetadataResolver) {
 	return sbscluster.NewPublishedVolumePlacementResolvers(sbscluster.PublishedVolumePlacementOptions{
-		Endpoint:         cfg.SBSAdminEndpoint,
+		Endpoint:         effectiveSBSAuthenticatedAdminEndpoint(cfg),
 		ClusterID:        gatewayClusterIdentityFromConfig(cfg),
 		SBSClusterID:     sbsClusterIdentityFromConfig(cfg),
 		TTL:              cfg.VolumeCacheTTL,
@@ -1595,7 +1643,7 @@ func serviceProtectedStateFromCluster(rec *clustermeta.VolumeProtectedStateRecor
 
 func newPublishedAllocationPageReader(cfg repositoryConfig, fallback runtimeAllocationPageReader) sbsclusterAllocationPageReader {
 	return sbscluster.NewPublishedAllocationPageReader(sbscluster.PublishedAllocationPageReaderOptions{
-		Endpoint:         cfg.SBSAdminEndpoint,
+		Endpoint:         effectiveSBSAuthenticatedAdminEndpoint(cfg),
 		ClusterID:        gatewayClusterIdentityFromConfig(cfg),
 		SBSClusterID:     sbsClusterIdentityFromConfig(cfg),
 		Fallback:         fallback,
@@ -1971,7 +2019,7 @@ func newAdminEndpointPlacementResolverDefault(cfg repositoryConfig) (runtimePlac
 var newAdminEndpointSourceSnapshotLister = newAdminEndpointSourceSnapshotListerDefault
 
 func newAdminEndpointSourceSnapshotListerDefault(cfg repositoryConfig) (runtimeSourceSnapshotLister, func(), error) {
-	return clustercontrol.NewAdminEndpointSourceSnapshotLister(cfg.SBSAdminEndpoint)
+	return clustercontrol.NewAdminEndpointSourceSnapshotLister(effectiveSBSAuthenticatedAdminEndpoint(cfg))
 }
 
 func newAdminEndpointPerformanceBudgetLeaseClient(endpoint string) (httpapi.PerformanceBudgetLeaseClient, func(), error) {
@@ -2376,20 +2424,21 @@ func splitReplicaEndpoint(raw string) (string, uint16, error) {
 
 func loadSBSClusterReplicaTargets(ctx context.Context, cfg repositoryConfig, clusterRepo rawReplicaTargetMetadataReader) (map[string]replicaTarget, string, error) {
 	replicaTargets := cfg.SBSClusterReplicas
-	if strings.TrimSpace(cfg.SBSAdminEndpoint) != "" {
+	adminEndpoint := effectiveSBSAuthenticatedAdminEndpoint(cfg)
+	if adminEndpoint != "" {
 		targets, err := resolveReplicaTargetsFromAdmin(ctx, cfg)
 		if err == nil && len(targets) > 0 {
 			return targets, "published-view", nil
 		}
 		if err != nil {
 			if len(replicaTargets) > 0 {
-				log.Printf("gateway published replica targets view unavailable via sbs-admin endpoint %q: %v; activating static replica target fallback", cfg.SBSAdminEndpoint, err)
+				log.Printf("gateway published replica targets view unavailable via authenticated admin endpoint %q: %v; activating static replica target fallback", adminEndpoint, err)
 				return replicaTargets, "static-config-fallback", nil
 			}
 			if !cfg.SBSClusterBootstrapMetadata {
-				return nil, "", fmt.Errorf("published replica targets view unavailable via sbs-admin endpoint %q: %w", cfg.SBSAdminEndpoint, err)
+				return nil, "", fmt.Errorf("published replica targets view unavailable via authenticated admin endpoint %q: %w", adminEndpoint, err)
 			}
-			log.Printf("gateway published replica targets view unavailable via sbs-admin endpoint %q: %v; activating legacy raw cluster metadata bootstrap fallback", cfg.SBSAdminEndpoint, err)
+			log.Printf("gateway published replica targets view unavailable via authenticated admin endpoint %q: %v; activating legacy raw cluster metadata bootstrap fallback", adminEndpoint, err)
 		}
 	}
 	if len(replicaTargets) > 0 {
@@ -2534,7 +2583,7 @@ func resolveReplicaTargetsFromMetadata(ctx context.Context, repo rawReplicaTarge
 }
 
 func resolveReplicaTargetsFromAdmin(ctx context.Context, cfg repositoryConfig) (map[string]replicaTarget, error) {
-	adminEndpoint := strings.TrimSpace(cfg.SBSAdminEndpoint)
+	adminEndpoint := effectiveSBSAuthenticatedAdminEndpoint(cfg)
 	if adminEndpoint == "" {
 		return nil, fmt.Errorf("admin endpoint is required")
 	}
@@ -2669,7 +2718,7 @@ func normalizedAdminHTTPEndpoint(raw string) string {
 
 func newPublishedReplicaTargetAvailabilityProvider(cfg repositoryConfig) sbscluster.ReplicaTargetAvailabilityProvider {
 	return sbscluster.NewPublishedReplicaTargetAvailabilityProvider(sbscluster.PublishedReplicaTargetAvailabilityOptions{
-		Endpoint:     cfg.SBSAdminEndpoint,
+		Endpoint:     effectiveSBSAuthenticatedAdminEndpoint(cfg),
 		ClusterID:    gatewayClusterIdentityFromConfig(cfg),
 		SBSClusterID: sbsClusterIdentityFromConfig(cfg),
 		TTL:          cfg.VolumeCacheTTL,
@@ -2710,7 +2759,7 @@ func newRawReplicaTargetAvailabilityProvider(repo rawReplicaTargetMetadataReader
 
 func newPublishedNodeMembershipResolver(cfg repositoryConfig, fallback rawReplicaTargetMetadataReader) sbsclusterNodeMembershipResolver {
 	return sbscluster.NewPublishedNodeMembershipResolver(sbscluster.PublishedNodeMembershipOptions{
-		Endpoint:         cfg.SBSAdminEndpoint,
+		Endpoint:         effectiveSBSAuthenticatedAdminEndpoint(cfg),
 		ClusterID:        gatewayClusterIdentityFromConfig(cfg),
 		SBSClusterID:     sbsClusterIdentityFromConfig(cfg),
 		Fallback:         fallback,
@@ -2739,20 +2788,20 @@ func nodeEligibleForGatewayReplicaTarget(ctx context.Context, repo rawReplicaTar
 
 type gatewayMaterializingSBSClient struct {
 	next           service.SBSClient
-	adminHTTP      string
+	materializer   service.VolumeMaterializerSBSClient
 	lookup         sbscluster.VolumeLookup
 	materializedMu sync.Mutex
 	materialized   map[string]bool
 }
 
-func newGatewayMaterializingSBSClient(next service.SBSClient, adminHTTP string, lookup sbscluster.VolumeLookup) service.SBSClient {
-	adminHTTP = strings.TrimRight(strings.TrimSpace(adminHTTP), "/")
-	if next == nil || adminHTTP == "" || lookup == nil {
+func newGatewayMaterializingSBSClient(next service.SBSClient, lookup sbscluster.VolumeLookup) service.SBSClient {
+	materializer, ok := next.(service.VolumeMaterializerSBSClient)
+	if next == nil || !ok || lookup == nil {
 		return next
 	}
 	return &gatewayMaterializingSBSClient{
 		next:         next,
-		adminHTTP:    adminHTTP,
+		materializer: materializer,
 		lookup:       lookup,
 		materialized: make(map[string]bool),
 	}
@@ -2763,13 +2812,13 @@ func (c *gatewayMaterializingSBSClient) OpenVolume(ctx context.Context, req *ser
 	if err == nil || !isSBSNotFoundError(err) || req == nil {
 		return resp, err
 	}
-	if materializeErr := c.materialize(ctx, req.VolumeID); materializeErr != nil {
+	if materializeErr := c.materialize(ctx, req.VolumeID, req.Context); materializeErr != nil {
 		return nil, fmt.Errorf("%w; materialize target volume: %v", err, materializeErr)
 	}
 	return c.next.OpenVolume(ctx, req)
 }
 
-func (c *gatewayMaterializingSBSClient) materialize(ctx context.Context, volumeID string) error {
+func (c *gatewayMaterializingSBSClient) materialize(ctx context.Context, volumeID string, requestContext service.SBSRequestContext) error {
 	c.materializedMu.Lock()
 	defer c.materializedMu.Unlock()
 	if c.materialized[volumeID] {
@@ -2783,28 +2832,12 @@ func (c *gatewayMaterializingSBSClient) materialize(ctx context.Context, volumeI
 	if err != nil {
 		return err
 	}
-	q := url.Values{}
-	q.Set("volume_id", service.CanonicalVolumeID(parsedID))
-	q.Set("size_bytes", strconv.FormatUint(spec.SizeBytes, 10))
-	q.Set("block_size", strconv.FormatUint(uint64(spec.BlockSize), 10))
-	q.Set("prefix", strings.TrimSpace(spec.Prefix))
-	if spec.ChunkSizeBytes != 0 {
-		q.Set("chunk_size_bytes", strconv.FormatUint(uint64(spec.ChunkSizeBytes), 10))
-	}
-	if spec.ExtentPageBytes != 0 {
-		q.Set("extent_page_bytes", strconv.FormatUint(uint64(spec.ExtentPageBytes), 10))
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.adminHTTP+"/debug/materialize-volume?"+q.Encode(), nil)
-	if err != nil {
+	spec.ID = service.HexVolumeID(parsedID)
+	if _, err := c.materializer.MaterializeVolume(ctx, &service.MaterializeVolumeRequest{
+		Spec:    spec,
+		Context: requestContext,
+	}); err != nil {
 		return err
-	}
-	resp, err := gatewayMaterializeHTTPDo(httpReq)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("materialize volume returned status %s", resp.Status)
 	}
 	c.materialized[volumeID] = true
 	return nil

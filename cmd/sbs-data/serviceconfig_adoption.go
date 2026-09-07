@@ -38,6 +38,8 @@ var envBackedFlags = map[string]string{
 	"sbs-data-listen":                        "NAMRBD_SBS_DATA_GRPC_LISTEN",
 	"sbs-data-http-listen":                   "NAMRBD_SBS_DATA_HTTP_LISTEN",
 	"enable-lab-store-debug":                 "NAMRBD_SBS_ENABLE_LAB_STORE_DEBUG",
+	"enable-lab-physical-inspection":         "NAMRBD_SBS_ENABLE_LAB_PHYSICAL_INSPECTION",
+	"enable-lab-physical-cleanup":            "NAMRBD_SBS_ENABLE_LAB_PHYSICAL_CLEANUP",
 	"lab-disable-idempotency-sync":           "NAMRBD_SBS_LAB_DISABLE_IDEMPOTENCY_SYNC",
 	"lab-cache-open-volume-spec":             "NAMRBD_SBS_LAB_CACHE_OPEN_VOLUME_SPEC",
 	"lab-disable-physical-write-idempotency": "NAMRBD_SBS_LAB_DISABLE_PHYSICAL_WRITE_IDEMPOTENCY",
@@ -52,6 +54,8 @@ var envBackedFlags = map[string]string{
 // different correctness contract.
 var sbsDataLabFlagsRejectedAtScale = map[string]string{
 	"enable-lab-store-debug":                 "the debug store mutation endpoints let an operator change store state outside any audited path",
+	"enable-lab-physical-inspection":         "the physical chunk inspection endpoint exposes node-local payload presence outside the authenticated service API",
+	"enable-lab-physical-cleanup":            "the exact physical cleanup endpoint deletes approval-bound node-local payload outside the authenticated service API",
 	"lab-disable-idempotency-sync":           "skipping the idempotency sync trades durability for speed",
 	"lab-cache-open-volume-spec":             "reusing an opened volume spec on hot requests trades revalidation for speed",
 	"lab-disable-physical-write-idempotency": "skipping durable idempotency lookup on physical writes trades correctness for speed",

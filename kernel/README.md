@@ -18,4 +18,3 @@ Build with `make kernel-module` on Linux using headers that match the running
 kernel. A successful compile is not runtime-I/O or compatibility evidence;
 record kernel/header/module versions and run attach/read/write/flush/discard and
 path-failure tests for any support claim.
-

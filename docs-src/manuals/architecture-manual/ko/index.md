@@ -1,7 +1,7 @@
 첫 번째 판
 
 Advanced feature 안내: 이 문서의 Enterprise 기능은 개발·검증 중인 설계이며
-공개 v1.0 지원 범위가 아닙니다. 기능 상태 문서가 공개 경계의 기준입니다.
+공개 v1.1 지원 범위가 아닙니다. 기능 상태 문서가 공개 경계의 기준입니다.
 
 # NAMRBD 플랫폼 아키텍처
 
@@ -289,7 +289,7 @@ NAMRBD는 호스트 로컬 런타임, 게이트웨이의 승인/라우팅 경로
 | `namrbd-gateway` | Host admission, request conversion, SBS client call, short-lived read-through cache. | etcd attachment/generation, SBS published placement view. | SBS 로우 메타데이터 권한, 자가 오류 복구/데이터 리밸런싱/드레인(drain), EC 복구 엔진. |
 | `sbs-service` | Cluster metadata, volume geometry, placement, topology, snapshot, clone, GC root, maintenance, enterprise Backup/DR target/policy/run/artifact/hold/status state, remote DR replication-link/recovery-point/shipping-manifest/shipping-worker state. | `sbs-data` health/capacity report와 operation result. | Host-local blk-mq queueing과 kernel path retry policy. |
 | `sbs-data` | 로컬 페이로드 read/write/delete, local store metadata, local idempotency. | SBS service command와 local store state. | Cluster membership, global placement, global reachability truth. |
-| `sbs-service` operations views | `namrbd.sbs.observability.v1`, membership status, capacity, reclaim, operation summary, MCP descriptor, GUI descriptor, workflow hardening evidence, static operations console을 read-only로 조립한다. | `sbs-service` metadata, `sbs-data` health detail, gateway/control-plane membership/liveness summary. | Storage mutation authority, live iSCSI HA authority, GUI/MCP action authority, AdminService 또는 gateway control-plane state의 대체 권한. |
+| `sbs-service` summary projection과 operations views | Transaction으로 파생된 64-way sharded cluster counter, bounded rebuild/outbox state, signed fleet observation과 `namrbd.sbs.observability.v1` aggregate/page/point view를 read-only로 조립한다. | Authoritative `sbs-service` record, `sbs-data` health/capacity detail, gateway/control-plane membership/liveness summary. | Raw TiKV 대체 권한, storage mutation authority, silent full-scan fallback, live iSCSI HA authority, GUI/MCP action authority. |
 | `namrbd-csi-driver` | CSI Identity/Controller/Node translation. | NAMRBD 관리 도구, 무상태 게이트웨이, 호스트 제어 API. | Storage semantics, snapshot cut point, topology, fencing, read-view, GC. |
 
 <div class="diagram" markdown="1">
@@ -344,8 +344,8 @@ NAMRBD는 호스트 로컬 런타임, 게이트웨이의 승인/라우팅 경로
 | Foreground read/write/flush/discard/zero I/O | 커널은 적용된 manifest와 local path health를 사용한다. Gateway는 attachment, generation, idempotency context, published SBS target view를 사용한다. `sbs-data`는 local Pebble payload/store state와 request context에 의존한다. | Linux block I/O는 kernel로 들어간 뒤 persistent TCP dataplane path로 gateway에 전달된다. Gateway는 요청을 SBS context로 변환하고 선택된 `sbs-data` node의 `sbs/v1.VolumeService` gRPC를 호출한다. | Gateway retry와 routing은 availability concern이다. Correctness는 SBS metadata visibility, stale attachment/generation check, idempotency, 선택된 backend의 payload persistence가 방어한다. |
 | 디바이스 마운트 해제 / 물리 경로 분리 / 볼륨 속성 재구성 | Detach는 etcd의 gateway/control-plane attachment state와 커널의 현재 local device/path state를 참조한다. Gateway liveness와 path health를 관측할 수 있지만 raw SBS metadata를 다시 해석할 필요는 없다. | Host tooling은 gateway detach/info path와 kernel control path를 호출한다. Kernel은 local device/path state를 제거하거나 갱신하고, gateway는 control-plane attachment state를 갱신하며 runtime status를 보고한다. | Detach는 placement, repair, storage metadata mutation이 아니다. Host-local path가 깨끗하게 사라졌다는 사실을 신뢰하기보다 attachment/generation check로 stale writer를 fence해야 한다. |
 | Gateway 고가용성 | Gateway registry, liveness, attachment, generation은 etcd에 있다. Gateway-facing replica target view는 `sbs-service`에서 오며 짧게 cache될 수 있다. Gateway restart 후에도 committed SBS metadata/payload state가 authority다. | 여러 gateway가 HTTP control endpoint와 persistent TCP dataplane endpoint를 노출할 수 있다. Host manifest와 kernel path health가 사용할 수 있는 gateway path를 결정하고, gateway instance들은 같은 published-view 및 `VolumeService` surface를 통해 SBS를 호출한다. | Gateway는 교체 가능한 routing/adaptation state이지 durable storage authority가 아니다. Gateway-local cache는 placement truth가 될 수 없고, multi-gateway correctness는 SBS fencing/idempotency와 committed metadata에 의존해야 한다. |
-| SBS cluster 고가용성과 metadata 유지 | `sbs-service`는 cluster bootstrap, leader/admin operation, node membership, node health, volume metadata, placement, allocation page, transition state를 TiKV에 저장한다. `sbs-data`는 node-local payload와 local execution state를 Pebble에 저장한다. | `sbsctl`과 gateway-facing control path는 `sbs-service` admin/published-view API를 호출한다. `sbs-service`는 HTTP/debug health surface와 gRPC reachability를 조합해 node/store health를 reconcile하고 gateway-facing target view를 게시한다. | `sbs-service`가 unavailable이면 admin과 maintenance 작업은 멈추거나 degrade되어야 하지만, 이미 routing된 foreground I/O가 gateway-local metadata authority를 필요로 해서는 안 된다. TiKV는 cluster metadata를, local Pebble은 local payload state를 소유한다. |
-| Backup/DR and remote DR 백업 및 크로스 리전 DR 컨트롤 플레인 | Backup target, policy, run record, restore-drilled artifact availability, retention hold, purge dry-run guardrail, Backup/DR status summary, remote DR replication link, recovery point, shipping manifest, shipping worker. | Enterprise `sbsctl backup`, `sbsctl dr link`, `sbsctl dr recovery-point`, `sbsctl dr shipping-manifest`, `sbsctl dr shipping-worker`는 `sbs-service` admin API를 호출한다. Fixture validation은 JSON evidence를 낼 수 있지만 product state는 `sbs-service`가 지속화한다. | Backup/DR automation은 enterprise-only다. U-CTRL-003A는 DR link, recovery-point, manifest, shipping-worker admission state만 기록하며 remote transfer completion, standby import, promote/demote, failover support는 계속 gate 뒤에 둔다. |
+| SBS cluster 고가용성과 metadata 유지 | `sbs-service`는 authoritative cluster state를 TiKV에 저장하고 source mutation과 함께 summary delta 또는 outbox entry를 commit하며 maintenance work-ready index를 rebuildable access path로 유지한다. `sbs-data`는 node-local payload와 local execution state를 Pebble에 저장한다. | Normal fleet polling은 bounded summary shard를 읽고 detail caller는 revision-pinned page 또는 point API를 사용한다. Maintenance worker는 cluster 전체를 재탐색하지 않고 indexed work를 lease로 claim한다. | Raw TiKV source record가 authority다. Derived projection/index는 rebuild할 수 있지만 storage truth를 만들거나 silent all-scan을 유발하거나 gateway/client로 authority를 옮겨서는 안 된다. |
+| Backup/DR and remote DR 백업 및 크로스 리전 DR 컨트롤 플레인 | Backup target, policy, run record, restore-drilled artifact availability, retention hold, purge dry-run guardrail, Backup/DR status summary, remote DR replication link, recovery point, shipping manifest, shipping worker. | Enterprise `sbsctl backup`, `sbsctl dr link`, `sbsctl dr recovery-point`, `sbsctl dr shipping-manifest`, `sbsctl dr shipping-worker`는 `sbs-service` admin API를 호출한다. Fixture validation은 JSON evidence를 낼 수 있지만 product state는 `sbs-service`가 지속화한다. | Backup/DR automation은 enterprise-only다. Product record는 DR link, recovery-point, manifest, shipping-worker admission state만 기록하며 remote transfer completion, standby import, promote/demote, failover support는 계속 gate 뒤에 둔다. |
 | SBS maintenance: repair, rebalance, drain, rebuild, scrub | Maintenance는 TiKV topology, placement, allocation, node/store health, operation record, read-view root, backend descriptor를 소비한다. 또한 local `sbs-data` health/capacity와 payload operation result를 소비한다. | `sbsctl` 또는 controller가 `sbs-service` admin API를 호출한다. `sbs-service`는 transition state를 TiKV에 기록하고, eligible source/target을 선택한 뒤 SBS execution API를 통해 `sbs-data`에 read/write/copy/delete 작업을 지시한다. | Gateway와 kernel은 target availability 변화와 path reload를 관측할 수 있지만 maintenance planning을 소유하지 않는다. Maintenance는 read-view root, generation/idempotency boundary, backend-specific payload lifetime rule을 보존해야 한다. |
 
 ## 의존성 읽기 규칙
@@ -353,6 +353,13 @@ NAMRBD는 호스트 로컬 런타임, 게이트웨이의 승인/라우팅 경로
 API 호출은 소유권이 아니다. `namrbdctl`은 gateway에 attach를 요청할 수 있고, gateway는 `sbs-service`에 placement view를 요청할 수 있으며, `sbs-service`는 `sbs-data`에 payload 작업 실행을 요청할 수 있다. 하지만 authoritative state는 ownership matrix에 명명된 컴포넌트와 메타데이터 저장소에 남아 있다.
 
 캐시 역시 소유권이 아니다. Gateway와 `sbs-service` cache는 읽기 지연을 줄이거나 hot path를 보호할 수 있지만, cache miss는 owning authority로 돌아가야 하고 cache hit도 fencing, generation, idempotency, reachability rule을 우회해서는 안 된다.
+
+Derived index와 projection도 두 번째 authority가 아니라 access path다. Phase
+AD summary delta는 authoritative source transaction을 공유하거나 durable
+outbox로 들어가고, maintenance work index는 lease 전에 source record로 다시
+검증되며, rebuild는 cursor-bounded/revision-pinned 방식으로 진행된다.
+Projection이 stale, partial, rebuild-required이면 unbounded compatibility
+scan으로 숨기지 않고 그 상태를 caller에게 반환한다.
 
 ## 리뷰 패턴
 
@@ -657,6 +664,24 @@ Pebble
 | TiKV | SBS cluster metadata: volume, allocation page, placement, replica set, topology, operation. | `sbs-service` leader. | `sbs/cluster/volumes/<id>/allocation/pages/`, 노드 멤버십 관리, 세부 운영 기록 제어. |
 | local Pebble | Node-local volume materialization, local idempotency, local store metadata, payload chunk 또는 shard. | `sbs-data` node. | `volumes/<id>/state`, `volumes/<prefix>/chunks/`. |
 
+## Bounded derived metadata
+
+Rebuildable access path는 routine fleet polling과 background work가
+authoritative TiKV record 전체를 반복 열거하지 않도록 한다. 이 record들은
+source authority를 대체하지 않는다.
+
+| Derived family | 쓰기 및 일관성 규칙 | 읽기 또는 작업 규칙 |
+|----|----|----|
+| Cluster summary projection | Source writer가 canonical before/after delta를 authoritative mutation과 같은 transaction에 commit하거나 같은 transaction의 durable outbox에 넣는다. Subject id는 64개 virtual shard 중 하나로 hash되며 mutation마다 global counter key 하나를 직렬화하지 않는다. | `/api/v1/sbs/cluster`는 bounded shard set을 읽고 source/baseline revision, freshness, partial, rebuild-required를 노출한다. Raw cluster full scan으로 fallback하지 않는다. |
+| Summary outbox | Event id와 delta digest로 idempotent하게 처리하며 한 번에 최대 512개인 한 page만 소비한다. | Pending entry를 observable하게 유지하고 한 request 안에 unbounded completion을 숨기지 않는다. |
+| Rebuild shadow | Revision-pinned source page를 epoch-scoped shadow shard와 cursor checkpoint로 만들고 전체 source revision이 표현된 뒤에만 promote한다. Revision 변경, 중복 subject, invalid digest, incomplete epoch는 fail closed한다. | 한 번에 bounded page 하나만 진행하며 promotion 전에는 degraded/rebuild-required health를 명시한다. |
+| Maintenance work-ready index | Owning mutation이 source work record와 reason/state/priority access path를 함께 갱신한다. Queue entry는 rebuildable derived record다. | Worker가 candidate를 page로 읽고 source authority를 확인한 뒤 generation/expiry/digest가 있는 bounded lease를 획득한다. |
+| Placement-by-node affected set | Placement 변경이 authoritative placement와 함께 node별 affected volume/extent 관계를 유지한다. | Drain/repair planning은 전체 cluster를 nested enumeration하지 않고 선택된 node에 영향받는 record만 읽는다. |
+
+Source record는 projection/index를 재생성할 수 있지만 그 반대는 허용되지
+않는다. Counter underflow/overflow, checksum mismatch, source revision 이동은
+best-effort full scan을 제공할 사유가 아니라 integrity error다.
+
 <div class="diagram" markdown="1">
 
 <div class="diagram-title">메타데이터 분리</div>
@@ -707,7 +732,7 @@ Payload와 local execution state는 각 `sbs-data` node의 Pebble에 있다.
 | Backend Descriptor | PhysicalObjectRef에 붙는 replicated 또는 EC-specific layout이다. 예를 들어 physical chunk start/count 또는 EC stripe/shard reference가 있다. | Backend dispatch 위에서는 opaque하다. Logical allocation truth가 아니다. |
 | Read View | Read가 해석 기준으로 삼는 identity다. Live volume, snapshot root, clone overlay, materialized clone이 여기에 해당한다. Raw VolumeRevision과는 별도다. | Resolver는 AllocationEntry span을 반환한다. Replica connection을 열거나 EC를 decode하거나 payload object를 삭제하지 않는다. |
 | Operation Record | Mutation, placement, snapshot, clone, delete, maintenance의 진행 상태를 지속적으로 기록하는 레코드이며 idempotency와 replay state를 담는다. | `sbs-service`가 retry 또는 leader change 이후 부분적으로 끝난 작업을 완료하거나 분류하는 데 사용한다. |
-| Backup/DR Control Record | Backup/DR enterprise state와 remote DR state다. Backup target, policy, run record, restore-drilled artifact availability, retention hold, purge plan, status summary, DR replication link, recovery point, shipping manifest, shipping worker를 담는다. | `sbs-service`가 지속화한다. U-CTRL-003A state는 control-plane identity, manifest binding, shipping-worker admission일 뿐 gateway, data-node, kernel, remote transfer completion, promote, failover authority가 아니다. |
+| Backup/DR Control Record | Backup/DR enterprise state와 remote DR state다. Backup target, policy, run record, restore-drilled artifact availability, retention hold, purge plan, status summary, DR replication link, recovery point, shipping manifest, shipping worker를 담는다. | `sbs-service`가 지속화한다. Shipping-worker admission state는 control-plane identity와 manifest binding만 다루며 gateway, data-node, kernel, remote transfer completion, promote, failover authority가 아니다. |
 | Security/Compliance Control Record | Security/Compliance enterprise state다. Security provider, policy, volume binding, data key, key-access lease, rotation plan, audit event, crypto erase plan, encrypted backup-artifact evidence를 담는다. | `sbs-service`가 지속화한다. Gateway는 admission, lease, unwrap authority를 소비하고 kernel은 gateway admission 결과를 적용할 뿐 key material이나 KMS state를 소유하지 않는다. |
 
 ## 공통 매핑 구조
@@ -1843,21 +1868,35 @@ Replicated와 EC placement는 모두 같은 topology model을 사용한다. Repl
 
 ## Topology installation workflow
 
-일반적인 설치는 먼저 zone을 선언하고, node를 zone assignment와 함께 join하며, topology를 검증한 뒤 그 topology를 사용하는 placement policy로 volume을 만든다. Store detail은 `sbs-data`가 보고하고 node membership/store health를 통해 admit된다. Topology는 kernel이나 gateway가 따로 소유하는 source of truth가 아니다.
+소규모 수동 설치는 zone 생성과 node join을 직접 수행할 수 있다. Fleet
+설치는 identity, address, topology, role, store claim, service config를
+mutation 전에 하나의 canonical 문서로 검토하는 strict manifest workflow를
+사용한다.
 
-    sbsctl topology zone create --zone zone-a
-    sbsctl topology zone create --zone zone-b
-    sbsctl topology zone create --zone zone-c
+    sbsctl cluster manifest validate --file fleet.yaml --approved-artifact-digest sha256:<digest> --output json
+    sbsctl cluster manifest render --file fleet.yaml --approved-artifact-digest sha256:<digest> --output-dir rendered
+    sbsctl cluster manifest plan --file fleet.yaml --approved-artifact-digest sha256:<digest> --plan-output plan.json --output json
+    sbsctl host check --local --manifest fleet.yaml --bundle rendered/nodes/<node-id> --node-id <node-id> --plan-id <plan-id> ...
+    sbsctl cluster manifest admit --file fleet.yaml --plan-id <plan-id> --reports-dir reports --trust-bundle trust.json --join-plan-output join-plan.json ...
+    sbsctl cluster manifest rollout start --file fleet.yaml --join-plan join-plan.json --operation-output rollout-1.json ...
 
-    sbsctl node join --node-id data-01 --zone zone-a
-    sbsctl node join --node-id data-02 --zone zone-b
-    sbsctl node join --node-id data-03 --zone zone-c
+Validate, render, plan, check, admit, rollout state transition은 TiKV, payload
+storage, daemon control에 대해 pure하다. Rollout 문서는 외부에서 실행할
+batch를 기술할 뿐 SSH, disk provisioning, daemon start/stop을 직접 수행하지
+않는다. 중복 node id/address/device claim, secret literal, destructive
+provisioning, topology/role 위반은 apply 전에 거부된다.
 
-    sbsctl topology validate --output json
-    sbsctl topology summary --output json
-    sbsctl volume create --failure-domain zone --topology-mode strict ...
+Exact logical fleet fixture는 `node1`부터 `node160`, 8개 zone마다 20개 node,
+active 3 + standby 2 `sbs-service` 배치를 검증한다. 이는
+manifest/schema/canonicalization과 software workflow evidence이며 160개의
+독립 물리 서버 qualification은 아니다. 물리 qualification은 hardware
+registry에서 별도로 추적한다.
 
-운영 중에는 `sbsctl topology zone update --zone <zone> --disable`로 새 placement가 특정 zone에 들어가지 않게 하거나, `sbsctl node update-topology --node-id <node> --zone <zone>`으로 통제된 reassignment를 수행할 수 있다. Drain과 rebalance는 변경 후 topology가 안전하다는 preflight 이후에만 진행해야 한다.
+Topology 변경은 새 manifest generation으로 plan/check/admit을 다시 거친다.
+Drain/rebalance는 변경 후 placement가 안전하다는 preflight 뒤에만 진행한다.
+소규모 환경의 direct zone/node command는 유효하지만 client가 존재하지 않는
+`topology validate`, `topology summary`, zone-disable command를 만들어서는 안
+된다.
 
 GUI와 MCP membership integration은 read-only proposal surface로 시작한다. 의도한 변경과 evidence를 요약할 수는 있지만, 실제 membership 변경 적용은 owning product API, human approval, rollback guidance, audit record를 거쳐야 한다. Force-remove는 정상 evidence chain을 끊을 수 있으므로 break-glass operation으로 취급한다.
 
@@ -1919,6 +1958,10 @@ Validation claim은 observable이 의도한 mode가 active였음을 증명할 �
 | CSI sanity | `upstream_csi_test_version`, capability, `ok_count`, `error_count`, first/last error. |
 | Discard | `operation`, `policy`, `discard_bytes`, `logical_zero_bytes`, `reclaimable_bytes`, alignment. |
 | Topology/EC | EC 프로필 식별자, 영역별 샤드 수량, 저하/재구축 진행 상태, 데이터 블락 사유. |
+| Bounded aggregate | `request_class=aggregate`, projection health/reason, source/baseline revision, revision lag, freshness age, `partial`, `stale`, `rebuild_required`. |
+| Bounded page/point | Entity kind, page size, item count, server continuation token, source revision, filter, `automatic_page_completion=false` 또는 exact point id/found state. |
+| Metadata pressure | Point/batch/range-page/full-scan/retry count와 duration, hot-region candidate, legacy expensive call outcome, full/nested completion count. |
+| Fleet management | Manifest digest/generation/source revision, apply state, stable fleet health code, zone별 count, capacity freshness, oldest queued work, claim latency. |
 | Kernel/gateway | attachment id, generation, path-plan revision, device size, runtime path status. |
 | Backup/DR | `evidence_mode`, policy generation, target id, artifact id, recovery point age, restore drill result, artifact availability, integrity status, protected bytes, retained artifact count, delete-protection status, community leakage status. |
 | Security/Compliance | `security_policy_id`, `key_provider_status`, `data_key_id`, `key_version`, `key_state`, lease purpose, unwrap evidence, rotation state/progress, crypto erase state, plaintext-leak flag, audit hash-chain status. |
@@ -1937,7 +1980,25 @@ Operations query surface는 tools, reports, GUI screen, observe-first MCP descri
 | `rbac_checked`, `tenant_scope_checked`, `redaction_applied` | Operator 또는 AI tool에 결과를 보여주기 전에 필요한 safety marker다. |
 | `read_only_mode_enforced`, `unsupported_claim_visible` | GUI와 MCP view에서 mutation blocking과 unsupported-feature boundary가 명시되어야 한다. |
 
-Community-safe `sbs-service` URL은 `/api/v1/sbs/cluster`, `/api/v1/sbs/nodes`, `/api/v1/sbs/volumes`, `/api/v1/sbs/maintenance`, `/api/v1/sbs/capacity`, `/api/v1/sbs/reclaim`, `/api/v1/membership/status`, `/api/v1/operations/summary`, `/api/v1/operations/warnings`, `/api/v1/query/views`, `/api/v1/mcp/tools`, `/api/v1/gui/summary`, `/api/v1/workflow/hardening`이다. MCP와 GUI row는 read-only integration descriptor이며, standalone MCP server, full GUI product surface, mutation support를 claim하지 않는다.
+Community-safe `sbs-service` URL은 aggregate `/api/v1/sbs/cluster`, paged
+`/api/v1/sbs/nodes`와 `/api/v1/sbs/volumes`, point
+`/api/v1/sbs/node?id=...`와 `/api/v1/sbs/volume?id=...`, 그리고
+`/api/v1/sbs/maintenance`, `/api/v1/sbs/capacity`,
+`/api/v1/sbs/reclaim`, `/api/v1/membership/status`,
+`/api/v1/operations/summary`, `/api/v1/operations/warnings`,
+`/api/v1/query/views`, `/api/v1/mcp/tools`, `/api/v1/gui/summary`,
+`/api/v1/workflow/hardening`이다. Page token은 server-issued 및
+revision-pinned이며 invalid/revision-mismatched token은 error다. MCP와 GUI
+row는 read-only integration descriptor이며 standalone MCP server, full GUI
+product surface, mutation support를 claim하지 않는다.
+
+Normal refresh는 aggregate를 사용하고 drill-down은 page 또는 point request를
+사용한다. `partial`, `stale`, `rebuild_required`는 숨기지 않으며
+`automatic_page_completion=false`가 dashboard/tool의 silent all-cluster
+enumeration을 막는다. Stable fleet health code는 `SBS_APPLY_PAUSED`,
+`SBS_HOST_CHECK_FAILED`, `SBS_CONFIG_DRIFT`, `SBS_STRAY_NODE`,
+`SBS_STORAGE_CLAIM_MISMATCH`, `SBS_FLEET_CHECK_STALE`로 제한한다. Free-form
+error와 entity id는 metric label이 아니라 log/detail response에 둔다.
 
 `/console/` read-only operations console은 같은 `sbs-service` administration endpoint에서 제공되는 static dashboard다. 이 console은 operations query envelope를 소비하고 `/api/v1/sbs/cluster`를 primary snapshot으로 사용해 status, topology, capacity, maintenance, warning, membership authority, reclaim evidence를 시각화한다. Raw storage metadata를 직접 읽거나 log를 scrape하거나 API의 source authority field를 우회해서는 안 된다.
 
@@ -2281,7 +2342,7 @@ Discard 제어, zero 폴백 정합성, 공간 회수 대상 오브젝트, 동적
 | Retention Hold | Protected artifact 또는 snapshot reference에 대한 purge planning을 막는 Backup/DR control record. |
 | Backup Purge Plan | Artifact, snapshot, payload delete가 허용되기 전에 protected reference, blocked destructive action, recycle-bin state, explicit purge candidate를 분리하는 dry-run plan. |
 | Backup/DR Status | `sbs-service`가 제공하는 product-state summary. Recovery point age, artifact availability, restore drill result, protected bytes, delete protection, edition leakage status를 포함한다. |
-| DR Replication Link | Source cluster, target cluster, source volume, target standby volume identity를 묶는 remote DR product control-plane record다. U-CTRL-003A에서는 shipping-worker admission을 기록할 수 있지만 standby import, promote, failover support는 false로 유지한다. |
+| DR Replication Link | Source cluster, target cluster, source volume, target standby volume identity를 묶는 remote DR product control-plane record다. 이 record에는 shipping-worker admission을 기록할 수 있지만 standby import, promote, failover support는 false로 유지한다. |
 | DR Shipping Manifest | Recovery point를 manifest integrity, payload root, read-view identity, key policy, governance metadata와 묶는 remote DR product control-plane record다. Remote transfer claim보다 먼저 기록된다. |
 | DR Shipping Worker | Bound DR shipping manifest에 대해 admitted worker, heartbeat, endpoint, credential boundary, transfer plan을 기록하는 remote DR product control-plane record다. Remote transfer completion claim은 아니다. |
 | Security Provider | Security/Compliance key-provider authority record. 현재 닫힌 product boundary는 fixture/provider-backed metadata와 redacted health evidence를 포함하며, live external KMS network credential은 조건부 follow-up evidence로 남는다. |
@@ -2496,16 +2557,58 @@ Cluster control API는 `sbs.admin.v1.AdminService`와 `sbs.admin.v1.OperationsSe
 
 | RPC group | Representative methods |
 |----|----|
+| Authenticated transport | Enterprise authenticated-admin profile에서 `--admin-grpc-listen`은 `AdminService`와 `OperationsService`용 TLS 1.3 listener를 만들고 두 service를 plaintext product/internal listener에서 제거한다. Private-CA client certificate, 정확히 하나인 supported SAN identity, RPC마다 다시 읽는 필수 SHA-256 revocation file이 필요하다. `internal/adminclient` consumer는 `NAMRBD_ADMIN_TRANSPORT_MODE=mtls`와 CA/certificate/key/server-name file reference를 사용하며, 불완전한 TLS 설정은 plaintext fallback 없이 실패한다. Authentication만으로 RBAC authorization evidence를 주장하지 않는다. |
 | Cluster and leader | `ClusterInit`, `GetClusterStatus`, `GetLeader`. |
-| Node and topology | `ListNodes`, `GetNode`, `JoinNode`, `UpdateNodeTopology`, `DrainNode`, `RemoveNode`, `ForceRemoveNode`, topology zone CRUD. |
-| Volume and placement views | `ListVolumes`, `GetVolume`, `GetVolumePlacementView`, `GetVolumeAllocationPageView`, `GetReplicaTargetsView`, `CreateVolume`, `CreateVolumeFromSnapshot`, `ExpandVolume`, `DeleteVolume`. |
+| Node and topology | `ListNodes`, bounded `ListNodesPage`, `GetNode`, `JoinNode`, `UpdateNodeTopology`, `DrainNode`, `RemoveNode`, `ForceRemoveNode`, topology zone CRUD. Page request는 bounded size, server token, source revision, optional tombstone policy를 운반한다. |
+| Volume and placement views | `ListVolumes`, bounded/filterable `ListVolumesPage`, `GetVolume`, `GetVolumePlacementView`, `GetVolumeAllocationPageView`, `GetReplicaTargetsView`, `CreateVolume`, `CreateVolumeFromSnapshot`, `ExpandVolume`, `DeleteVolume`. Page는 automatic completion 없이 health/redundancy backend/topology mode로 filter할 수 있다. |
 | EC, 스냅샷, 클론 | EC 프로필 기하 생성/조회/삭제(CRUD), 스냅샷 CRUD, 클론 즉각 생성 CRUD, `MaterializeClone`. |
 | Mobility repack | Enterprise mobility/repack target-volume materialize control-plane RPC: `PlanVolumeRepack`, `StartVolumeRepack`, `GetVolumeRepack`, `ListVolumeRepacks`, `CancelVolumeRepack`. V-REP-002는 planned metadata, range record, live/snapshot/clone protected root를 지속화한다. V-REP-002A/B는 기존 Performance diff-index record를 planning acceleration으로만 취급하고 `diff_index_revision`, `diff_index_complete`, `fallback_reason`을 기록하며 complete under-copy index를 거부한다. same-volume mutation, metadata-only EC profile flip, unsupported mode, unsupported backup/DR/governance root는 계속 거부된다. V-REP-004B/C는 replicated 및 EC target copy/verify/publish를 `sbs-service` mutation gate 아래 product path에 연결하고 userspace readback evidence를 기록한다. V-REP-005A는 local EC degraded-read evidence를 추가했으며, deployed large-scale, kernel, support, public claim은 계속 닫혀 있다. |
-| Backup/DR | Enterprise Backup/DR target, policy, run, artifact availability, retention hold, purge-plan, status RPC. 대표 method는 `CreateBackupTarget`, `CreateBackupPolicy`, `StartBackupRun`, `MarkBackupArtifactAvailable`, `CreateBackupRetentionHold`, `PlanBackupPurge`, `GetBackupStatus`다. Remote DR control-plane track은 remote transfer completion, promote, failover support 없이 `CreateDRReplicationLink`, `CreateDRRecoveryPoint`, `CreateDRShippingManifest`, `AdmitDRShippingWorker` 계열 RPC를 추가한다. Shipping-worker path는 support wording을 확장하기 전에 별도 large-scale smoke evidence를 요구한다. |
+| Backup/DR | Enterprise Backup/DR target, policy, run, artifact availability, retention hold, purge-plan, status RPC를 제공한다. Remote DR product path는 immutable snapshot shipping과 target-authority manifest/object 검증, product import, userspace/gateway readback, `dr_standby_read_only` write rejection을 지속화한다. `CreateDRReplicationLink`는 source/target과 다른 fencing authority의 Ed25519 public key를 고정하며 summary에는 fingerprint만 노출한다. `PromoteDRStandbyVolume`은 두 cluster/volume, link, standby, 다음 promote generation/fencing epoch, source fencing, dependency health, target integrity, key access를 모두 묶은 short-lived `namrbd.dr.fencing.v1` 서명 결정을 요구한다. Promotion은 standby-generation CAS/idempotency와 함께 target 보호 상태를 원자적으로 해제하고, demotion은 별도 CAS/idempotency로 다시 봉인한다. Direct `sbs-data`, kernel, CSI/protocol path, rejoin/reseed/reverse-shipping failback, live two-authority failover, public DR support는 별도 gate로 남는다. |
 | Security/Compliance | Enterprise Security/Compliance provider, policy, data-key, lease, rotation, audit, crypto erase RPC. 대표 surface는 provider create/check, policy create/bind, data-key create/get/disable/enable/destroy, `IssueKeyAccessLease`, `CheckSecurityDataKeyAccess`, `UnwrapSecurityDataKey`, key rotation plan/run, audit list/verify, crypto erase plan/run이다. |
-| Store and maintenance | `UpdateNodeStoreWeights`, `UpdateNodeStoreTuning`, `SetMaintenanceThrottle`, `PauseMaintenance`, `ResumeMaintenance`, `ListRepairs`, `ListRebalances`. |
-| Operations | `GetOperation`, `ListOperations`가 queued/running/completed/failed/canceled 같은 long-running operation state를 노출한다. |
+| Store and maintenance | `UpdateNodeStoreWeights`, `UpdateNodeStoreTuning`, `SetMaintenanceThrottle`, `PauseMaintenance`, `ResumeMaintenance`, bounded `ListRepairsPage`/`ListRebalancesPage`, expensive-read admission이 필요한 compatibility `ListRepairs`/`ListRebalances`. |
+| Operations | `GetOperation`, bounded/filterable `ListOperationsPage`, compatibility `ListOperations`가 queued/running/completed/failed/canceled state를 노출한다. |
 | Authority boundary | `sbs-service`는 cluster-wide control과 metadata authority를 소유한다. Node-local tuning을 `sbs-data`로 전달할 수 있지만 local payload persistence를 소유하지 않는다. |
+
+독립 DR target authority를 위해 `ExportDRTargetEnvelope`는 완료되고 target
+검증을 마친 shipping worker와 그 link, recovery point, manifest, object
+checkpoint, receipt evidence만 canonical `namrbd.dr.target-envelope.v1` JSON과
+SHA-256 digest로 내보낸다. 운영자는 `sbsctl dr target-envelope
+export|import`로 이 문서를 이동한다. `ImportDRTargetEnvelope`는 서로 다른
+설정 target cluster, target에 로컬로 설정된 transfer target 및 standby
+volume, document/wrapper identity 일치, idempotency key를 요구한 뒤 control
+record를 원자적으로 게시한다. Import 과정은 source-local fencing field를
+제거하므로 shipping envelope 자체는 target write authority를 부여하거나
+후속 독립 서명 promotion gate를 대체할 수 없다.
+
+`ExportDRSourceFenceEnvelope`는 source replication link와 product volume을
+다시 읽고 volume이 link의 deterministic receipt로 봉인된 경우에만
+`namrbd.dr.source-fence-envelope.v1`을 내보낸다. Target의
+`ImportDRSourceFenceEnvelope`는 일치하는 imported link와 준비된 standby를
+요구하고 receipt를 재계산하며, target-envelope import 때 고정한 fencing
+authority key로 short-lived promotion decision을 검증한다. Target은 envelope
+및 decision digest를 원자적으로 지속화한다. Remote promotion은 두 digest와
+모두 일치해야 하며, local-source promotion은 같은 transaction에서 product
+volume seal을 계속 요구한다. `sbsctl dr source-fence-envelope
+export|import`는 private key를 노출하지 않고 이 handoff를 수행한다.
+
+`PrepareDROldPrimaryReseed`는 봉인된 original primary에서 reverse shipping으로
+이어지는 fail-closed 전이다. Original link generation과 source-fencing receipt를
+요구하고 original promoted target에서 유일하게 유효한 reverse source를 도출한
+뒤, `dr_old_primary_fenced`를 `dr_old_primary_reseed_required`로 원자적으로
+바꾼다. 이 과정에서 old primary를 writable로 만들지 않는다. Protected state는
+original link/receipt를 예정된 reverse link/source identity에 묶는다. 새
+`ImportDRTargetEnvelope`는 reverse envelope가 durable reseed record와 일치할
+때만 이 non-empty target을 허용하고, `ImportDRStandbyVolume`은 record를
+소비하면서 보호 상태를 `dr_standby_read_only`로 교체한다. CLI surface는
+`sbsctl dr standby-volume prepare-old-primary-reseed`다. 실제 reverse data
+movement를 위해 의도적으로 demote한 reverse source는
+`FenceDRSourceVolume.demoted_standby_volume_id`가 해당 standby의 read-only,
+demotion-verified 상태와 reverse link의 정확한 역방향 cluster/volume identity를
+만족할 때만 허용된다. 같은 transaction이 writable interval 없이 standby
+seal을 reverse link의 deterministic old-primary fence로 교체한다. Two-authority
+software fixture는 reverse product shipping/import/readback, 독립 witness source
+fencing, original site 재승격을 실행한다. Deployed two-authority failback과
+release support는 후속 gate로 남는다.
 
 ## 4. sbs-data gRPC API
 
@@ -2528,7 +2631,7 @@ Observability URL은 HTTP surface지만 모두 같은 성격은 아니다. Healt
 |----|----|
 | 게이트웨이 | `GET /api/v1/debug/gateway/metrics`, `GET /api/v1/debug/sbs-cluster/metrics`, 기조정된 SBS 분산 클러스터 정밀 디버깅 뷰. |
 | sbs-service | `GET /healthz`, `GET /readyz`, `GET /metrics`, `GET /debug/summary`, `GET /debug/volume`, `GET /debug/transitions`, maintenance debug routes, payload GC debug route, EC inspect/scrub/repair/rebalance/drain debug routes. |
-| sbs-service operations views | Read-only Community-safe query URL: `GET /console/`, `GET /api/v1/sbs/cluster`, `/api/v1/sbs/nodes`, `/api/v1/sbs/volumes`, `/api/v1/sbs/maintenance`, `/api/v1/sbs/capacity`, `/api/v1/sbs/reclaim`, `/api/v1/membership/status`, `/api/v1/operations/summary`, `/api/v1/operations/warnings`, `/api/v1/query/views`, `/api/v1/mcp/tools`, `/api/v1/gui/summary`, `/api/v1/workflow/hardening`. Response는 `namrbd.sbs.observability.v1`, source authority, freshness, warning/error, RBAC/redaction, read-only enforcement, unsupported-claim visibility를 담는다. Console은 same-origin static dashboard이며 mutation endpoint가 아니다. |
+| sbs-service operations views | Read-only Community-safe query URL: `GET /console/`, aggregate `GET /api/v1/sbs/cluster`, paged `/api/v1/sbs/nodes`와 `/api/v1/sbs/volumes`, point `/api/v1/sbs/node?id=...`와 `/api/v1/sbs/volume?id=...`, `/api/v1/sbs/maintenance`, `/api/v1/sbs/capacity`, `/api/v1/sbs/reclaim`, `/api/v1/membership/status`, `/api/v1/operations/summary`, `/api/v1/operations/warnings`, `/api/v1/query/views`, `/api/v1/mcp/tools`, `/api/v1/gui/summary`, `/api/v1/workflow/hardening`. Response는 projection/source revision과 freshness, bounded request/detail class, warning/error, RBAC/redaction, read-only enforcement, unsupported-claim visibility를 담는다. Console은 mutation endpoint나 raw-metadata full-scan fallback이 아니다. |
 | sbs-data | `GET /healthz`, `GET /readyz`, `GET /metrics`, `GET /debug/summary`, `GET /debug/store-health`, `GET /debug/allocation-pages`, `GET /debug/extent-pages`, `GET /debug/store-shards`, `POST /admin/store-weights`, `POST /admin/store-tuning`. Validation-only route는 enable된 경우 materialize/write-pattern/chunk-GC/store-state/store-config-reload를 포함한다. |
 | Data discipline | JSON response는 machine-readable 상태를 유지해야 한다. 사람이 읽는 diagnostic은 script의 JSON-producing path에 섞지 말고 log 또는 stderr에 남긴다. |
 
@@ -2564,7 +2667,7 @@ etcd와 TiKV는 NAMRBD component가 사용하는 storage backend다. 사용자�
 | Backend boundary | Contract |
 |----|----|
 | etcd control-plane authority | Gateway/control-plane metadata는 volume spec/state, attachment ownership, attachment generation, gateway identity, liveness를 포함한다. Kernel과 CSI flow는 etcd를 직접 읽지 않고 gateway 또는 admin API를 통해 이 authority를 사용한다. |
-| TiKV 백엔드 기반의 SBS 권한 메타데이터 수립 | `sbs-service`는 TiKV-backed cluster membership, placement, allocation page, physical object descriptor, EC stripe, repair/rebalance/drain state, mutation operation record, idempotency record, gateway-facing published view를 소유한다. |
+| TiKV 백엔드 기반의 SBS 권한 메타데이터 수립 | `sbs-service`는 TiKV-backed cluster membership, placement, allocation page, physical object descriptor, EC stripe, repair/rebalance/drain state, mutation operation record, idempotency record, gateway-facing published view를 소유한다. Transaction-derived 64-shard summary/outbox, cursor-bounded shadow rebuild, placement-by-node affected set, leased maintenance work-ready index는 모두 같은 source authority 아래의 rebuildable access path다. |
 | Client implementation | TiKV metadata는 `sbs/cluster/metadata/tikv.go`의 TxnKV client를 사용하며 PD endpoint, API version, optional keyspace prefix, TLS security를 가진다. Legacy 또는 object-store RawKV code는 별도이며 SBS metadata authority와 혼동하면 안 된다. |
 | Key families | Public architecture는 record family와 ownership을 이름 붙일 뿐 raw key encoding을 API처럼 노출하지 않는다. Volume, node, allocation, snapshot, clone, EC metadata, Backup/DR control record, DR replication-link record, DR recovery-point record, DR shipping-manifest record, DR shipping-worker record의 raw key는 internal persistence detail이다. |
 | Authority boundary | Gateway cache, CSI call, operational script는 backend-derived state를 관찰할 수 있지만, owning API를 우회해 etcd 또는 TiKV record를 변경하면 안 된다. |
@@ -2588,6 +2691,7 @@ Operator CLI는 fixture-only path를 호출하더라도 product interface다. Co
 
 | CLI surface | Contract |
 |----|----|
+| `sbsctl dr link fence-source`, `sbsctl dr fencing-decision generate-keypair|issue` 및 `sbsctl dr standby-volume promote|demote` | Link creation이 independent Ed25519 public key를 고정한다. `fence-source`는 link-generation CAS와 idempotency로 product old-primary volume을 봉인하고 link/source/target identity, fence generation, decision, epoch에 결합된 receipt를 반환한다. Offline fencing command는 private key file을 mode `0600`으로 만들고 private material을 stdout에 출력하지 않은 채 그 receipt를 포함하는 bounded signed decision을 발급한다. Promotion은 저장된 source fence와 정확히 일치하는 receipt/decision/epoch, current standby generation, idempotency를 요구하며 누락, unpinned signer, 만료/불완전 proof, stale generation, identity mismatch는 target unseal 전에 실패한다. Demotion은 자체 generation/idempotency로 target을 다시 봉인한다. 이 command만으로 two-authority DR topology, reseed, reverse shipping 또는 failback이 입증되지는 않는다. |
 | `sbsctl mobility repack plan|start|get|list|cancel` | `sbs-service` admin RPC가 backing하는 Enterprise mobility/repack operator surface다. Controlled repack path는 distinct target volume을 사용하는 `mode=target_volume_materialize`만 허용하고 protected root/range count, copy/verify counter, publication/readback field, support/public claim, `diff_index_used`, `diff_index_revision`, `diff_index_complete`, `metadata_fallback_used`, `fallback_reason`을 포함한 repack summary를 출력하며, `support_claimed=false`를 유지한다. `start`는 명시적인 `sbs-service` mutation gate를 요구한다. Replicated 및 EC target publication은 local userspace readback evidence, local EC degraded-read evidence, 별도 large-scale live evidence가 기록되기 전까지 kernel, support, public claim을 열지 않는다. |
 | `sbsctl performance policy dry-run` | Enterprise Performance policy fixture surface다. Policy id, generation, tier, cap, cap scope, throttle mode, StorageClass source, ok/error count, restart/kernel-skip flag를 포함한 Performance summary schema를 출력한다. Fixture에서는 dry-run only이며 observe-only fixture cap scope를 사용하고 policy persist 또는 I/O cap enforcement를 수행하지 않는다. |
 | `sbsctl performance status --fixture` | Enterprise Performance observe-only accounting fixture다. Synthetic I/O event를 policy cap에 대해 평가하고 requested/granted token, would-wait duration, would-reject count, rejected ops, cap scope, throttle mode, invalid-policy rejection을 보고한다. I/O dispatch나 gateway/kernel behavior는 변경하지 않는다. |
@@ -2603,6 +2707,7 @@ Operator CLI는 fixture-only path를 호출하더라도 product interface다. Co
 | `sbsctl performance ec-journal guarded --fixture` | Enterprise Performance guarded EC journal fixture surface다. `guarded_mode=ec_same_stripe_batching`, committed-metadata acknowledgement boundary, p50/p95/p99, conflict count, replay count, fallback count, batch count, kernel skip reason을 기록하고 same-stripe partial-write burst, interrupted replay, idempotency retry, snapshot old-data read, clone delta isolation, backup changed-listing compatibility, degraded read compatibility, multi-gateway read-after-write를 확인한다. Product EC RMW path 변경, service-owned journal persist, service restart, product tier 노출은 하지 않는다. |
 | `sbsctl performance ec-journal guarded --set|--get` | `sbs-service` admin RPC `SetECJournalGuardedMode`, `GetECJournalGuardedMode`가 backing하는 Enterprise Performance live guarded EC control-plane metadata surface다. Operator intent, generation, acknowledgement boundary, validation gate, accepted operation handle, `guarded_mode_active_in_product=false`를 기록한다. EC same-stripe batching enable, write journal persist/replay, reachability root mutation, backup/diff-index behavior 변경, product tier 노출은 하지 않는다. |
 | `sbsctl security ...` | `sbs-service` admin RPC가 backing하는 Enterprise Security/Compliance security/compliance surface다. Provider, policy, key, lease, rotation, audit, crypto erase command는 service-owned control record를 지속화하고 redacted ref/evidence를 보고하며, lease/access/unwrap check에서 data-key version을 운반하고 plaintext key material을 JSON summary와 metadata에 남기지 않는다. |
+| `sbsctl rbac role list`, `permission list`, `binding put|get|list|delete`, `audit list|verify` | `sbs-service` admin RPC가 backing하는 Enterprise RBAC surface다. 다섯 built-in role과 descriptor-derived permission은 read-only definition이다. SAN identity(`spiffe://`, URI, DNS, email SAN form)는 단일 metadata authority 아래에서 generation CAS, idempotency, actor/reason, durable tombstone을 사용해 검토된 role에 결합된다. `--admin-rbac-enforce`에서는 공통 interceptor가 `NAMRBD_ADMIN_RBAC_GENERATION`의 정확한 current binding generation을 요구하고 unknown method와 wrong role을 handler 전에 거부하며 allow/deny 결정을 검증·redaction 가능한 hash chain에 append한다. Initial/recovery binding은 exact-SAN restricted `--admin-rbac-bootstrap-identity` mode만 사용한다. Local enforcement evidence는 deployed restart와 certificate-rotation qualification을 대체하지 않는다. |
 | Authority boundary | `sbsctl`은 operator interface다. Product policy authority는 `sbs-service`에 남으며, gateway-local 또는 fixture-only policy output을 cluster-wide QoS enforcement로 설명하면 안 된다. |
 
 ## Generation and refresh rule

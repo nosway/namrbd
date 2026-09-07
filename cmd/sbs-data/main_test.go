@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nosway/namrbd/gateway/service"
 	"github.com/nosway/namrbd/internal/depavail"
 	"github.com/nosway/namrbd/sbs/local"
 )
@@ -38,6 +40,28 @@ func TestReadyzReportsDependencySurface(t *testing.T) {
 	}
 	if strings.Contains(live.Body.String(), "dependency_readiness") {
 		t.Fatalf("/healthz contains dependency state: %s", live.Body.String())
+	}
+}
+
+func TestIdentityEndpointDoesNotRequireMetadataSnapshot(t *testing.T) {
+	identity := sbsDataIdentity{ClusterID: "cluster-a", SBSClusterID: "sbs-a", NodeID: "u01"}
+	handler := observabilityMuxWithIdentityAndPhysicalControls("", "", nil, false, false, false, identity)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/debug/identity", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("identity status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got sbsDataIdentity
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode identity: %v", err)
+	}
+	if got != identity {
+		t.Fatalf("identity=%+v want=%+v", got, identity)
+	}
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/debug/identity", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("identity POST status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -160,6 +184,44 @@ func TestObservabilityMuxChunkGCSweep(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("materialize status=%d body=%s", resp.StatusCode, string(body))
 	}
+	handle, err := ensureDebugVolumeOpen(context.Background(), client, "0000007b")
+	if err != nil {
+		t.Fatalf("ensure debug volume open: %v", err)
+	}
+	if _, err := client.WritePhysicalChunk(context.Background(), &service.WritePhysicalChunkRequest{
+		VolumeID: "0000007b", VolumeHandle: handle, PhysicalChunkID: 9, ChunkOffsetBytes: 0, LengthBytes: 65536, Data: make([]byte, 65536),
+		Context: debugWriterContext("0000007b", 9, 65536, 0),
+	}); err != nil {
+		t.Fatalf("WritePhysicalChunk: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/debug/physical-chunks", strings.NewReader(`{"volume_id":"0000007b","candidate_refs":[{"chunk_id":10},{"chunk_id":9},{"chunk_id":9}],"inspect_only":true}`))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	resp = rec.Result()
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("Read physical chunk inspection response: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("physical chunk inspection status=%d body=%s", resp.StatusCode, string(body))
+	}
+	var physicalInspection struct {
+		InspectOnly                 bool                                `json:"inspect_only"`
+		PayloadStorageMutationCount int                                 `json:"payload_storage_mutation_count"`
+		Result                      local.PhysicalChunkInspectionResult `json:"result"`
+	}
+	if err := json.Unmarshal(body, &physicalInspection); err != nil {
+		t.Fatalf("Unmarshal physical chunk inspection response: %v body=%s", err, string(body))
+	}
+	if !physicalInspection.InspectOnly || physicalInspection.PayloadStorageMutationCount != 0 || physicalInspection.Result.RequestedCount != 2 || physicalInspection.Result.ObjectGetCount != 2 || physicalInspection.Result.FoundCount != 1 || physicalInspection.Result.MissingCount != 1 || physicalInspection.Result.FoundRefs[0].ChunkID != 9 || physicalInspection.Result.MissingRefs[0].ChunkID != 10 {
+		t.Fatalf("physical chunk inspection=%+v body=%s", physicalInspection, string(body))
+	}
+	req = httptest.NewRequest(http.MethodPost, "/debug/physical-chunks", strings.NewReader(`{"volume_id":"0000007b","candidate_refs":[{"chunk_id":9}],"inspect_only":false}`))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "inspect-only") {
+		t.Fatalf("physical chunk mutation request status=%d body=%s", rec.Code, rec.Body.String())
+	}
 
 	for i := 0; i < 2; i++ {
 		req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/debug/write-pattern?volume_id=0000007b&offset_bytes=0&length_bytes=65536&fill_byte=%02x", 0x41+i), nil)
@@ -173,6 +235,34 @@ func TestObservabilityMuxChunkGCSweep(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("write-pattern status=%d body=%s", resp.StatusCode, string(body))
 		}
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/debug/chunk-gc", strings.NewReader(`{"volume_id":"0000007b","limit":16,"candidate_refs":[{"chunk_id":1}],"inspect_only":true}`))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	resp = rec.Result()
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("Read chunk-gc inspection response: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("chunk-gc inspection status=%d body=%s", resp.StatusCode, string(body))
+	}
+	var inspectionPayload struct {
+		InspectOnly bool `json:"inspect_only"`
+		Result      struct {
+			ScannedCount   int  `json:"scanned_count"`
+			CandidateCount int  `json:"candidate_count"`
+			DeletableCount int  `json:"deletable_count"`
+			DeletedCount   int  `json:"deleted_count"`
+			InspectionOnly bool `json:"inspection_only"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &inspectionPayload); err != nil {
+		t.Fatalf("Unmarshal chunk-gc inspection response: %v body=%s", err, string(body))
+	}
+	if !inspectionPayload.InspectOnly || !inspectionPayload.Result.InspectionOnly || inspectionPayload.Result.ScannedCount != 1 || inspectionPayload.Result.CandidateCount != 1 || inspectionPayload.Result.DeletableCount != 1 || inspectionPayload.Result.DeletedCount != 0 {
+		t.Fatalf("chunk-gc inspection result=%+v body=%s", inspectionPayload, string(body))
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/debug/chunk-gc", strings.NewReader(`{"volume_id":"0000007b","limit":16,"protected_refs":[{"chunk_id":1}]}`))
@@ -221,6 +311,159 @@ func TestObservabilityMuxChunkGCSweep(t *testing.T) {
 	}
 	if unprotectedPayload.Result.DeletedCount != 1 || unprotectedPayload.Result.RetainedCount != 0 {
 		t.Fatalf("unprotected chunk-gc result=%+v body=%s", unprotectedPayload.Result, string(body))
+	}
+}
+
+func TestPhysicalChunkInspectionGateDoesNotEnableMutationDebugEndpoints(t *testing.T) {
+	handler := observabilityMuxWithIdentityAndPhysicalInspection("", "", nil, false, true, sbsDataIdentity{})
+
+	req := httptest.NewRequest(http.MethodPost, "/debug/physical-chunks", strings.NewReader(`{"volume_id":"0000007b","candidate_refs":[{"chunk_id":9}],"inspect_only":false}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "inspect-only") {
+		t.Fatalf("physical inspection gate status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/debug/purge-volume?volume_id=0000007b", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("physical inspection gate exposed purge endpoint status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	disabled := observabilityMuxWithIdentityAndPhysicalInspection("", "", nil, false, false, sbsDataIdentity{})
+	req = httptest.NewRequest(http.MethodPost, "/debug/physical-chunks", strings.NewReader(`{"volume_id":"0000007b","candidate_refs":[{"chunk_id":9}],"inspect_only":true}`))
+	rec = httptest.NewRecorder()
+	disabled.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("disabled physical inspection endpoint status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPhysicalChunkCleanupGateRequiresApprovalBoundExactBatch(t *testing.T) {
+	dir := t.TempDir()
+	client, err := local.Open(local.Config{Path: filepath.Join(dir, "meta"), BuildVersion: "test-build"})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer client.Close()
+	volumeID := "0000007b"
+	if _, err := client.CreateVolume(context.Background(), service.VolumeSpec{
+		ID: service.HexVolumeID(123), Name: "physical-cleanup", SizeBytes: 1 << 20, BlockSize: 4096,
+	}); err != nil {
+		t.Fatalf("CreateVolume: %v", err)
+	}
+	handle, err := ensureDebugVolumeOpen(context.Background(), client, volumeID)
+	if err != nil {
+		t.Fatalf("ensure debug volume open: %v", err)
+	}
+	for _, chunkID := range []uint64{9, 10, 11} {
+		if _, err := client.WritePhysicalChunk(context.Background(), &service.WritePhysicalChunkRequest{
+			VolumeID: volumeID, VolumeHandle: handle, PhysicalChunkID: chunkID,
+			ChunkOffsetBytes: 0, LengthBytes: 65536, Data: make([]byte, 65536),
+			Context: debugWriterContext(volumeID, chunkID, 65536, 0),
+		}); err != nil {
+			t.Fatalf("WritePhysicalChunk %d: %v", chunkID, err)
+		}
+	}
+
+	identity := sbsDataIdentity{NodeID: "u01"}
+	handler := observabilityMuxWithIdentityAndPhysicalControls("", "", client, false, false, true, identity)
+	planDigest := strings.Repeat("a", 64)
+	request := func(refs []service.PhysicalChunkRef, confirmation, nodeID, digest string) *httptest.ResponseRecorder {
+		payload := map[string]any{
+			"volume_id": volumeID, "node_id": nodeID, "approval_plan_digest": planDigest,
+			"batch_digest_sha256": digest, "confirmation": confirmation, "candidate_refs": refs,
+		}
+		raw, marshalErr := json.Marshal(payload)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/debug/physical-chunks/delete", strings.NewReader(string(raw))))
+		return rec
+	}
+
+	refs := []service.PhysicalChunkRef{{ChunkID: 9}, {ChunkID: 10}}
+	digest, err := phaseADPhysicalCleanupBatchDigest(planDigest, identity.NodeID, volumeID, refs)
+	if err != nil {
+		t.Fatalf("batch digest: %v", err)
+	}
+	for name, rec := range map[string]*httptest.ResponseRecorder{
+		"confirmation": request(refs, "DELETE", identity.NodeID, digest),
+		"node":         request(refs, phaseADPhysicalCleanupConfirmation, "u02", digest),
+		"digest":       request(refs, phaseADPhysicalCleanupConfirmation, identity.NodeID, strings.Repeat("b", 64)),
+	} {
+		if rec.Code == http.StatusOK {
+			t.Fatalf("%s rejection returned success: %s", name, rec.Body.String())
+		}
+	}
+	inspection, err := client.InspectPhysicalChunks(context.Background(), volumeID, refs)
+	if err != nil || inspection.FoundCount != 2 {
+		t.Fatalf("rejected requests changed payload inspection=%+v err=%v", inspection, err)
+	}
+
+	missingRefs := []service.PhysicalChunkRef{{ChunkID: 9}, {ChunkID: 12}}
+	missingDigest, err := phaseADPhysicalCleanupBatchDigest(planDigest, identity.NodeID, volumeID, missingRefs)
+	if err != nil {
+		t.Fatalf("missing batch digest: %v", err)
+	}
+	rec := request(missingRefs, phaseADPhysicalCleanupConfirmation, identity.NodeID, missingDigest)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("missing precondition status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	inspection, err = client.InspectPhysicalChunks(context.Background(), volumeID, []service.PhysicalChunkRef{{ChunkID: 9}})
+	if err != nil || inspection.FoundCount != 1 {
+		t.Fatalf("precondition failure changed payload inspection=%+v err=%v", inspection, err)
+	}
+
+	rec = request(refs, phaseADPhysicalCleanupConfirmation, identity.NodeID, digest)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("exact cleanup status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		OK                          bool                              `json:"ok"`
+		TiKVMutationCount           int                               `json:"tikv_mutation_count"`
+		PayloadStorageMutationCount int                               `json:"payload_storage_mutation_count"`
+		Result                      local.PhysicalChunkDeletionResult `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode cleanup response: %v body=%s", err, rec.Body.String())
+	}
+	if !response.OK || response.TiKVMutationCount != 0 || response.PayloadStorageMutationCount != 2 || response.Result.DeletedCount != 2 || response.Result.DeleteAttemptCount != 2 {
+		t.Fatalf("cleanup response=%+v body=%s", response, rec.Body.String())
+	}
+	inspection, err = client.InspectPhysicalChunks(context.Background(), volumeID, []service.PhysicalChunkRef{{ChunkID: 9}, {ChunkID: 10}, {ChunkID: 11}})
+	if err != nil || inspection.FoundCount != 1 || inspection.MissingCount != 2 || inspection.FoundRefs[0].ChunkID != 11 {
+		t.Fatalf("post-cleanup inspection=%+v err=%v", inspection, err)
+	}
+}
+
+func TestPhysicalChunkCleanupGateIsIndependentAndDefaultOff(t *testing.T) {
+	identity := sbsDataIdentity{NodeID: "u01"}
+	handler := observabilityMuxWithIdentityAndPhysicalControls("", "", nil, false, false, true, identity)
+	for _, path := range []string{"/debug/purge-volume", "/debug/materialize-volume", "/debug/physical-chunks"} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("cleanup gate exposed %s status=%d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/debug/physical-chunks/delete", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("enabled cleanup endpoint status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	for name, disabled := range map[string]http.Handler{
+		"inspection wrapper":  observabilityMuxWithIdentityAndPhysicalInspection("", "", nil, false, true, identity),
+		"broad debug wrapper": observabilityMux("", "", nil, true),
+	} {
+		rec = httptest.NewRecorder()
+		disabled.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/debug/physical-chunks/delete", nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s enabled cleanup status=%d body=%s", name, rec.Code, rec.Body.String())
+		}
 	}
 }
 

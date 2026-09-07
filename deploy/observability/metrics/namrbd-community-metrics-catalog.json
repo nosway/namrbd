@@ -395,6 +395,231 @@
       "description": "SBS metadata requests to TiKV by operation class."
     },
     {
+      "name": "sbs_service_tikv_operation_duration_seconds_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "seconds",
+      "labels": [
+        "operation"
+      ],
+      "description": "Cumulative TiKV request duration by bounded operation class."
+    },
+    {
+      "name": "sbs_service_tikv_hot_region_candidates_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "count",
+      "labels": [],
+      "description": "Oversized batches or maximum-size page requests that need region-distribution review."
+    },
+    {
+      "name": "sbs_service_cluster_summary_health",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [
+        "state"
+      ],
+      "description": "One-hot health state of the bounded cluster summary."
+    },
+    {
+      "name": "sbs_service_cluster_summary_partial",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [],
+      "description": "Whether the bounded cluster summary is incomplete."
+    },
+    {
+      "name": "sbs_service_cluster_summary_stale",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [],
+      "description": "Whether the complete cluster summary exceeded its freshness threshold."
+    },
+    {
+      "name": "sbs_service_cluster_summary_rebuild_required",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [],
+      "description": "Whether the bounded cluster-summary projection requires a rebuild."
+    },
+    {
+      "name": "sbs_service_cluster_summary_freshness_age_seconds",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Age of the oldest aggregate component used by the cluster summary."
+    },
+    {
+      "name": "sbs_service_cluster_summary_source_revision",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "revision",
+      "labels": [],
+      "description": "Highest source revision represented by the cluster summary."
+    },
+    {
+      "name": "sbs_service_cluster_summary_baseline_source_revision",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "revision",
+      "labels": [],
+      "description": "Rebuild baseline source revision represented by every summary shard."
+    },
+    {
+      "name": "sbs_service_fleet_health",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [
+        "health_code"
+      ],
+      "description": "Bounded fleet health counts by stable health code."
+    },
+    {
+      "name": "sbs_service_fleet_apply_state",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "boolean",
+      "labels": [
+        "state"
+      ],
+      "description": "One-hot state of the current fleet apply operation."
+    },
+    {
+      "name": "sbs_service_fleet_manifest_source_revision",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "revision",
+      "labels": [],
+      "description": "Source revision joining the signed fleet manifest, configuration, and store observations."
+    },
+    {
+      "name": "sbs_service_fleet_observation_age_seconds",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "seconds",
+      "labels": [],
+      "description": "Age of the signed fleet observation aggregate."
+    },
+    {
+      "name": "sbs_service_fleet_capacity_bytes",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "bytes",
+      "labels": [
+        "state"
+      ],
+      "description": "Fleet usable, free, and reserved capacity from the signed observation."
+    },
+    {
+      "name": "sbs_service_fleet_capacity_nodes",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [
+        "state"
+      ],
+      "description": "Missing and stale node counts in the fleet capacity observation."
+    },
+    {
+      "name": "sbs_service_fleet_zone_nodes",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "count",
+      "labels": [
+        "zone",
+        "state"
+      ],
+      "description": "Bounded per-zone fleet node counts by lifecycle and health state."
+    },
+    {
+      "name": "sbs_service_maintenance_oldest_age_seconds",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "seconds",
+      "labels": [
+        "reason"
+      ],
+      "description": "Oldest queued maintenance work age by repair, rebalance, or drain reason."
+    },
+    {
+      "name": "sbs_service_maintenance_claim_latency_seconds",
+      "component": "sbs-service",
+      "type": "gauge",
+      "unit": "seconds",
+      "labels": [
+        "reason"
+      ],
+      "description": "Last aggregate work-claim latency by repair, rebalance, or drain reason."
+    },
+    {
+      "name": "sbs_service_phase_ad_operation_list_requests_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "filter"
+      ],
+      "description": "Current-version operation-list requests by bounded filter class."
+    },
+    {
+      "name": "sbs_service_phase_ad_operation_list_duration_seconds_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "seconds",
+      "labels": [
+        "filter"
+      ],
+      "description": "Cumulative current-version operation-list duration by bounded filter class."
+    },
+    {
+      "name": "sbs_service_phase_ad_operation_list_records_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "source"
+      ],
+      "description": "Operation-list records observed from the stored or mutation-derived source."
+    },
+    {
+      "name": "sbs_service_phase_ad_legacy_expensive_calls_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "surface",
+        "outcome"
+      ],
+      "description": "Legacy unpaged completion requests by bounded surface and admission outcome."
+    },
+    {
+      "name": "sbs_service_metadata_completion_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "state"
+      ],
+      "description": "Metadata enumeration completions by full or nested completion class."
+    },
+    {
+      "name": "sbs_service_phase_ad_drain_observation_errors_total",
+      "component": "sbs-service",
+      "type": "counter",
+      "unit": "count",
+      "labels": [
+        "stage",
+        "class"
+      ],
+      "description": "Drain errors observed by bounded stage and error class without changing drain behavior."
+    },
+    {
       "name": "sbs_data_ready",
       "component": "sbs-data",
       "type": "gauge",

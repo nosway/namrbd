@@ -9,7 +9,7 @@ func runEnterpriseTopLevel(args []string) bool {
 		return false
 	}
 	switch args[0] {
-	case "ec", "backup", "dr", "performance", "security", "mobility", "dedupe":
+	case "ec", "backup", "dr", "performance", "security", "rbac", "mobility", "dedupe", "governance", "compression", "tiering", "nvme":
 		fatalf("%s", enterpriseCapabilityRequiredMessage(args[0]))
 		return true
 	}

@@ -17,7 +17,7 @@ general-availability commitments.
 | Term | Meaning |
 | --- | --- |
 | Available in public source | Code or deployment assets are present and can be built or inspected. |
-| Validated for v1.0 | The exact release path has matching release evidence. |
+| Validated for v1.1 | The exact release path has matching release evidence. |
 | Supported | The release support boundary names the path and its known limits. |
 | Advanced feature | Enterprise development or validation is in progress. No availability or delivery date is promised. |
 
@@ -32,10 +32,10 @@ storage, volume lifecycle, manual replicated snapshot/restore/read-view
 building blocks, discard/write-zeroes semantics, CSI assets, a basic iSCSI
 gateway, observability, the operations console, and observe-first MCP tools.
 
-The current supported v1.0 volume claim is the replicated userspace gateway
+The current supported v1.1 volume claim is the replicated userspace gateway
 path. Kernel datapath I/O, snapshot/restore, CSI, protocol gateway, and external
 initiator paths remain available for development or evaluation but do not gain
-v1.0 support merely by appearing in source. Basic iSCSI export is capped at
+v1.1 support merely by appearing in source. Basic iSCSI export is capped at
 three distinct volumes in the public build.
 
 ## 3. Advanced Features
@@ -77,7 +77,7 @@ inferences are invalid:
 - an architecture design exists, therefore its command or API is generally
   available.
 
-The v1.0 release makes no general performance benchmark claim. Experimental
+The v1.1 release makes no general performance benchmark claim. Experimental
 measurements must state their exact build, topology, workload, durability
 semantics, latency distribution, error count, and excluded paths.
 
@@ -86,7 +86,7 @@ semantics, latency distribution, error count, and excluded paths.
 | Question | Expected answer |
 | --- | --- |
 | Is the code public? | Check the exported repository, not a private design document. |
-| Is it validated for v1.0? | Check Feature Status and matching release evidence. |
+| Is it validated for v1.1? | Check Feature Status and matching release evidence. |
 | Does an adapter advertise it? | CSI, iSCSI, kernel, GUI, and MCP surfaces must follow the validated backend boundary. |
 | Is an Enterprise design a product promise? | No. It remains an Advanced feature until an explicit release promotes it. |
 
