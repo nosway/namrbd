@@ -247,9 +247,9 @@ Delve examples. Each top-level implementation directory also has a local
 `README.md` describing its role and interfaces. Durable technical decisions are
 indexed in [Architecture Decision Records](docs/adr/README.md).
 
-Release artifact expectations for `v1.1.0` and the historical source-only
-status of `v1.0.0` are documented in [`RELEASE.md`](RELEASE.md). For issue and
-support boundaries, see
+Release artifact expectations for `v1.1.1` and the historical `v1.1.0` and
+source-only `v1.0.0` releases are documented in [`RELEASE.md`](RELEASE.md). For
+issue and support boundaries, see
 [`SUPPORT.md`](SUPPORT.md).
 
 ## License

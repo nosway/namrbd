@@ -31,6 +31,55 @@ begin.
 
 ### Known Limits
 
+## [1.1.1] - 2026-09-08
+
+### Fixed
+
+- Restored Community `sbs-service` startup. The v1.1.0 Community build treated
+  the unavailable Enterprise authenticated admin listener as a fatal startup
+  error even though that optional listener was disabled.
+
+### Edition: Community
+
+- The optional authenticated admin transport now resolves to no separate
+  runtime in Community builds. AdminService and OperationsService remain
+  registered on the product listener; no Enterprise-only flags or transport
+  surface are exposed.
+
+### Edition: Enterprise only
+
+- No Enterprise authenticated admin transport behavior changed. Its optional
+  split mTLS listener, validation, RBAC, and fail-closed admission remain
+  covered by the Enterprise test profile.
+
+### Support & Evidence
+
+- Added a Community regression test for the disabled authenticated admin
+  transport constructor. Real Community `sbs-service`, `sbs-data`, and `sbsctl`
+  binaries reached readiness, initialized and joined a cluster, created a
+  volume, and completed open/write/flush/read with server version v1.1.1.
+
+### Compatibility
+
+- NAMROS integrations should consume the v1.1.1 source tag for all SBS image
+  builds. Do not mix v1.1.0 and v1.1.1 gateway or SBS processes because runtime
+  compatibility requires an exact product SemVer match.
+
+### Upgrade & Migration
+
+- Metadata migration required: no.
+- Rolling upgrade: unsupported between v1.1.0 and v1.1.1 because runtime
+  compatibility requires exact product versions. Restart gateway, SBS service,
+  and SBS data processes as one coordinated maintenance operation.
+- `kernel_module_compatible: unchanged from v1.1.0`; the separately versioned
+  1.0.0 kernel modules are unchanged and remain outside the supported userspace
+  volume claim.
+
+### Known Limits
+
+- This hotfix restores Community service startup but does not widen the v1.1
+  support matrix or add a public container-image artifact.
+
 ## [1.1.0] - 2026-09-07
 
 ### Added

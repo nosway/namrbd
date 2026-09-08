@@ -38,7 +38,7 @@ Usage of namrbd-csi-driver:
   -sbs-cluster-id string
         SBS cluster id (default "sbs-lab")
   -vendor-version string
-        CSI vendor version (default "v1.1.0")
+        CSI vendor version (default "v1.1.1")
 ```
 
 ## Environment variables

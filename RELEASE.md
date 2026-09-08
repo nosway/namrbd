@@ -1,5 +1,22 @@
 # Release Artifacts
 
+## v1.1.1
+
+The `v1.1.1` GitHub release publishes the same Linux AMD64 Community artifact
+family as v1.1.0: the public command binaries and license metadata, SHA-256
+checksums, an SPDX JSON SBOM, and GitHub build provenance.
+
+This patch release restores Community `sbs-service` startup when the optional
+Enterprise authenticated admin listener is unavailable. It does not add an
+authenticated admin surface to Community or widen the supported feature set.
+Community AdminService and OperationsService remain on the product listener,
+as they did before the optional Enterprise listener split.
+
+Container images are not v1.1.1 release outputs. Build them from the tagged
+source and record an immutable registry digest before deployment. All gateway
+and SBS processes in one deployment must report the exact same v1.1.1 product
+version.
+
 ## v1.1.0
 
 The `v1.1.0` GitHub release publishes a Linux AMD64 archive containing the

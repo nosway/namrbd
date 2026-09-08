@@ -33,7 +33,7 @@ func (adminTransportOptions) validate() error {
 }
 
 func newAuthenticatedAdminGRPCRuntime(*server, adminTransportOptions) (*adminGRPCRuntime, error) {
-	return nil, fmt.Errorf("authenticated admin transport requires an Enterprise build")
+	return nil, nil
 }
 
 func (*adminGRPCRuntime) serve() error {
