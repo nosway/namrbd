@@ -6,6 +6,8 @@ the replicated storage core, gateway and SBS services, host and kernel control
 paths, Kubernetes CSI integration, snapshot and restore building blocks,
 discard/zero handling, basic iSCSI connectivity, and operational visibility.
 
+**Pronunciation:** NAMRBD is pronounced `[nae-mur-bee-dee]`.
+
 ![NAMRBD platform overview](docs-src/manuals/architecture-manual/assets/diagrams/platform-overview.svg)
 
 NAMROS (<https://github.com/nosway/namros>) is a sibling S3-compatible object
