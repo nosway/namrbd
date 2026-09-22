@@ -31,6 +31,46 @@ begin.
 
 ### Known Limits
 
+## [1.1.2] - 2026-09-22
+
+### Security
+
+- Updated `google.golang.org/grpc` from 1.83.1 to 1.83.2 to resolve
+  `GHSA-2v4p-qf9q-27wj` / `CVE-2026-84445`, a high-severity denial of service
+  in gRPC-Go xDS servers when both `:authority` and `Host` are absent.
+
+### Edition: Community
+
+- This patch changes only the gRPC dependency closure and product release
+  identity. It adds no Enterprise-only surface and does not widen the supported
+  Community feature set.
+
+### Support & Evidence
+
+- The release is admitted only after the full Community test, build,
+  documentation, module-metadata, and `govulncheck` gates pass at the tagged
+  source revision.
+
+### Compatibility
+
+- NAMROS integrations should consume the v1.1.2 module tag. Do not mix v1.1.1
+  and v1.1.2 gateway or SBS serving processes because runtime compatibility
+  requires an exact product SemVer match.
+
+### Upgrade & Migration
+
+- Metadata migration required: no.
+- Rolling mixed-version upgrade: unsupported. Restart gateway, SBS service,
+  and SBS data processes as one coordinated maintenance operation.
+- `kernel_module_compatible: unchanged from v1.1.1`; the separately versioned
+  1.0.0 kernel modules are unchanged and remain outside the supported userspace
+  volume claim.
+
+### Known Limits
+
+- This security patch does not add a public container-image artifact or expand
+  the v1.1 support matrix.
+
 ## [1.1.1] - 2026-09-08
 
 ### Fixed

@@ -1,5 +1,20 @@
 # Release Artifacts
 
+## v1.1.2
+
+The `v1.1.2` GitHub release publishes the Linux AMD64 Community command archive
+and license metadata, SHA-256 checksums, an SPDX JSON SBOM, and GitHub build
+provenance.
+
+This security patch updates gRPC-Go to 1.83.2 to resolve
+`GHSA-2v4p-qf9q-27wj` / `CVE-2026-84445`. It does not change metadata or payload
+formats, add an Enterprise surface, or widen the supported feature set.
+
+Container images are not v1.1.2 release outputs. Build them from the tagged
+source and record an immutable registry digest before deployment. All gateway
+and SBS processes in one deployment must report the exact same v1.1.2 product
+version.
+
 ## v1.1.1
 
 The `v1.1.1` GitHub release publishes the same Linux AMD64 Community artifact

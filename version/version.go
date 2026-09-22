@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-var Current = "v1.1.1"
+var Current = "v1.1.2"
 
 var (
 	Commit    = "unknown"

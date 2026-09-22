@@ -6,10 +6,10 @@ import (
 )
 
 func TestCurrentUsesProductSemVer(t *testing.T) {
-	if Current != "v1.1.1" {
+	if Current != "v1.1.2" {
 		t.Fatalf("Current=%q want GA product SemVer", Current)
 	}
-	if ProductVersion() != "v1.1.1" {
+	if ProductVersion() != "v1.1.2" {
 		t.Fatalf("ProductVersion=%q", ProductVersion())
 	}
 }
@@ -20,14 +20,14 @@ func TestBuildSummaryIncludesVersionAndCommit(t *testing.T) {
 		Current, Commit, BuildDate, Dirty = oldCurrent, oldCommit, oldBuildDate, oldDirty
 	}()
 
-	Current = "v1.1.1"
+	Current = "v1.1.2"
 	Commit = "abcdef123456"
 	BuildDate = "2026-08-18T00:00:00Z"
 	Dirty = "false"
 
 	got := BuildSummary()
 	wantParts := []string{
-		"v1.1.1",
+		"v1.1.2",
 		"commit=abcdef123456",
 		"build_date=2026-08-18T00:00:00Z",
 		"dirty=false",
