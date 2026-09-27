@@ -8,8 +8,8 @@ require (
 	github.com/gostor/gotgt v0.2.2
 	github.com/pingcap/kvproto v0.0.0-20230403051650-e166ae588106
 	github.com/tikv/client-go/v2 v2.0.7
-	go.etcd.io/etcd/api/v3 v3.7.1
-	go.etcd.io/etcd/client/v3 v3.7.1
+	go.etcd.io/etcd/api/v3 v3.7.2
+	go.etcd.io/etcd/client/v3 v3.7.2
 	golang.org/x/sys v0.47.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
@@ -59,7 +59,7 @@ require (
 	github.com/tiancaiamao/gp v0.0.0-20221230034425-4025bc8a4d4a // indirect
 	github.com/tikv/pd/client v0.0.0-20230329114254-1948c247c2b1 // indirect
 	github.com/twmb/murmur3 v1.1.3 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.7.1 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.7.2 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
